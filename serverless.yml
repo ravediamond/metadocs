@@ -4,45 +4,52 @@ provider:
   name: aws
   runtime: python3.11
   region: eu-central-1
-  stage: ${opt:stage, 'dev'}
+  stage: ${opt:stage, 'dev'}  # Default to 'dev' if not provided
 
 plugins:
   - serverless-python-requirements
+  - serverless-offline
+  - serverless-dynamodb-local
 
 custom:
   pythonRequirements:
     dockerizePip: true
     usePoetry: true
-  frontendBucketName: ${self:provider.stage}-metadocs-frontend
+  frontendBucketName: ${self:provider.stage}-metadocs-frontend  # Uses the stage defined in the provider section
 
 functions:
   backend:
-    handler: backend/src/main.app  # Ensure this points to your FastAPI ASGI app instance
+    handler: backend/src/main.handler
     events:
-      - lambdaUrl:  # Corrected to lambdaUrl
+      - http:  # For local development with serverless-offline
+          path: api/{proxy+}
           method: ANY
-          path: /api
+          cors: true
+    environment:
+      BUCKET_NAME: ${self:custom.frontendBucketName}
 
 resources:
   Resources:
+    BackendLambdaPermission:
+      Type: AWS::Lambda::Url
+      Properties:
+        TargetFunctionArn: !GetAtt BackendLambdaFunction.Arn
+        AuthType: NONE  # No authentication (public URL)
+
     S3BucketFrontend:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${self:custom.frontendBucketName}
-        WebsiteConfiguration:  # Configures S3 as a static website
-          IndexDocument: index.html
-          ErrorDocument: index.html
+        # No public access allowed; use CloudFront OAC to access content
 
-    FrontendBucketPolicy:
-      Type: AWS::S3::BucketPolicy
+    CloudFrontOriginAccessControl:
+      Type: AWS::CloudFront::OriginAccessControl
       Properties:
-        Bucket: !Ref S3BucketFrontend
-        PolicyDocument:
-          Statement:
-            - Effect: Allow
-              Principal: "*"
-              Action: "s3:GetObject"
-              Resource: !Join ['', ['arn:aws:s3:::', !Ref S3BucketFrontend, '/*']]
+        OriginAccessControlConfig:
+          Name: "MyOAC"
+          OriginAccessControlOriginType: "s3"
+          SigningBehavior: "always"
+          SigningProtocol: "sigv4"
 
     CloudFrontDistribution:
       Type: AWS::CloudFront::Distribution
@@ -52,7 +59,7 @@ resources:
             - DomainName: !GetAtt S3BucketFrontend.DomainName
               Id: S3Origin
               S3OriginConfig:
-                OriginAccessIdentity: ""
+                OriginAccessIdentity: !Ref CloudFrontOriginAccessControl  # Use OAC to access S3
           Enabled: true
           DefaultRootObject: index.html
           DefaultCacheBehavior:
@@ -73,8 +80,3 @@ resources:
       Value: !Ref S3BucketFrontend
       Export:
         Name: ${self:service}-${self:provider.stage}-frontend-bucket
-
-hooks:
-  after:deploy:deploy:
-    - npx --prefix ./frontend run build  # Builds the frontend (assuming a standard npm build script)
-    - aws s3 sync ./frontend/build s3://${self:custom.frontendBucketName}/ --delete
