@@ -15,7 +15,7 @@ custom:
   pythonRequirements:
     dockerizePip: true
     usePoetry: true
-  frontendBucketName: ${self:provider.stage}-metadocs-frontend  # Uses the stage defined in the provider section
+  frontendBucketName: ${self:provider.stage}-metadocs-frontend
 
 functions:
   backend:
