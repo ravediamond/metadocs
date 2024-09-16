@@ -1,0 +1,82 @@
+service: metadocs
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: eu-central-1
+  stage: ${opt:stage, 'dev'}  # Default to 'dev' if not provided
+
+plugins:
+  - serverless-python-requirements
+  - serverless-offline
+  - serverless-dynamodb-local
+
+custom:
+  pythonRequirements:
+    dockerizePip: true
+    usePoetry: true
+  frontendBucketName: ${self:provider.stage}-metadocs-frontend  # Uses the stage defined in the provider section
+
+functions:
+  backend:
+    handler: backend/src/main.handler
+    events:
+      - http:  # For local development with serverless-offline
+          path: api/{proxy+}
+          method: ANY
+          cors: true
+    environment:
+      BUCKET_NAME: ${self:custom.frontendBucketName}
+
+resources:
+  Resources:
+    BackendLambdaPermission:
+      Type: AWS::Lambda::Url
+      Properties:
+        TargetFunctionArn: !GetAtt BackendLambdaFunction.Arn
+        AuthType: NONE  # No authentication (public URL)
+
+    S3BucketFrontend:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.frontendBucketName}
+        # No public access allowed; use CloudFront OAC to access content
+
+    CloudFrontOriginAccessControl:
+      Type: AWS::CloudFront::OriginAccessControl
+      Properties:
+        OriginAccessControlConfig:
+          Name: "MyOAC"
+          OriginAccessControlOriginType: "s3"
+          SigningBehavior: "always"
+          SigningProtocol: "sigv4"
+
+    CloudFrontDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Origins:
+            - DomainName: !GetAtt S3BucketFrontend.DomainName
+              Id: S3Origin
+              S3OriginConfig:
+                OriginAccessIdentity: !Ref CloudFrontOriginAccessControl  # Use OAC to access S3
+          Enabled: true
+          DefaultRootObject: index.html
+          DefaultCacheBehavior:
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            ForwardedValues:
+              QueryString: false
+              Cookies:
+                Forward: none
+          ViewerCertificate:
+            AcmCertificateArn: arn:aws:acm:eu-central-1:514170698941:certificate/dc8a328a-a1f0-4600-887b-c4052849a5a6
+            SslSupportMethod: sni-only
+          Aliases:
+            - app.metadocs.co  # Your custom domain name
+
+  Outputs:
+    S3BucketFrontend:
+      Value: !Ref S3BucketFrontend
+      Export:
+        Name: ${self:service}-${self:provider.stage}-frontend-bucket
