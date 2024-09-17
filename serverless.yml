@@ -5,13 +5,33 @@ provider:
   runtime: python3.11
   region: eu-central-1
   stage: ${opt:stage, 'dev'}  # Default to 'dev' if not provided
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:GetItem
+        - dynamodb:Query
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - dynamodb:BatchGetItem
+      Resource:
+        - arn:aws:dynamodb:${self:provider.region}:*:table/UsersTable
+        - arn:aws:dynamodb:${self:provider.region}:*:table/DomainsTable
+        - arn:aws:dynamodb:${self:provider.region}:*:table/DomainsTable/index/*
+        - arn:aws:dynamodb:${self:provider.region}:*:table/DomainMembershipsTable
+        - arn:aws:dynamodb:${self:provider.region}:*:table/DomainMembershipsTable/index/*
+        - arn:aws:dynamodb:${self:provider.region}:*:table/InvitationsTable
+        - arn:aws:dynamodb:${self:provider.region}:*:table/InvitationsTable/index/*
 
 plugins:
   - serverless-python-requirements
   - serverless-offline
   - serverless-dynamodb-local
+  - serverless-dotenv-plugin
 
 custom:
+  dotenv:
+    path: .env
   pythonRequirements:
     dockerizePip: true
     usePoetry: true
@@ -27,6 +47,12 @@ functions:
           cors: true
     environment:
       BUCKET_NAME: ${self:custom.frontendBucketName}
+      AUTH0_DOMAIN: ${env:AUTH0_DOMAIN}
+      API_AUDIENCE: ${env:API_AUDIENCE}
+      USERS_TABLE: UsersTable
+      DOMAINS_TABLE: DomainsTable
+      DOMAIN_MEMBERSHIPS_TABLE: DomainMembershipsTable
+      INVITATIONS_TABLE: InvitationsTable
 
 resources:
   Resources:
@@ -75,8 +101,110 @@ resources:
           Aliases:
             - app.metadocs.co  # Your custom domain name
 
+  # DynamoDB Tables
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: UsersTable
+        AttributeDefinitions:
+          - AttributeName: UserId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: UserId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    DomainsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: DomainsTable
+        AttributeDefinitions:
+          - AttributeName: DomainId
+            AttributeType: S
+          - AttributeName: OwnerUserId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: DomainId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        GlobalSecondaryIndexes:
+          - IndexName: OwnerUserIdIndex
+            KeySchema:
+              - AttributeName: OwnerUserId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+
+    DomainMembershipsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: DomainMembershipsTable
+        AttributeDefinitions:
+          - AttributeName: DomainId
+            AttributeType: S
+          - AttributeName: UserId
+            AttributeType: S
+          - AttributeName: UserIdDomainId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: DomainId
+            KeyType: HASH
+          - AttributeName: UserId
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        GlobalSecondaryIndexes:
+          - IndexName: UserIdIndex
+            KeySchema:
+              - AttributeName: UserId
+                KeyType: HASH
+              - AttributeName: DomainId
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    InvitationsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: InvitationsTable
+        AttributeDefinitions:
+          - AttributeName: InvitationId
+            AttributeType: S
+          - AttributeName: InviteeEmail
+            AttributeType: S
+        KeySchema:
+          - AttributeName: InvitationId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        GlobalSecondaryIndexes:
+          - IndexName: InviteeEmailIndex
+            KeySchema:
+              - AttributeName: InviteeEmail
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+
   Outputs:
     S3BucketFrontend:
       Value: !Ref S3BucketFrontend
       Export:
         Name: ${self:service}-${self:provider.stage}-frontend-bucket
+
+    UsersTableName:
+      Value: !Ref UsersTable
+      Export:
+        Name: ${self:service}-${self:provider.stage}-UsersTable
+
+    DomainsTableName:
+      Value: !Ref DomainsTable
+      Export:
+        Name: ${self:service}-${self:provider.stage}-DomainsTable
+
+    DomainMembershipsTableName:
+      Value: !Ref DomainMembershipsTable
+      Export:
+        Name: ${self:service}-${self:provider.stage}-DomainMembershipsTable
+
+    InvitationsTableName:
+      Value: !Ref InvitationsTable
+      Export:
+        Name: ${self:service}-${self:provider.stage}-InvitationsTable
