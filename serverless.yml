@@ -15,18 +15,17 @@ provider:
         - dynamodb:DeleteItem
         - dynamodb:BatchGetItem
       Resource:
-        - arn:aws:dynamodb:${self:provider.region}:*:table/UsersTable
-        - arn:aws:dynamodb:${self:provider.region}:*:table/DomainsTable
-        - arn:aws:dynamodb:${self:provider.region}:*:table/DomainsTable/index/*
-        - arn:aws:dynamodb:${self:provider.region}:*:table/DomainMembershipsTable
-        - arn:aws:dynamodb:${self:provider.region}:*:table/DomainMembershipsTable/index/*
-        - arn:aws:dynamodb:${self:provider.region}:*:table/InvitationsTable
-        - arn:aws:dynamodb:${self:provider.region}:*:table/InvitationsTable/index/*
+        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-users
+        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-domains
+        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-domains/index/*
+        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-domain-memberships
+        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-domain-memberships/index/*
+        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-invitations
+        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-invitations/index/*
 
 plugins:
   - serverless-python-requirements
   - serverless-offline
-  - serverless-dynamodb-local
   - serverless-dotenv-plugin
 
 custom:
@@ -35,7 +34,26 @@ custom:
   pythonRequirements:
     dockerizePip: true
     usePoetry: true
+    # noDeploy:
+    #   - boto3
+    #   - botocore
   frontendBucketName: ${self:provider.stage}-metadocs-frontend
+  domainName: ${self:custom.domainNames.${self:provider.stage}, '${self:provider.stage}.app.metadocs.co'}
+  domainNames:
+    prod: app.metadocs.co
+
+package:
+  exclude:
+    - frontend/**
+    - node_modules/**
+    - .git/**
+    - .vscode/**
+    - tests/**
+    - README.md
+    - .env
+
+  include:
+    - backend/**
 
 functions:
   backend:
@@ -49,10 +67,10 @@ functions:
       BUCKET_NAME: ${self:custom.frontendBucketName}
       AUTH0_DOMAIN: ${env:AUTH0_DOMAIN}
       API_AUDIENCE: ${env:API_AUDIENCE}
-      USERS_TABLE: UsersTable
-      DOMAINS_TABLE: DomainsTable
-      DOMAIN_MEMBERSHIPS_TABLE: DomainMembershipsTable
-      INVITATIONS_TABLE: InvitationsTable
+      USERS_TABLE: ${self:provider.stage}-users
+      DOMAINS_TABLE: ${self:provider.stage}-domains
+      DOMAIN_MEMBERSHIPS_TABLE: ${self:provider.stage}-domain-memberships
+      INVITATIONS_TABLE: ${self:provider.stage}-invitations
 
 resources:
   Resources:
@@ -72,7 +90,7 @@ resources:
       Type: AWS::CloudFront::OriginAccessControl
       Properties:
         OriginAccessControlConfig:
-          Name: "MyOAC"
+          Name: "${self:provider.stage}-metadocs-OAC"
           OriginAccessControlOriginType: "s3"
           SigningBehavior: "always"
           SigningProtocol: "sigv4"
@@ -96,10 +114,10 @@ resources:
               Cookies:
                 Forward: none
           ViewerCertificate:
-            AcmCertificateArn: arn:aws:acm:eu-central-1:514170698941:certificate/dc8a328a-a1f0-4600-887b-c4052849a5a6
+            AcmCertificateArn: arn:aws:acm:eu-central-1:514170698941:certificate/75a2585c-4c21-42ec-9713-3537db142e72
             SslSupportMethod: sni-only
           Aliases:
-            - app.metadocs.co  # Your custom domain name
+            - ${self:custom.domainName}
 
   # DynamoDB Tables
     UsersTable:
@@ -138,13 +156,11 @@ resources:
     DomainMembershipsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: DomainMembershipsTable
+        TableName: ${self:provider.stage}-DomainMembershipsTable
         AttributeDefinitions:
           - AttributeName: DomainId
             AttributeType: S
           - AttributeName: UserId
-            AttributeType: S
-          - AttributeName: UserIdDomainId
             AttributeType: S
         KeySchema:
           - AttributeName: DomainId
