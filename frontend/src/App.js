@@ -3,6 +3,8 @@ import { Route, Routes } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
+import UserManagementScreen from './pages/UserManagementScreen';
+import RoleProtectedRoute from './components/RoleProtectedRoute';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, isLoading, loginWithRedirect } = useAuth0();
@@ -33,7 +35,15 @@ function App() {
             <div>Dashboard - Protected Content</div>
           </ProtectedRoute>
         }
-      />
+        />
+        <Route
+          path="/user-management"
+          element={
+            <RoleProtectedRoute allowedRoles={['Admin']}>
+              <UserManagementScreen />
+            </RoleProtectedRoute>
+          }
+        />
       </Routes>
     </>
   );

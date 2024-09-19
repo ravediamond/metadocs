@@ -2,7 +2,7 @@
 
 ## Features
 
-The MVP (Minimum Viable Product) of your SaaS aims to enhance RAG (Retrieval-Augmented Generation) systems by managing domain-specific concepts and definitions, integrating with LangChain, and dynamically detecting undefined concepts. Here are the summarized features:
+The MVP (Minimum Viable Product) of your SaaS aims to enhance RAG (Retrieval-Augmented Generation) systems by managing domain-specific concepts and definitions in a specific store, integrating with other system like Langchain, and dynamically detecting undefined concepts. Here are the summarized features:
 
 1. Concept and Definition Management:
 
