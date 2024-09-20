@@ -6,6 +6,7 @@ import { Navigate } from 'react-router-dom';
 
 const RoleProtectedRoute = ({ allowedRoles, children }) => {
   const { isAuthenticated, isLoading, user, loginWithRedirect } = useAuth0();
+  const NAMESPACE = process.env.REACT_APP_AUTH0_NAMESPACE;
 
   if (isLoading) {
     return <div>Loading...</div>;
@@ -16,7 +17,7 @@ const RoleProtectedRoute = ({ allowedRoles, children }) => {
     return null;
   }
 
-  const roles = user && user['https://metadocs.co/roles'] ? user['https://metadocs.co/roles'] : [];
+  const roles = user && user[`https://${NAMESPACE}/roles`] ? user[`https://${NAMESPACE}/roles`] : [];
 
   const hasAccess = allowedRoles.some((role) => roles.includes(role));
 
