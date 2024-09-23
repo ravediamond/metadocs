@@ -41,6 +41,9 @@ custom:
   domainName: ${self:custom.domainNames.${self:provider.stage}, '${self:provider.stage}.app.metadocs.co'}
   domainNames:
     prod: app.metadocs.co
+  cloudFrontDistributionIds:
+    dev: "E3CIV0VN5IVHON"
+    prod: "YOUR_PROD_CLOUDFRONT_DISTRIBUTION_ID"
 
 package:
   exclude:
@@ -84,7 +87,10 @@ resources:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${self:custom.frontendBucketName}
-        # No public access allowed; use CloudFront OAC to access content
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
 
     CloudFrontOriginAccessControl:
       Type: AWS::CloudFront::OriginAccessControl
@@ -118,6 +124,23 @@ resources:
             SslSupportMethod: sni-only
           Aliases:
             - ${self:custom.domainName}
+
+    # Attach the bucket policy to restrict access to CloudFront only
+    BucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref S3BucketFrontend
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: cloudfront.amazonaws.com
+              Action: "s3:GetObject"
+              Resource: "arn:aws:s3:::${self:custom.frontendBucketName}/*"
+              Condition:
+                StringEquals:
+                  AWS:SourceArn: "arn:aws:cloudfront::${AWS::AccountId}:distribution/${self:custom.cloudFrontDistributionIds.${self:provider.stage}}"
 
     # DynamoDB Tables
     UsersTable:
