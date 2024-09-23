@@ -41,6 +41,9 @@ custom:
   domainName: ${self:custom.domainNames.${self:provider.stage}, '${self:provider.stage}.app.metadocs.co'}
   domainNames:
     prod: app.metadocs.co
+  cloudFrontDistributionIds:
+    dev: "E3CIV0VN5IVHON"
+    prod: "YOUR_PROD_CLOUDFRONT_DISTRIBUTION_ID"
 
 package:
   exclude:
@@ -84,16 +87,19 @@ resources:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${self:custom.frontendBucketName}
-        # No public access allowed; use CloudFront OAC to access content
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
 
     CloudFrontOriginAccessControl:
       Type: AWS::CloudFront::OriginAccessControl
       Properties:
         OriginAccessControlConfig:
           Name: "${self:provider.stage}-metadocs-OAC"
-          OriginAccessControlOriginType: "s3"
-          SigningBehavior: "always"
-          SigningProtocol: "sigv4"
+          OriginAccessControlOriginType: s3
+          SigningBehavior: always
+          SigningProtocol: sigv4
 
     CloudFrontDistribution:
       Type: AWS::CloudFront::Distribution
@@ -102,8 +108,8 @@ resources:
           Origins:
             - DomainName: !GetAtt S3BucketFrontend.DomainName
               Id: S3Origin
-              S3OriginConfig:
-                OriginAccessIdentity: !Ref CloudFrontOriginAccessControl  # Use OAC to access S3
+              OriginAccessControlId: !Ref CloudFrontOriginAccessControl  # Correct property for OAC
+              S3OriginConfig: {}  # Keep this empty when using OAC
           Enabled: true
           DefaultRootObject: index.html
           DefaultCacheBehavior:
@@ -114,16 +120,33 @@ resources:
               Cookies:
                 Forward: none
           ViewerCertificate:
-            AcmCertificateArn: arn:aws:acm:eu-central-1:514170698941:certificate/75a2585c-4c21-42ec-9713-3537db142e72
+            AcmCertificateArn: arn:aws:acm:us-east-1:514170698941:certificate/62e81c17-bebd-414e-bc9a-9e88828bd697
             SslSupportMethod: sni-only
           Aliases:
             - ${self:custom.domainName}
 
-  # DynamoDB Tables
+    # Attach the bucket policy to restrict access to CloudFront only
+    BucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref S3BucketFrontend
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: cloudfront.amazonaws.com
+              Action: "s3:GetObject"
+              Resource: "arn:aws:s3:::${self:custom.frontendBucketName}/*"
+              Condition:
+                StringEquals:
+                  AWS:SourceArn: "arn:aws:cloudfront::${AWS::AccountId}:distribution/${self:custom.cloudFrontDistributionIds.${self:provider.stage}}"
+
+    # DynamoDB Tables
     UsersTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: UsersTable
+        TableName: ${self:provider.stage}-users
         AttributeDefinitions:
           - AttributeName: UserId
             AttributeType: S
@@ -135,7 +158,7 @@ resources:
     DomainsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: DomainsTable
+        TableName: ${self:provider.stage}-domains
         AttributeDefinitions:
           - AttributeName: DomainId
             AttributeType: S
@@ -156,7 +179,7 @@ resources:
     DomainMembershipsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ${self:provider.stage}-DomainMembershipsTable
+        TableName: ${self:provider.stage}-domain-memberships
         AttributeDefinitions:
           - AttributeName: DomainId
             AttributeType: S
@@ -181,7 +204,7 @@ resources:
     InvitationsTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: InvitationsTable
+        TableName: ${self:provider.stage}-invitations
         AttributeDefinitions:
           - AttributeName: InvitationId
             AttributeType: S
@@ -208,19 +231,19 @@ resources:
     UsersTableName:
       Value: !Ref UsersTable
       Export:
-        Name: ${self:service}-${self:provider.stage}-UsersTable
+        Name: ${self:service}-${self:provider.stage}-users
 
     DomainsTableName:
       Value: !Ref DomainsTable
       Export:
-        Name: ${self:service}-${self:provider.stage}-DomainsTable
+        Name: ${self:service}-${self:provider.stage}-domains
 
     DomainMembershipsTableName:
       Value: !Ref DomainMembershipsTable
       Export:
-        Name: ${self:service}-${self:provider.stage}-DomainMembershipsTable
+        Name: ${self:service}-${self:provider.stage}-domain-memberships
 
     InvitationsTableName:
       Value: !Ref InvitationsTable
       Export:
-        Name: ${self:service}-${self:provider.stage}-InvitationsTable
+        Name: ${self:service}-${self:provider.stage}-invitations
