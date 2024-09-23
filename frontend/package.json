@@ -20,10 +20,10 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "start": "env $(cat ../.env | xargs) react-scripts start",
+    "build": "env $(cat ../.env | xargs) react-scripts build",
+    "test": "env $(cat ../.env | xargs) react-scripts test",
+    "eject": "env $(cat ../.env | xargs) react-scripts eject"
   },
   "eslintConfig": {
     "extends": [
