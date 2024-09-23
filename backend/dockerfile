@@ -1,0 +1,23 @@
+# Backend Dockerfile
+FROM python:3.11-slim
+
+# Install Poetry
+RUN pip install poetry
+
+# Set working directory
+WORKDIR /app
+
+# Copy only the required files for poetry setup first to cache dependencies
+COPY pyproject.toml poetry.lock ./
+
+# Install dependencies using poetry
+RUN poetry install --no-dev
+
+# Copy the rest of the backend files
+COPY . .
+
+# Expose the port
+EXPOSE 8000
+
+# Command to run FastAPI
+CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

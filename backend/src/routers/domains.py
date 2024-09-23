@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from auth.auth0 import get_current_user
+from auth.jwt import get_current_user
 from models.schemas import DomainCreate, Domain
 from db.dynamodb import domains_table, memberships_table
 import uuid
@@ -7,8 +7,11 @@ from datetime import datetime
 
 router = APIRouter()
 
+
 @router.post("/", response_model=Domain)
-async def create_domain(domain_data: DomainCreate, current_user=Depends(get_current_user)):
+async def create_domain(
+    domain_data: DomainCreate, current_user=Depends(get_current_user)
+):
     user_id = current_user["sub"]
     domain_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
@@ -41,6 +44,7 @@ async def create_domain(domain_data: DomainCreate, current_user=Depends(get_curr
         owner_user_id=user_id,
         description=domain_data.description,
     )
+
 
 @router.get("/", response_model=List[Domain])
 async def get_my_domains(current_user=Depends(get_current_user)):

@@ -1,21 +1,15 @@
-import React from 'react';
-import { Route, Routes } from 'react-router-dom';
-import { useAuth0 } from '@auth0/auth0-react';
+import React, { useState, useEffect } from 'react';
+import { Route, Routes, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import UserManagementScreen from './pages/UserManagementScreen';
 import RoleProtectedRoute from './components/RoleProtectedRoute';
 
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, isLoading, loginWithRedirect } = useAuth0();
+  const token = localStorage.getItem('token');
 
-  if (isLoading) {
-    return <div>Loading...</div>; // You can replace this with a proper loading spinner or component
-  }
-
-  if (!isAuthenticated) {
-    loginWithRedirect();
-    return null; // Return null while redirecting
+  if (!token) {
+    return <Navigate to="/login" />;
   }
 
   return children;
@@ -28,13 +22,12 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute>
-            {/* Replace with your actual Dashboard component */}
-            <div>Dashboard - Protected Content</div>
-          </ProtectedRoute>
-        }
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <div>Dashboard - Protected Content</div>
+            </ProtectedRoute>
+          }
         />
         <Route
           path="/user-management"

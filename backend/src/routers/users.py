@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends
-from auth.auth0 import get_current_user
 from models.schemas import User
-from auth.auth0 import get_current_user, require_roles
+from auth.jwt import get_current_user, require_roles
 
 router = APIRouter()
 

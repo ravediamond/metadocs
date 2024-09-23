@@ -1,6 +1,14 @@
 import os
 import boto3
 
+dynamo_endpoint = os.getenv("DYNAMO_ENDPOINT", None)
+
+dynamodb = boto3.resource(
+    "dynamodb",
+    region_name="eu-central-1",
+    endpoint_url=dynamo_endpoint,  # If running locally, use the local DynamoDB URL
+)
+
 # Get DynamoDB table names from environment variables
 USERS_TABLE = os.environ.get("USERS_TABLE")
 DOMAINS_TABLE = os.environ.get("DOMAINS_TABLE")

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from auth.auth0 import get_current_user
+from auth.jwt import get_current_user
 from models.schemas import InvitationCreate, Invitation
 from db.dynamodb import invitations_table, domains_table
 import uuid
@@ -7,8 +7,13 @@ from datetime import datetime
 
 router = APIRouter()
 
+
 @router.post("/{domain_id}", response_model=Invitation)
-async def invite_user(domain_id: str, invitation_data: InvitationCreate, current_user=Depends(get_current_user)):
+async def invite_user(
+    domain_id: str,
+    invitation_data: InvitationCreate,
+    current_user=Depends(get_current_user),
+):
     user_id = current_user["sub"]
     now = datetime.utcnow().isoformat()
 
@@ -19,7 +24,9 @@ async def invite_user(domain_id: str, invitation_data: InvitationCreate, current
 
     domain = domain_response["Item"]
     if domain["OwnerUserId"] != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to invite users to this domain")
+        raise HTTPException(
+            status_code=403, detail="Not authorized to invite users to this domain"
+        )
 
     invitation_id = str(uuid.uuid4())
 
@@ -48,6 +55,7 @@ async def invite_user(domain_id: str, invitation_data: InvitationCreate, current
         invitation_status="pending",
     )
 
+
 @router.post("/accept/{invitation_id}")
 async def accept_invitation(invitation_id: str, current_user=Depends(get_current_user)):
     user_id = current_user["sub"]
@@ -65,7 +73,9 @@ async def accept_invitation(invitation_id: str, current_user=Depends(get_current
         raise HTTPException(status_code=400, detail="Invitation is not pending")
 
     if invitation["InviteeEmail"] != user_email:
-        raise HTTPException(status_code=403, detail="This invitation is not for your email")
+        raise HTTPException(
+            status_code=403, detail="This invitation is not for your email"
+        )
 
     # Update the invitation status
     invitations_table.update_item(
@@ -89,6 +99,7 @@ async def accept_invitation(invitation_id: str, current_user=Depends(get_current
     memberships_table.put_item(Item=membership_item)
 
     return {"message": "Invitation accepted and you have joined the domain"}
+
 
 @router.get("/", response_model=List[Invitation])
 async def get_my_invitations(current_user=Depends(get_current_user)):

@@ -4,7 +4,6 @@ provider:
   name: aws
   runtime: python3.11
   region: eu-central-1
-  stage: ${opt:stage, 'dev'}  # Default to 'dev' if not provided
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -25,7 +24,6 @@ provider:
 
 plugins:
   - serverless-python-requirements
-  - serverless-offline
   - serverless-dotenv-plugin
 
 custom:
@@ -34,9 +32,6 @@ custom:
   pythonRequirements:
     dockerizePip: true
     usePoetry: true
-    # noDeploy:
-    #   - boto3
-    #   - botocore
   frontendBucketName: ${self:provider.stage}-metadocs-frontend
   domainName: ${self:custom.domainNames.${self:provider.stage}, '${self:provider.stage}.app.metadocs.co'}
   domainNames:
@@ -61,15 +56,9 @@ package:
 functions:
   backend:
     handler: backend/src/main.handler
-    events:
-      - http:  # For local development with serverless-offline
-          path: api/{proxy+}
-          method: ANY
-          cors: true
     environment:
+      JWT_SECRET: ${env:JWT_SECRET}
       BUCKET_NAME: ${self:custom.frontendBucketName}
-      AUTH0_DOMAIN: ${env:AUTH0_DOMAIN}
-      API_AUDIENCE: ${env:API_AUDIENCE}
       USERS_TABLE: ${self:provider.stage}-users
       DOMAINS_TABLE: ${self:provider.stage}-domains
       DOMAIN_MEMBERSHIPS_TABLE: ${self:provider.stage}-domain-memberships
