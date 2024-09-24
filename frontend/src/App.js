@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Route, Routes, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
-import UserManagementScreen from './pages/UserManagementScreen';
-import RoleProtectedRoute from './components/RoleProtectedRoute';
+import DashboardPage from './pages/DashboardPage';
+import LoginPage from './pages/LoginPage';
+import SignUpPage from './pages/SignUpPage';
+import { AuthProvider } from './context/AuthContext';
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -17,28 +19,22 @@ const ProtectedRoute = ({ children }) => {
 
 function App() {
   return (
-    <>
+    <AuthProvider>
       <Navbar />
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignUpPage />} />
         <Route
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <div>Dashboard - Protected Content</div>
+              <DashboardPage />
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/user-management"
-          element={
-            <RoleProtectedRoute allowedRoles={['Admin']}>
-              <UserManagementScreen />
-            </RoleProtectedRoute>
-          }
-        />
       </Routes>
-    </>
+    </AuthProvider>
   );
 }
 

@@ -44,14 +44,4 @@ def verify_token(token: str):
 async def get_current_user(request: Request):
     token = get_token_auth_header(request)
     payload = verify_token(token)
-    return payload  # Payload contains user information
-
-
-def require_roles(required_roles: list):
-    def role_checker(current_user=Depends(get_current_user)):
-        user_roles = current_user.get("roles", [])
-        if not set(required_roles).intersection(user_roles):
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
-        return current_user
-
-    return role_checker
+    return payload  # Payload contains user information (sub, email, name)

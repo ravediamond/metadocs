@@ -11,6 +11,7 @@ import {
   VStack,
 } from '@chakra-ui/react';
 import { CheckCircleIcon } from '@chakra-ui/icons';
+import { useNavigate } from 'react-router-dom';
 
 const features = [
   {
@@ -24,21 +25,6 @@ const features = [
       'Dedicated API endpoints and pre-built components for seamless integration with LangChain-based RAG pipelines.',
   },
   {
-    title: 'Service Account Management',
-    description:
-      'Create and manage service accounts with role-based access control and API key generation.',
-  },
-  {
-    title: 'Semantic Search and Synonym Support',
-    description:
-      'Retrieve relevant concepts using embeddings and manage synonyms for better search accuracy.',
-  },
-  {
-    title: 'User Roles and Permissions',
-    description:
-      'Role-based access control to manage user permissions and invite users with specific roles.',
-  },
-  {
     title: 'Analytics Dashboard',
     description:
       'View usage statistics, most searched concepts, and user engagement through a comprehensive dashboard.',
@@ -50,7 +36,9 @@ const features = [
   },
 ];
 
-const LandingPage = () => {
+const HomePage = () => {
+  const navigate = useNavigate();  // Navigation hook
+
   return (
     <Box>
       {/* Hero Section */}
@@ -75,11 +63,11 @@ const LandingPage = () => {
               align="center"
               justify="center"
             >
-              <Button colorScheme="teal" size="lg">
-                Get Started
+              <Button colorScheme="teal" size="lg" onClick={() => navigate('/signup')}>
+                Create an Account
               </Button>
-              <Button variant="outline" colorScheme="teal" size="lg">
-                Learn More
+              <Button variant="outline" colorScheme="teal" size="lg" onClick={() => navigate('/login')}>
+                Login
               </Button>
             </Stack>
           </Stack>
@@ -120,7 +108,7 @@ const LandingPage = () => {
             <Text fontSize={{ base: 'md', md: 'lg' }} color="gray.600" textAlign="center">
               Sign up now to start managing concepts, integrating with LangChain, and more!
             </Text>
-            <Button colorScheme="teal" size="lg">
+            <Button colorScheme="teal" size="lg" onClick={() => navigate('/signup')}>
               Get Started for Free
             </Button>
           </VStack>
@@ -130,4 +118,4 @@ const LandingPage = () => {
   );
 };
 
-export default LandingPage;
+export default HomePage;

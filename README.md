@@ -86,11 +86,7 @@ The MVP (Minimum Viable Product) of your SaaS aims to enhance RAG (Retrieval-Aug
 
 ## Dev
 
-Launch web app: `npm start`
-
-Launch api:
 ```
-poetry shell
-cd ..
-serverless offline
+docker-compose down -v
+docker-compose up --build
 ```

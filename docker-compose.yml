@@ -5,18 +5,23 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: poetry run uvicorn src.main:app --host 0.0.0.0 --port 8000
+    command: sh -c "./create_tables.sh && poetry run uvicorn src.main:app --host 0.0.0.0 --port 8000"
     volumes:
       - ./backend:/app
     environment:
-      - AWS_ACCESS_KEY_ID=local
-      - AWS_SECRET_ACCESS_KEY=local
-      - DYNAMO_ENDPOINT=http://local-dynamodb:8000
+      - POSTGRES_DB=db
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=adminpassword
+      - POSTGRES_HOST=postgres  # This resolves to the 'postgres' service below
+      - POSTGRES_PORT=5432
       - JWT_SECRET=${JWT_SECRET}
     ports:
       - "8000:8000"
     depends_on:
-      - local-dynamodb
+      - postgres
+    # Add network settings to ensure connection to postgres
+    networks:
+      - backend-network
 
   frontend:
     build:
@@ -30,13 +35,25 @@ services:
       - REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL}
     env_file:
       - .env
+    networks:
+      - backend-network
 
-  local-dynamodb:
-    image: amazon/dynamodb-local:latest
+  postgres:
+    image: pgvector/pgvector:0.7.4-pg16
+    environment:
+      POSTGRES_DB: db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpassword
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     ports:
-      - "8002:8000"
+      - "5432:5432"
     volumes:
-      - dynamodb_data:/home/dynamodblocal/data
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend-network
 
 volumes:
-  dynamodb_data:
+  postgres_data:
+
+networks:
+  backend-network:

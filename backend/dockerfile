@@ -1,8 +1,16 @@
-# Backend Dockerfile
+# Use the official Python image as a base
 FROM python:3.11-slim
 
-# Install Poetry
+# Install PostgreSQL client (for psycopg2 dependencies) and curl
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    postgresql-client \
+    gcc \
+    curl
+
+# Install Poetry and other dependencies
 RUN pip install poetry
+
 
 # Set working directory
 WORKDIR /app
@@ -10,13 +18,13 @@ WORKDIR /app
 # Copy only the required files for poetry setup first to cache dependencies
 COPY pyproject.toml poetry.lock ./
 
-# Install dependencies using poetry
+# Install dependencies using poetry, including production dependencies only
 RUN poetry install --no-dev
 
 # Copy the rest of the backend files
 COPY . .
 
-# Expose the port
+# Expose the application port
 EXPOSE 8000
 
 # Command to run FastAPI

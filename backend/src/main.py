@@ -1,14 +1,24 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
-from routers import users, domains, invitations
+from src.routers import users, domains, auth
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers (Authorization, etc.)
+)
 
 # Include Routers
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(domains.router, prefix="/domains", tags=["Domains"])
-app.include_router(invitations.router, prefix="/invitations", tags=["Invitations"])
+app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 
 
 @app.get("/")

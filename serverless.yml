@@ -3,24 +3,14 @@ service: metadocs
 provider:
   name: aws
   runtime: python3.11
-  region: eu-central-1
+  region: eu-west-3
   iamRoleStatements:
     - Effect: Allow
       Action:
-        - dynamodb:PutItem
-        - dynamodb:GetItem
-        - dynamodb:Query
-        - dynamodb:UpdateItem
-        - dynamodb:DeleteItem
-        - dynamodb:BatchGetItem
+        - rds-data:ExecuteStatement
+        - rds-data:BatchExecuteStatement
       Resource:
-        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-users
-        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-domains
-        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-domains/index/*
-        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-domain-memberships
-        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-domain-memberships/index/*
-        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-invitations
-        - arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.stage}-invitations/index/*
+        - arn:aws:rds:${self:provider.region}:*:db:${self:provider.stage}-postgres
 
 plugins:
   - serverless-python-requirements
@@ -59,10 +49,11 @@ functions:
     environment:
       JWT_SECRET: ${env:JWT_SECRET}
       BUCKET_NAME: ${self:custom.frontendBucketName}
-      USERS_TABLE: ${self:provider.stage}-users
-      DOMAINS_TABLE: ${self:provider.stage}-domains
-      DOMAIN_MEMBERSHIPS_TABLE: ${self:provider.stage}-domain-memberships
-      INVITATIONS_TABLE: ${self:provider.stage}-invitations
+      RDS_HOSTNAME: !GetAtt MyPostgresDB.Endpoint.Address
+      RDS_PORT: '5432'
+      RDS_USERNAME: admin
+      RDS_PASSWORD: ${env:RDS_PASSWORD}
+      RDS_DB_NAME: mydatabase
 
 resources:
   Resources:
@@ -131,85 +122,24 @@ resources:
                 StringEquals:
                   AWS:SourceArn: "arn:aws:cloudfront::${AWS::AccountId}:distribution/${self:custom.cloudFrontDistributionIds.${self:provider.stage}}"
 
-    # DynamoDB Tables
-    UsersTable:
-      Type: AWS::DynamoDB::Table
+    # RDS PostgreSQL Instance
+    Postgres:
+      Type: AWS::RDS::DBInstance
       Properties:
-        TableName: ${self:provider.stage}-users
-        AttributeDefinitions:
-          - AttributeName: UserId
-            AttributeType: S
-        KeySchema:
-          - AttributeName: UserId
-            KeyType: HASH
-        BillingMode: PAY_PER_REQUEST
-
-    DomainsTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:provider.stage}-domains
-        AttributeDefinitions:
-          - AttributeName: DomainId
-            AttributeType: S
-          - AttributeName: OwnerUserId
-            AttributeType: S
-        KeySchema:
-          - AttributeName: DomainId
-            KeyType: HASH
-        BillingMode: PAY_PER_REQUEST
-        GlobalSecondaryIndexes:
-          - IndexName: OwnerUserIdIndex
-            KeySchema:
-              - AttributeName: OwnerUserId
-                KeyType: HASH
-            Projection:
-              ProjectionType: ALL
-
-    DomainMembershipsTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:provider.stage}-domain-memberships
-        AttributeDefinitions:
-          - AttributeName: DomainId
-            AttributeType: S
-          - AttributeName: UserId
-            AttributeType: S
-        KeySchema:
-          - AttributeName: DomainId
-            KeyType: HASH
-          - AttributeName: UserId
-            KeyType: RANGE
-        BillingMode: PAY_PER_REQUEST
-        GlobalSecondaryIndexes:
-          - IndexName: UserIdIndex
-            KeySchema:
-              - AttributeName: UserId
-                KeyType: HASH
-              - AttributeName: DomainId
-                KeyType: RANGE
-            Projection:
-              ProjectionType: ALL
-
-    InvitationsTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:provider.stage}-invitations
-        AttributeDefinitions:
-          - AttributeName: InvitationId
-            AttributeType: S
-          - AttributeName: InviteeEmail
-            AttributeType: S
-        KeySchema:
-          - AttributeName: InvitationId
-            KeyType: HASH
-        BillingMode: PAY_PER_REQUEST
-        GlobalSecondaryIndexes:
-          - IndexName: InviteeEmailIndex
-            KeySchema:
-              - AttributeName: InviteeEmail
-                KeyType: HASH
-            Projection:
-              ProjectionType: ALL
+        DBInstanceIdentifier: Postgres
+        DBName: db
+        AllocatedStorage: "50"
+        DBInstanceClass: db.t4g.small
+        Engine: postgres
+        EngineVersion: "16.4"
+        MasterUsername: admin
+        MasterUserPassword: ${env:RDS_PASSWORD}
+        VPCSecurityGroups:
+          - sg-xxxxxxxx
+        PubliclyAccessible: false
+        BackupRetentionPeriod: 7
+        MultiAZ: false
+        StorageType: gp2
 
   Outputs:
     S3BucketFrontend:
@@ -217,22 +147,7 @@ resources:
       Export:
         Name: ${self:service}-${self:provider.stage}-frontend-bucket
 
-    UsersTableName:
-      Value: !Ref UsersTable
+    PostgresDBEndpoint:
+      Value: !GetAtt MyPostgresDB.Endpoint.Address
       Export:
-        Name: ${self:service}-${self:provider.stage}-users
-
-    DomainsTableName:
-      Value: !Ref DomainsTable
-      Export:
-        Name: ${self:service}-${self:provider.stage}-domains
-
-    DomainMembershipsTableName:
-      Value: !Ref DomainMembershipsTable
-      Export:
-        Name: ${self:service}-${self:provider.stage}-domain-memberships
-
-    InvitationsTableName:
-      Value: !Ref InvitationsTable
-      Export:
-        Name: ${self:service}-${self:provider.stage}-invitations
+        Name: ${self:service}-${self:provider.stage}-postgres-endpoint
