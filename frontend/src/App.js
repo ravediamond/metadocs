@@ -5,6 +5,8 @@ import HomePage from './pages/HomePage';
 import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
+import NewDomainPage from './pages/NewDomainPage';
+
 import { AuthProvider } from './context/AuthContext';
 
 const ProtectedRoute = ({ children }) => {
@@ -30,6 +32,14 @@ function App() {
           element={
             <ProtectedRoute>
               <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/new-domain"
+          element={
+            <ProtectedRoute>
+              <NewDomainPage />
             </ProtectedRoute>
           }
         />

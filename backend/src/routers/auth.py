@@ -3,20 +3,12 @@ from pydantic import BaseModel
 from src.auth.jwt import create_access_token
 from src.db.users import get_user_by_email, create_user
 from src.utils.security import verify_password, hash_password
+from src.models.schemas import UserCreate, UserLogin
 
 router = APIRouter()
 
 
 # Pydantic models for request data validation
-class UserLogin(BaseModel):
-    email: str
-    password: str
-
-
-class UserCreate(BaseModel):
-    email: str
-    password: str
-    name: str
 
 
 # Login route
@@ -24,12 +16,13 @@ class UserCreate(BaseModel):
 async def login(user_data: UserLogin):
     user = get_user_by_email(user_data.email)
 
-    if not user or not verify_password(user_data.password, user["HashedPassword"]):
+    # Updated to access attributes using dot notation
+    if not user or not verify_password(user_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # Create JWT token
+    # Create JWT token using dot notation
     access_token = create_access_token(
-        data={"sub": user["UserId"], "email": user["Email"], "name": user["Name"]}
+        data={"sub": user.user_id, "email": user.email, "name": user.name}
     )
 
     return {"access_token": access_token, "token_type": "bearer"}
