@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
 import NewDomainPage from './pages/NewDomainPage';
+import DomainPage from './pages/DomainPage';
 
 import { AuthProvider } from './context/AuthContext';
 
@@ -40,6 +41,14 @@ function App() {
           element={
             <ProtectedRoute>
               <NewDomainPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/domain/:domain_id"
+          element={
+            <ProtectedRoute>
+              <DomainPage />
             </ProtectedRoute>
           }
         />

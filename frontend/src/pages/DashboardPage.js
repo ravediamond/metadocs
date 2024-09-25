@@ -45,15 +45,15 @@ const DashboardPage = () => {
       <Box bg="white" shadow="md" py={8} mb={8}>
         <Container maxW="container.lg">
           <Flex justify="space-between" alignItems="center">
-            <Stack spacing={3}>
-              <Heading fontSize={{ base: '2xl', md: '4xl' }}>
-                Welcome to the Dashboard, {user?.name}
+            <Stack spacing={3} alignItems="flex-start">
+              <Heading fontSize={{ base: '2xl', md: '4xl' }} color="blue.800">
+                Welcome, {user?.name}
               </Heading>
               <Text fontSize={{ base: 'lg', md: 'xl' }} color="gray.600">
-                Manage your data efficiently and view detailed information for each domain.
+                Manage your data efficiently and explore your domains.
               </Text>
             </Stack>
-            {/* Move button to top-left */}
+            {/* Add Button to the top-left */}
             <Button
               colorScheme="blue"
               size="md"
@@ -68,18 +68,22 @@ const DashboardPage = () => {
       {/* Domains Section */}
       <Container maxW="container.lg">
         <Stack spacing={12} textAlign="center">
-          <Heading as="h2" size="lg" mb={4}>
+          <Heading as="h2" size="lg" color="blue.700" mb={4}>
             Your Domains
           </Heading>
 
           {domains.length > 0 ? (
             <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={8}>
               {domains.map((domain) => (
-                <DomainCard key={domain.domain_id} domain={domain} />
+                <DomainCard
+                  key={domain.domain_id}
+                  domain={domain}
+                  onClick={() => navigate(`/domain/${domain.domain_id}`)} // Navigate to Domain Page
+                />
               ))}
             </SimpleGrid>
           ) : (
-            <Text>No domains found.</Text>
+            <Text color="gray.600">No domains found. Please add a new domain.</Text>
           )}
         </Stack>
       </Container>
@@ -88,7 +92,7 @@ const DashboardPage = () => {
 };
 
 // DomainCard component for displaying each domain
-const DomainCard = ({ domain }) => (
+const DomainCard = ({ domain, onClick }) => (
   <Box
     p={6}
     border="1px"
@@ -96,9 +100,13 @@ const DomainCard = ({ domain }) => (
     borderRadius="md"
     bg="white"
     shadow="sm"
+    transition="all 0.2s"
+    _hover={{ transform: 'scale(1.02)', boxShadow: 'lg' }}
     textAlign="left"
+    onClick={onClick} // Attach onClick handler
+    cursor="pointer"
   >
-    <Heading as="h3" size="md" mb={2}>
+    <Heading as="h3" size="md" mb={2} color="blue.600">
       {domain.domain_name}
     </Heading>
     <Text fontSize="sm" color="gray.600" mb={4}>
@@ -118,6 +126,7 @@ DomainCard.propTypes = {
     description: PropTypes.string,
     created_at: PropTypes.string.isRequired,
   }).isRequired,
+  onClick: PropTypes.func.isRequired, // Add onClick prop
 };
 
 export default DashboardPage;
