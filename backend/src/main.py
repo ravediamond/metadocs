@@ -2,7 +2,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
-from src.routers import users, domains, auth
+from src.routers import (
+    auth,
+    domains,
+    users,
+    concepts,
+    sources,
+    methodologies,
+    user_settings,
+    user_domain_settings,
+)
 
 app = FastAPI()
 
@@ -19,6 +28,19 @@ app.add_middleware(
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(domains.router, prefix="/domains", tags=["Domains"])
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
+app.include_router(concepts.router, prefix="/concepts", tags=["concepts"])
+app.include_router(sources.router, prefix="/sources", tags=["sources"])
+app.include_router(
+    methodologies.router, prefix="/methodologies", tags=["methodologies"]
+)
+app.include_router(
+    user_settings.router, prefix="/user-settings", tags=["user-settings"]
+)
+app.include_router(
+    user_domain_settings.router,
+    prefix="/user-domain-settings",
+    tags=["user-domain-settings"],
+)
 
 
 @app.get("/")

@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi import Request
 from typing import List
 from src.auth.jwt import get_current_user
 from src.models.schemas import DomainCreate, Domain
