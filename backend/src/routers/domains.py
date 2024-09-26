@@ -4,13 +4,14 @@ from uuid import UUID
 from typing import List
 from ..core.database import get_db
 from ..core.security import get_current_user
-from ..models.models import Domain, User
+from ..models.models import Domain, User, DomainConfig
 from ..models.schemas import (
     Domain as DomainSchema,
     Concept as ConceptSchema,
     Source as SourceSchema,
     Methodology as MethodologySchema,
     Relationship as RelationshipSchema,
+    DomainConfig as DomainConfigSchema,
 )
 
 router = APIRouter()
@@ -155,3 +156,72 @@ def get_relationships_for_domain(
         )
 
     return domain.relationships
+
+
+# New: Get domain configuration
+@router.get("/{domain_id}/config", response_model=List[DomainConfigSchema])
+def get_domain_config(
+    domain_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    domain = (
+        db.query(Domain)
+        .filter(
+            Domain.domain_id == domain_id, Domain.owner_user_id == current_user.user_id
+        )
+        .first()
+    )
+
+    if not domain:
+        raise HTTPException(
+            status_code=403, detail="Access to this domain is forbidden"
+        )
+
+    config = db.query(DomainConfig).filter(DomainConfig.domain_id == domain_id).all()
+
+    if not config:
+        raise HTTPException(
+            status_code=404, detail="No configuration found for this domain"
+        )
+
+    return config
+
+
+# New: Update domain configuration
+@router.put("/{domain_id}/config", response_model=DomainConfigSchema)
+def update_domain_config(
+    domain_id: UUID,
+    config_key: str,
+    config_value: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    domain = (
+        db.query(Domain)
+        .filter(
+            Domain.domain_id == domain_id, Domain.owner_user_id == current_user.user_id
+        )
+        .first()
+    )
+
+    if not domain:
+        raise HTTPException(
+            status_code=403, detail="Access to this domain is forbidden"
+        )
+
+    domain_config = (
+        db.query(DomainConfig)
+        .filter(
+            DomainConfig.domain_id == domain_id, DomainConfig.config_key == config_key
+        )
+        .first()
+    )
+
+    if not domain_config:
+        raise HTTPException(status_code=404, detail="Configuration not found")
+
+    domain_config.config_value = config_value
+    db.commit()
+    db.refresh(domain_config)
+    return domain_config

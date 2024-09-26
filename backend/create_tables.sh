@@ -90,6 +90,24 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
+  -- Create User Config table
+  CREATE TABLE IF NOT EXISTS user_config (
+    config_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    config_key VARCHAR(255) NOT NULL,
+    config_value TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  -- Create Domain Config table
+  CREATE TABLE IF NOT EXISTS domain_config (
+    config_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
+    config_key VARCHAR(255) NOT NULL,
+    config_value TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
   -- Indexes
   CREATE INDEX IF NOT EXISTS email_index ON users (email);
   CREATE INDEX IF NOT EXISTS owner_user_id_index ON domains (owner_user_id);
@@ -176,6 +194,22 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       'methodology',
       'provides', CURRENT_TIMESTAMP,
       'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1');
+
+  -- Insert initial data into User Config
+  INSERT INTO user_config (config_id, user_id, config_key, config_value)
+  VALUES
+    (gen_random_uuid(), 'b11f11d1-1c1c-41f1-bf2d-4bfbf1c1d1d1', 'theme', 'dark'),
+    (gen_random_uuid(), 'b11f11d1-1c1c-41f1-bf2d-4bfbf1c1d1d1', 'notifications', 'enabled'),
+    (gen_random_uuid(), 'b22f22d2-2c2c-42f2-bf3d-4cfcf2c2e2e2', 'theme', 'light'),
+    (gen_random_uuid(), 'b22f22d2-2c2c-42f2-bf3d-4cfcf2c2e2e2', 'notifications', 'disabled');
+
+  -- Insert initial data into Domain Config
+  INSERT INTO domain_config (config_id, domain_id, config_key, config_value)
+  VALUES
+    (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'default_currency', 'USD'),
+    (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'reporting_frequency', 'monthly'),
+    (gen_random_uuid(), 'd22d22d2-2a2a-42a2-bf2a-4cfcf2b2d2d2', 'default_currency', 'EUR'),
+    (gen_random_uuid(), 'd22d22d2-2a2a-42a2-bf2a-4cfcf2b2d2d2', 'reporting_frequency', 'weekly');
 EOSQL
 
 echo "Data inserted successfully."

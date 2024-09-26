@@ -24,8 +24,13 @@ class User(Base):
     name = Column(String(255), nullable=False)
     created_at = Column(TIMESTAMP, default=func.now())
 
-    # Relationship to domains (if needed)
+    # Relationship to domains
     domains = relationship("Domain", back_populates="owner")
+
+    # Add the relationship to UserConfig
+    configurations = relationship(
+        "UserConfig", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 # Domain Model
@@ -54,6 +59,11 @@ class Domain(Base):
     )
     relationships = relationship(
         "Relationship", back_populates="domain", cascade="all, delete-orphan"
+    )
+
+    # Add the relationship to DomainConfig
+    configurations = relationship(
+        "DomainConfig", back_populates="domain", cascade="all, delete-orphan"
     )
 
     # Relationship to user
@@ -147,3 +157,39 @@ class Relationship(Base):
     # Relationship with Domain
     domain_id = Column(UUIDType(as_uuid=True), ForeignKey("domains.domain_id"))
     domain = relationship("Domain", back_populates="relationships")
+
+
+# DomainConfig Model
+class DomainConfig(Base):
+    __tablename__ = "domain_config"
+
+    config_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
+    )
+    domain_id = Column(
+        UUIDType(as_uuid=True), ForeignKey("domains.domain_id"), nullable=False
+    )
+    config_key = Column(String(255), nullable=False)
+    config_value = Column(Text, nullable=False)
+    created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationship with Domain
+    domain = relationship("Domain", back_populates="configurations")
+
+
+# UserConfig Model
+class UserConfig(Base):
+    __tablename__ = "user_config"
+
+    config_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
+    )
+    user_id = Column(
+        UUIDType(as_uuid=True), ForeignKey("users.user_id"), nullable=False
+    )
+    config_key = Column(String(255), nullable=False)
+    config_value = Column(Text, nullable=False)
+    created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationship with User
+    user = relationship("User", back_populates="configurations")
