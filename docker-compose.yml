@@ -14,7 +14,7 @@ services:
       - POSTGRES_PASSWORD=adminpassword
       - POSTGRES_HOST=postgres  # This resolves to the 'postgres' service below
       - POSTGRES_PORT=5432
-      - JWT_SECRET=${JWT_SECRET}
+      - SECRET_KEY=${SECRET_KEY}
     ports:
       - "8000:8000"
     depends_on:
