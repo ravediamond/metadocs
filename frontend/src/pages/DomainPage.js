@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { ReactFlow, addEdge, useNodesState, useEdgesState } from '@xyflow/react';
 import dagre from 'dagre';  // Import dagre for auto layout
 import '@xyflow/react/dist/style.css';
-import { Box, Heading, Container, Text, Flex, Badge } from '@chakra-ui/react';
+import { Box, Heading, Container, Text, Flex, Badge, Button, Link } from '@chakra-ui/react';
 import AuthContext from '../context/AuthContext'; // Correct path for AuthContext
 
 const nodeWidth = 200;
@@ -52,6 +52,7 @@ const DomainPage = () => {
   const [sources, setSources] = useState([]);  // State for sources
   const [selectedNode, setSelectedNode] = useState(null);  // State for selected node
   const { token } = useContext(AuthContext);  // Get the token from AuthContext
+  const navigate = useNavigate();
 
   // Use useNodesState and useEdgesState from @xyflow/react for controlled flow
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -273,6 +274,16 @@ const DomainPage = () => {
               <Text>Select a node to see details</Text>
             )}
           </Box>
+        </Flex>
+
+        <Flex justify="center" mt={6}>
+          <Button 
+            colorScheme="blue" 
+            size="lg" 
+            onClick={() => navigate(`/domains/${domain_id}/config`)}  // Navigate to domain config page
+          >
+            View Domain Config
+          </Button>
         </Flex>
 
         {/* Color Legend */}

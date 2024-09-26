@@ -7,6 +7,8 @@ import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
 import NewDomainPage from './pages/NewDomainPage';
 import DomainPage from './pages/DomainPage';
+import DomainConfigPage from './pages/DomainConfigPage';  // Import DomainConfigPage
+import UserConfigPage from './pages/UserConfigPage';  // Import UserConfigPage
 
 import { AuthProvider } from './context/AuthContext';
 
@@ -49,6 +51,24 @@ function App() {
           element={
             <ProtectedRoute>
               <DomainPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Add Domain Config Page Route */}
+        <Route
+          path="/domains/:domain_id/config"
+          element={
+            <ProtectedRoute>
+              <DomainConfigPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Add User Config Page Route */}
+        <Route
+          path="/user/config"
+          element={
+            <ProtectedRoute>
+              <UserConfigPage />
             </ProtectedRoute>
           }
         />

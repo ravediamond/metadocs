@@ -61,6 +61,13 @@ const DashboardPage = () => {
             >
               Add New Domain
             </Button>
+            <Button
+                colorScheme="green"
+                size="md"
+                onClick={() => navigate('/user/config')}
+              >
+                User Settings
+              </Button>
           </Flex>
         </Container>
       </Box>

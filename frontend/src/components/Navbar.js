@@ -7,20 +7,29 @@ const Navbar = () => {
   const { token, handleLogout } = useContext(AuthContext);
 
   return (
-    <Box p={4} bg="teal.500" color="white" display="flex" justifyContent="space-between">
-      <Box>My App</Box>
+    <Box p={4} bg="#2979FF" color="white" display="flex" justifyContent="space-between">
+      {/* Link to the homepage */}
+      <Box fontWeight="bold">
+        <Link to="/dashboard" style={{ textDecoration: 'none', color: 'white' }}>Metadocs</Link>
+      </Box>
       <Box>
         {token ? (
           <>
-            <Button onClick={handleLogout} colorScheme="teal" mr={4}>
+            {/* Logout Button */}
+            <Button onClick={handleLogout} bg="white" color="#2979FF" mr={4} _hover={{ bg: "#F1F1F1" }}>
               Logout
             </Button>
-            <Link to="/dashboard">Dashboard</Link>
           </>
         ) : (
           <>
-            <Link to="/login" style={{ marginRight: '10px' }}>Login</Link>
-            <Link to="/signup">Sign Up</Link>
+            {/* Login Link as Button */}
+            <Button as={Link} to="/login" bg="white" color="#2979FF" mr={4} _hover={{ bg: "#F1F1F1" }}>
+              Login
+            </Button>
+            {/* Sign Up Link as Button */}
+            <Button as={Link} to="/signup" bg="white" color="#2979FF" _hover={{ bg: "#F1F1F1" }}>
+              Sign Up
+            </Button>
           </>
         )}
       </Box>
