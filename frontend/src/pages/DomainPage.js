@@ -1,15 +1,56 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { useParams } from 'react-router-dom';
 import { ReactFlow, addEdge, useNodesState, useEdgesState } from '@xyflow/react';
+import dagre from 'dagre';  // Import dagre for auto layout
 import '@xyflow/react/dist/style.css';
-import { Box, Heading, Container, Text } from '@chakra-ui/react';
+import { Box, Heading, Container, Text, Flex, Badge } from '@chakra-ui/react';
 import AuthContext from '../context/AuthContext'; // Correct path for AuthContext
+
+const nodeWidth = 200;
+const nodeHeight = 100;
+
+// Define the layout function with improved settings
+const getLayoutedNodes = (nodes, edges) => {
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
+
+  // Configure the layout: Top-to-Bottom (TB), with increased separation between ranks and nodes
+  dagreGraph.setGraph({
+    rankdir: 'TB',  // Top-to-Bottom layout
+    ranksep: 150,   // Increase vertical spacing between ranks
+    nodesep: 100,   // Increase horizontal spacing between nodes
+  });
+
+  // Add nodes to dagre graph
+  nodes.forEach((node) => {
+    dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
+  });
+
+  // Add edges to dagre graph
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+
+  // Perform layout calculation
+  dagre.layout(dagreGraph);
+
+  // Update node positions based on layout
+  return nodes.map((node) => {
+    const nodeWithPosition = dagreGraph.node(node.id);
+    node.position = {
+      x: nodeWithPosition.x - nodeWidth / 2,
+      y: nodeWithPosition.y - nodeHeight / 2,
+    };
+    return node;
+  });
+};
 
 const DomainPage = () => {
   const { domain_id } = useParams();  // Get the domain ID from the URL
   const [concepts, setConcepts] = useState([]);
   const [methodologies, setMethodologies] = useState([]);  // State for methodologies
   const [sources, setSources] = useState([]);  // State for sources
+  const [selectedNode, setSelectedNode] = useState(null);  // State for selected node
   const { token } = useContext(AuthContext);  // Get the token from AuthContext
 
   // Use useNodesState and useEdgesState from @xyflow/react for controlled flow
@@ -27,97 +68,78 @@ const DomainPage = () => {
     };
 
     // Generate concept nodes
-    const conceptNodes = concepts.map((concept, index) => ({
+    const conceptNodes = concepts.map((concept) => ({
       id: concept.concept_id,
-      data: { label: concept.name },
-      position: {
-        x: (index % 4) * 200, // Grid layout
-        y: Math.floor(index / 4) * 200,
-      },
+      data: { label: concept.name, type: 'concept', description: concept.description },
       style: {
         background: typeColors[concept.type] || typeColors.other,
         borderRadius: '8px',
         padding: '10px',
         border: '2px solid #000',
       },
+      width: nodeWidth,
+      height: nodeHeight,
     }));
 
     // Generate methodology nodes
-    const methodologyNodes = methodologies.map((methodology, index) => ({
+    const methodologyNodes = methodologies.map((methodology) => ({
       id: methodology.methodology_id,
-      data: { label: methodology.name },
-      position: {
-        x: (index % 4) * 200 + 800, // Position them further right
-        y: Math.floor(index / 4) * 200,
-      },
+      data: { label: methodology.name, type: 'methodology', description: methodology.description },
       style: {
         background: typeColors.methodology,
         borderRadius: '8px',
         padding: '10px',
         border: '2px solid #000',
       },
+      width: nodeWidth,
+      height: nodeHeight,
     }));
 
     // Generate source nodes
-    const sourceNodes = sources.map((source, index) => ({
+    const sourceNodes = sources.map((source) => ({
       id: source.source_id,
-      data: { label: source.name },
-      position: {
-        x: (index % 4) * 200 + 1200, // Position them further right
-        y: Math.floor(index / 4) * 200,
-      },
+      data: { label: source.name, type: 'source', description: source.description },
       style: {
         background: typeColors.source,
         borderRadius: '8px',
         padding: '10px',
         border: '2px solid #000',
       },
+      width: nodeWidth,
+      height: nodeHeight,
     }));
 
     // Combine all nodes into one array
     const allNodes = [...conceptNodes, ...methodologyNodes, ...sourceNodes];
 
-    // Create a map of node IDs for easy lookup
-    const nodeIds = new Set(allNodes.map(node => node.id));
-
     // Generate edges from relationships, mapping entity_id_1 and entity_id_2 to source and target
     const relationshipEdges = relationships
       .map((rel) => {
-        // Determine the source and target based on entity_id_1 and entity_id_2
         const source = rel.entity_id_1;
         const target = rel.entity_id_2;
 
-        // Log the source and target values for debugging
-        console.log(`Processing relationship: source = ${source}, target = ${target}, entity_type_1 = ${rel.entity_type_1}, entity_type_2 = ${rel.entity_type_2}`);
-
-        // Warn if the source or target doesn't exist
-        if (!nodeIds.has(source)) {
-          console.warn(`Warning: source ID ${source} not found in nodes`);
-        }
-        if (!nodeIds.has(target)) {
-          console.warn(`Warning: target ID ${target} not found in nodes`);
-        }
-
-        // Only return edge if both source and target exist
-        if (nodeIds.has(source) && nodeIds.has(target)) {
+        if (allNodes.some(node => node.id === source) && allNodes.some(node => node.id === target)) {
           return {
             id: `e${source}-${target}`,
-            source: source,
-            target: target,
+            source,
+            target,
             animated: true,
             style: { stroke: '#4682B4', strokeWidth: 2 },
           };
         }
-        return null;  // If invalid, return null to filter it out later
+        return null;
       })
-      .filter(edge => edge !== null);  // Filter out any null edges
+      .filter(edge => edge !== null);
+
+    // Use Dagre to optimize the layout
+    const layoutedNodes = getLayoutedNodes(allNodes, relationshipEdges);
 
     // Log the final nodes and edges for further debugging
-    console.log('Generated Nodes:', allNodes);
+    console.log('Generated Nodes:', layoutedNodes);
     console.log('Generated Edges:', relationshipEdges);
 
     // Set nodes and edges in state
-    setNodes(allNodes);
+    setNodes(layoutedNodes);
     setEdges(relationshipEdges);
   };
 
@@ -207,6 +229,11 @@ const DomainPage = () => {
   // Handle new connections (adding edges)
   const onConnect = (params) => setEdges((eds) => addEdge(params, eds));
 
+  // Handle node click to display info on the right
+  const onNodeClick = (_, node) => {
+    setSelectedNode(node);
+  };
+
   return (
     <Box bg="gray.100" minH="100vh" py={10}>
       <Container maxW="container.lg">
@@ -214,20 +241,49 @@ const DomainPage = () => {
           Concepts, Methodologies, and Sources for Domain
         </Heading>
 
-        {concepts.length > 0 || methodologies.length > 0 || sources.length > 0 ? (
-          <Box height="500px" bg="white" borderRadius="md" boxShadow="md">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              fitView  // Ensures all nodes fit within the view
-            />
+        <Flex justify="space-between">
+          {/* Flow View */}
+          <Box width="70%">
+            {concepts.length > 0 || methodologies.length > 0 || sources.length > 0 ? (
+              <Box height="500px" bg="white" borderRadius="md" boxShadow="md">
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onNodeClick={onNodeClick}
+                  fitView  // Ensures all nodes fit within the view
+                />
+              </Box>
+            ) : (
+              <Text>No data found for this domain.</Text>
+            )}
           </Box>
-        ) : (
-          <Text>No data found for this domain.</Text>
-        )}
+
+          {/* Information Panel */}
+          <Box width="25%" p={4} bg="white" borderRadius="md" boxShadow="md">
+            {selectedNode ? (
+              <>
+                <Heading size="md">{selectedNode.data.label}</Heading>
+                <Text mt={2}><b>Type:</b> {selectedNode.data.type}</Text>
+                <Text mt={2}><b>Description:</b> {selectedNode.data.description || 'No description available'}</Text>
+              </>
+            ) : (
+              <Text>Select a node to see details</Text>
+            )}
+          </Box>
+        </Flex>
+
+        {/* Color Legend */}
+        <Box mt={6} p={4} bg="white" borderRadius="md" boxShadow="md">
+          <Heading size="sm">Color Legend</Heading>
+          <Flex mt={2}>
+            <Badge bg="#FFB6C1" color="white" mr={2}>Concept</Badge>
+            <Badge bg="#90EE90" color="white" mr={2}>Methodology</Badge>
+            <Badge bg="#FFD700" color="white" mr={2}>Source</Badge>
+          </Flex>
+        </Box>
       </Container>
     </Box>
   );
