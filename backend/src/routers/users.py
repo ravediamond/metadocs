@@ -2,10 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import List
+from sqlalchemy.sql import func
+
 from ..core.database import get_db
 from ..core.security import get_current_user
-from ..models.models import Domain, User, UserConfig
-from ..models.schemas import Domain as DomainSchema, UserResponse, UserConfigSchema
+from ..models.models import Domain, User, UserConfig, APIKey
+from ..models.schemas import (
+    Domain as DomainSchema,
+    UserResponse,
+    UserConfigSchema,
+    APIKeyResponse,
+    APIKeyCreateResponse,
+)
 
 router = APIRouter()
 
@@ -52,3 +60,43 @@ def update_user_config(
     db.commit()
     db.refresh(user_config)
     return user_config
+
+
+@router.get("/me/api-keys", response_model=list[APIKeyResponse])
+def get_api_keys(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    api_keys = db.query(APIKey).filter(APIKey.user_id == current_user.user_id).all()
+    return api_keys
+
+
+# Create a new API key for the current user
+@router.post("/me/api-keys", response_model=APIKeyCreateResponse)
+def create_api_key(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    api_key = APIKey(user_id=current_user.user_id)
+    db.add(api_key)
+    db.commit()
+    db.refresh(api_key)
+    return {"api_key": api_key.api_key}  # Return the raw API key
+
+
+# Revoke an existing API key
+@router.delete("/me/api-keys/{api_key_id}")
+def revoke_api_key(
+    api_key_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    api_key = (
+        db.query(APIKey)
+        .filter(APIKey.api_key_id == api_key_id, APIKey.user_id == current_user.user_id)
+        .first()
+    )
+    if not api_key:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+    api_key.revoked = func.now()  # Set the revocation timestamp
+    db.commit()
+    return {"message": "API key revoked"}

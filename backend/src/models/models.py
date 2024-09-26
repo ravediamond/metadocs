@@ -1,9 +1,16 @@
+import uuid
+import secrets
 from sqlalchemy import Column, String, ForeignKey, Text, TIMESTAMP, func
 from sqlalchemy.dialects.postgresql import UUID as UUIDType
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
+
 from .custom_types import Vector  # Import the custom Vector type
-import uuid
+
+
+def generate_api_key():
+    return secrets.token_hex(32)
+
 
 # Define the declarative base
 Base = declarative_base()
@@ -31,6 +38,26 @@ class User(Base):
     configurations = relationship(
         "UserConfig", back_populates="user", cascade="all, delete-orphan"
     )
+
+    # Relationship to API keys
+    api_keys = relationship(
+        "APIKey", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class APIKey(Base):
+    __tablename__ = "api_keys"
+
+    api_key_id = Column(UUIDType(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    api_key = Column(String(64), unique=True, nullable=False, default=generate_api_key)
+    user_id = Column(
+        UUIDType(as_uuid=True), ForeignKey("users.user_id"), nullable=False
+    )
+    created_at = Column(TIMESTAMP, default=func.now())
+    revoked = Column(TIMESTAMP, nullable=True)
+
+    # Relationship with User
+    user = relationship("User", back_populates="api_keys")
 
 
 # Domain Model

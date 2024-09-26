@@ -113,3 +113,21 @@ class UserConfigSchema(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+# Schema for displaying API Key in the response
+class APIKeyResponse(BaseModel):
+    api_key_id: UUID
+    created_at: datetime
+    revoked: datetime | None = None
+
+    class Config:
+        orm_mode = True  # This allows compatibility with SQLAlchemy models
+
+
+# Schema for creating an API Key (response)
+class APIKeyCreateResponse(BaseModel):
+    api_key: str
+
+    class Config:
+        orm_mode = True

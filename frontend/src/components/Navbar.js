@@ -19,10 +19,6 @@ const Navbar = () => {
             <Button onClick={handleLogout} bg="white" color="#2979FF" mr={4} _hover={{ bg: "#F1F1F1" }}>
               Logout
             </Button>
-            {/* Dashboard Link as Button */}
-            <Button as={Link} to="/dashboard" bg="white" color="#2979FF" _hover={{ bg: "#F1F1F1" }}>
-              Dashboard
-            </Button>
           </>
         ) : (
           <>

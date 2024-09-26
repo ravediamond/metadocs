@@ -111,6 +111,15 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   -- Indexes
   CREATE INDEX IF NOT EXISTS email_index ON users (email);
   CREATE INDEX IF NOT EXISTS owner_user_id_index ON domains (owner_user_id);
+
+  -- Create API Keys table
+  CREATE TABLE IF NOT EXISTS api_keys (
+      api_key_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      api_key VARCHAR(64) UNIQUE NOT NULL,
+      user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      revoked TIMESTAMP
+  );
 EOSQL
 
 echo "Tables created successfully."
