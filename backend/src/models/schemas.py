@@ -15,8 +15,13 @@ class UserCreate(BaseModel):
     name: str
 
 
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
 class UserResponse(BaseModel):
-    user_id: str
+    user_id: UUID
     email: str
     name: str
     created_at: datetime
@@ -27,14 +32,6 @@ class DomainCreate(BaseModel):
     description: Optional[str] = None
 
 
-class User(BaseModel):
-    user_id: str
-    email: str
-    hashed_password: str
-    name: str
-    created_at: datetime
-
-
 class Domain(BaseModel):
     domain_id: UUID
     domain_name: str
@@ -43,13 +40,12 @@ class Domain(BaseModel):
     created_at: datetime
 
 
-# New Models for Concepts, Sources, Methodologies, and Settings
 class Concept(BaseModel):
     concept_id: UUID
     domain_id: UUID
     name: str
     description: Optional[str]
-    type: str  # 'definition', 'process', 'methodology', etc.
+    type: str
     created_at: datetime
     updated_at: datetime
 
@@ -58,7 +54,7 @@ class Source(BaseModel):
     source_id: UUID
     domain_id: UUID
     name: str
-    source_type: str  # 'table', 'database', 'api'
+    source_type: str
     location: str
     description: Optional[str]
     created_at: datetime
@@ -69,22 +65,15 @@ class Methodology(BaseModel):
     domain_id: UUID
     name: str
     description: str
-    steps: str  # Detailed steps on how to join sources or get data
+    steps: str
     created_at: datetime
 
 
-class UserSettings(BaseModel):
-    user_id: UUID
-    setting_key: str
-    setting_value: str
-    created_at: datetime
-    updated_at: datetime
-
-
-class UserDomainSettings(BaseModel):
-    user_id: UUID
-    domain_id: UUID
-    setting_key: str
-    setting_value: str
-    created_at: datetime
-    updated_at: datetime
+class Relationship(BaseModel):
+    relationship_id: UUID
+    entity_id_1: UUID
+    entity_type_1: str
+    entity_id_2: UUID
+    entity_type_2: str
+    relationship_type: str
+    created_at: Optional[datetime] = None

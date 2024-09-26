@@ -22,14 +22,14 @@ done
 
 echo "PostgreSQL is ready. Creating tables..."
 
-# Create tables
+# Create tables and enable extensions
 psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   -- Enable the pgvector extension for vector-based similarity search
   CREATE EXTENSION IF NOT EXISTS vector;
 
   -- Create Users table
   CREATE TABLE IF NOT EXISTS users (
-    user_id UUID PRIMARY KEY,
+    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
     hashed_password TEXT NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -38,16 +38,16 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
 
   -- Create Domains table
   CREATE TABLE IF NOT EXISTS domains (
-    domain_id UUID PRIMARY KEY,
+    domain_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_name VARCHAR(255) NOT NULL,
-    owner_user_id UUID REFERENCES users(user_id),
+    owner_user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
   -- Create Concepts table
   CREATE TABLE IF NOT EXISTS concepts (
-    concept_id UUID PRIMARY KEY,
+    concept_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     description TEXT,
@@ -56,15 +56,6 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
-
-  -- Create Concept Relationships table
-  CREATE TABLE IF NOT EXISTS concept_relationships (
-    relationship_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    concept_id_1 UUID REFERENCES concepts(concept_id) ON DELETE CASCADE,
-    concept_id_2 UUID REFERENCES concepts(concept_id) ON DELETE CASCADE,
-    relationship_type VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
   -- Create Sources table
   CREATE TABLE IF NOT EXISTS sources (
@@ -87,33 +78,21 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- Create User Settings table
-  CREATE TABLE IF NOT EXISTS user_settings (
-    id SERIAL PRIMARY KEY,
-    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
-    setting_key VARCHAR(100) NOT NULL,
-    setting_value TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, setting_key)
-  );
-
-  -- Create User Domain Settings table
-  CREATE TABLE IF NOT EXISTS user_domain_settings (
-    id SERIAL PRIMARY KEY,
-    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
-    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
-    setting_key VARCHAR(100) NOT NULL,
-    setting_value TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, domain_id, setting_key)
+  -- Create Relationships table with domain_id column
+  CREATE TABLE IF NOT EXISTS relationships (
+    relationship_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,  -- Link to domains
+    entity_id_1 UUID NOT NULL,  -- This will point to either a concept, methodology, or source
+    entity_type_1 VARCHAR(50) NOT NULL,  -- 'concept', 'methodology', 'source'
+    entity_id_2 UUID NOT NULL,  -- This will point to either a concept, methodology, or source
+    entity_type_2 VARCHAR(50) NOT NULL,  -- 'concept', 'methodology', 'source'
+    relationship_type VARCHAR(50),  -- e.g. 'related_to', 'part_of', 'depends_on'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
   -- Indexes
   CREATE INDEX IF NOT EXISTS email_index ON users (email);
   CREATE INDEX IF NOT EXISTS owner_user_id_index ON domains (owner_user_id);
-
 EOSQL
 
 echo "Tables created successfully."
@@ -129,7 +108,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
     ('b22f22d2-2c2c-42f2-bf3d-4cfcf2c2e2e2', 'user2@example.com', '$2b$12$RaerUrFIbqkUomI.4YWnROJ419pK2h8Fbs/4bIBlaviSzKoXwutJK', 'User Two');
 EOSQL
 
-# Insert initial data for domains
+# Insert initial data for domains, concepts, sources, methodologies, and relationships
 psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   -- Insert data into Domains table
   INSERT INTO domains (domain_id, domain_name, owner_user_id, description, created_at)
@@ -141,37 +120,62 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   INSERT INTO concepts (concept_id, domain_id, name, description, type, embedding, created_at, updated_at)
   VALUES
       (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Total Sales', 'Total sales for a specific period', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Monthly Sales', 'Sales data for each month', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Sales Target', 'Targeted sales figure for the month', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Quarterly Sales', 'Sales grouped by quarter', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Yearly Sales', 'Sales grouped by year', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Sales Revenue', 'Total revenue generated from sales', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Sales Forecast', 'Projected sales for the upcoming period', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-
-  -- Insert relationships between concepts
-  INSERT INTO concept_relationships (concept_id_1, concept_id_2, relationship_type, created_at)
-  VALUES
-      ((SELECT concept_id FROM concepts WHERE name = 'Monthly Sales'), (SELECT concept_id FROM concepts WHERE name = 'Quarterly Sales'), 'part_of', CURRENT_TIMESTAMP),
-      ((SELECT concept_id FROM concepts WHERE name = 'Quarterly Sales'), (SELECT concept_id FROM concepts WHERE name = 'Yearly Sales'), 'part_of', CURRENT_TIMESTAMP),
-      ((SELECT concept_id FROM concepts WHERE name = 'Sales Revenue'), (SELECT concept_id FROM concepts WHERE name = 'Monthly Sales'), 'related_to', CURRENT_TIMESTAMP),
-      ((SELECT concept_id FROM concepts WHERE name = 'Sales Forecast'), (SELECT concept_id FROM concepts WHERE name = 'Sales Revenue'), 'depends_on', CURRENT_TIMESTAMP);
+      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Monthly Sales', 'Sales data for each month', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
   -- Insert sources for the Sales domain
   INSERT INTO sources (source_id, domain_id, name, source_type, location, description, created_at)
   VALUES
       (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Sales Data Table', 'table', 'db.sales_data', 'Table containing raw sales data', CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Customer Data API', 'api', 'https://api.company.com/customers', 'API endpoint for customer information', CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Product Information Table', 'table', 'db.products', 'Table containing product information', CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Sales Targets Table', 'table', 'db.sales_targets', 'Table with monthly sales targets', CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Sales Forecast API', 'api', 'https://api.company.com/forecast', 'API endpoint providing sales forecast data', CURRENT_TIMESTAMP);
+      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Customer Data API', 'api', 'https://api.company.com/customers', 'API endpoint for customer information', CURRENT_TIMESTAMP);
 
   -- Insert methodologies for the Sales domain
   INSERT INTO methodologies (methodology_id, domain_id, name, description, steps, created_at)
   VALUES
       (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Calculate Total Sales', 'Methodology to calculate total sales', '1. Fetch raw sales data from db.sales_data; 2. Group by product_id; 3. Sum total sales amount.', CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Monthly Sales Report', 'Methodology to generate monthly sales report', '1. Fetch sales data from db.sales_data; 2. Join with db.sales_targets for targets; 3. Calculate performance percentage by comparing sales vs target.', CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Sales Forecasting', 'Steps to generate a sales forecast', '1. Call API https://api.company.com/forecast; 2. Parse forecast data; 3. Compare with historical sales data from db.sales_data to project trends.', CURRENT_TIMESTAMP),
-      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Customer Segmentation for Sales Analysis', 'Methodology for segmenting customers based on purchase behavior', '1. Fetch customer data from https://api.company.com/customers; 2. Classify customers into segments based on sales data from db.sales_data.', CURRENT_TIMESTAMP);
+      (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Analyze Monthly Sales', 'Methodology to analyze monthly sales trends', '1. Fetch monthly sales data; 2. Analyze by month.', CURRENT_TIMESTAMP);
+
+  -- Insert relationships between concepts, methodologies, and sources
+  INSERT INTO relationships (entity_id_1, entity_type_1, entity_id_2, entity_type_2, relationship_type, created_at, domain_id)
+  VALUES
+    -- Relationship between concept 'Total Sales' and methodology 'Calculate Total Sales'
+    ((SELECT concept_id FROM concepts WHERE name = 'Total Sales' AND domain_id = 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'), 
+      'concept', 
+      (SELECT methodology_id FROM methodologies WHERE name = 'Calculate Total Sales' AND domain_id = 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'), 
+      'methodology', 
+      'uses', CURRENT_TIMESTAMP, 
+      'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'),
+
+    -- Relationship between concept 'Monthly Sales' and methodology 'Analyze Monthly Sales'
+    ((SELECT concept_id FROM concepts WHERE name = 'Monthly Sales' AND domain_id = 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'), 
+      'concept', 
+      (SELECT methodology_id FROM methodologies WHERE name = 'Analyze Monthly Sales' AND domain_id = 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'), 
+      'methodology', 
+      'uses', CURRENT_TIMESTAMP, 
+      'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'),
+
+    -- Relationship between 'Total Sales' concept and 'Sales Data Table' source
+    ((SELECT concept_id FROM concepts WHERE name = 'Total Sales' AND domain_id = 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'),
+      'concept',
+      (SELECT source_id FROM sources WHERE name = 'Sales Data Table' AND domain_id = 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'),
+      'source',
+      'depends_on', CURRENT_TIMESTAMP,
+      'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'),
+
+    -- Relationship between 'Monthly Sales' concept and 'Sales Data Table' source
+    ((SELECT concept_id FROM concepts WHERE name = 'Monthly Sales' AND domain_id = 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'),
+      'concept',
+      (SELECT source_id FROM sources WHERE name = 'Sales Data Table' AND domain_id = 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'),
+      'source',
+      'depends_on', CURRENT_TIMESTAMP,
+      'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'),
+
+    -- Relationship between 'Customer Data API' source and 'Calculate Total Sales' methodology
+    ((SELECT source_id FROM sources WHERE name = 'Customer Data API' AND domain_id = 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'),
+      'source',
+      (SELECT methodology_id FROM methodologies WHERE name = 'Calculate Total Sales' AND domain_id = 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1'),
+      'methodology',
+      'provides', CURRENT_TIMESTAMP,
+      'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1');
 EOSQL
 
 echo "Data inserted successfully."
