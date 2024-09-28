@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { useParams } from 'react-router-dom';
-import { Box, Heading, Container, Text, Input, Button, Flex } from '@chakra-ui/react';
+import { Box, Heading, Container, Text, Input, Button, Flex, Stack } from '@chakra-ui/react';
 import AuthContext from '../context/AuthContext';
 
 const DomainConfigPage = () => {
@@ -63,28 +63,59 @@ const DomainConfigPage = () => {
   };
 
   return (
-    <Box bg="gray.100" minH="100vh" py={10}>
-      <Container maxW="container.lg">
-        <Heading fontSize="2xl" mb={6}>
+    <Box bg="gray.50" minH="100vh" py={12}>
+      <Container maxW="container.xl">
+        <Heading fontSize={{ base: '3xl', md: '4xl' }} fontWeight="bold" color="gray.800" mb={8}>
           Domain Configuration
         </Heading>
 
         {config.length > 0 ? (
-          config.map((item) => (
-            <Box key={item.config_id} mb={4} p={4} bg="white" borderRadius="md" boxShadow="md">
-              <Text mb={2}><b>{item.config_key}</b>: {item.config_value}</Text>
-              <Input
-                placeholder={`Update ${item.config_key}`}
-                onChange={(e) => handleInputChange(item.config_key, e.target.value)}
-              />
-            </Box>
-          ))
+          <Stack spacing={6}>
+            {config.map((item) => (
+              <Box
+                key={item.config_id}
+                p={6}
+                border="1px solid"
+                borderColor="gray.200"
+                borderRadius="lg"
+                bg="white"
+                shadow="sm"
+                _hover={{ shadow: 'md' }}
+              >
+                <Text fontSize="lg" mb={4} fontWeight="semibold" color="blue.600">
+                  {item.config_key}
+                </Text>
+                <Text fontSize="md" color="gray.600" mb={4}>
+                  Current Value: {item.config_value}
+                </Text>
+                <Input
+                  size="lg"
+                  placeholder={`Update ${item.config_key}`}
+                  onChange={(e) => handleInputChange(item.config_key, e.target.value)}
+                  bg="gray.50"
+                  _focus={{ borderColor: 'blue.500' }}
+                />
+              </Box>
+            ))}
+          </Stack>
         ) : (
-          <Text>No configuration available for this domain.</Text>
+          <Text fontSize="lg" color="gray.600" textAlign="center">
+            No configuration available for this domain.
+          </Text>
         )}
 
-        <Flex justify="center" mt={6}>
-          <Button colorScheme="blue" onClick={handleSubmit}>Save Config Changes</Button>
+        <Flex justify="center" mt={10}>
+          <Button
+            colorScheme="blue"
+            size="lg"
+            px={10}
+            py={6}
+            onClick={handleSubmit}
+            shadow="md"
+            _hover={{ bg: 'blue.600' }}
+          >
+            Save Config Changes
+          </Button>
         </Flex>
       </Container>
     </Box>

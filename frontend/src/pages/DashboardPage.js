@@ -52,13 +52,13 @@ const DashboardPage = () => {
   }, [token]);
 
   return (
-    <Box bg="gray.100" minH="100vh" py={10}>
+    <Box bg="gray.50" minH="100vh" py={10}>
       {/* Header Section */}
-      <Box bg="white" shadow="md" py={8} mb={8}>
-        <Container maxW="container.lg">
+      <Box bg="white" shadow="sm" py={8} mb={8}>
+        <Container maxW="container.xl">
           <Flex justify="space-between" alignItems="center">
             <Stack spacing={3} alignItems="flex-start">
-              <Heading fontSize={{ base: '2xl', md: '4xl' }} color="blue.800">
+              <Heading fontSize={{ base: '3xl', md: '5xl' }} fontWeight="bold" color="gray.800">
                 Welcome{user?.name ? `, ${user.name}` : ''}
               </Heading>
               <Text fontSize={{ base: 'lg', md: 'xl' }} color="gray.600">
@@ -67,10 +67,22 @@ const DashboardPage = () => {
             </Stack>
             {/* Action Buttons */}
             <HStack spacing={4}>
-              <Button colorScheme="blue" size="md" onClick={() => navigate('/new-domain')}>
+              <Button
+                colorScheme="blue"
+                size="lg"
+                onClick={() => navigate('/new-domain')}
+                shadow="md"
+                _hover={{ bg: "blue.600" }}
+              >
                 Add New Domain
               </Button>
-              <Button colorScheme="green" size="md" onClick={() => navigate('/user/config')}>
+              <Button
+                colorScheme="green"
+                size="lg"
+                onClick={() => navigate('/user/config')}
+                shadow="md"
+                _hover={{ bg: "green.600" }}
+              >
                 User Settings
               </Button>
             </HStack>
@@ -79,9 +91,9 @@ const DashboardPage = () => {
       </Box>
 
       {/* Domains Section */}
-      <Container maxW="container.lg">
+      <Container maxW="container.xl">
         <Stack spacing={12} textAlign="center">
-          <Heading as="h2" size="lg" color="blue.700" mb={4}>
+          <Heading as="h2" size="xl" fontWeight="semibold" color="gray.700" mb={6}>
             Your Domains
           </Heading>
 
@@ -90,7 +102,7 @@ const DashboardPage = () => {
           ) : error ? (
             <Text color="red.500">{error}</Text>
           ) : domains.length > 0 ? (
-            <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={8}>
+            <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={10}>
               {domains.map((domain) => (
                 <DomainCard
                   key={domain.domain_id}
@@ -111,14 +123,14 @@ const DashboardPage = () => {
 // DomainCard component for displaying each domain
 const DomainCard = ({ domain, onClick }) => (
   <Box
-    p={6}
-    border="1px"
+    p={8}
+    border="1px solid"
     borderColor="gray.200"
-    borderRadius="md"
+    borderRadius="lg"
     bg="white"
     shadow="sm"
-    transition="all 0.2s"
-    _hover={{ transform: 'scale(1.02)', boxShadow: 'lg' }}
+    transition="all 0.3s"
+    _hover={{ shadow: "lg", transform: "scale(1.02)" }}
     textAlign="left"
     onClick={onClick}
     cursor="pointer"
@@ -126,12 +138,11 @@ const DomainCard = ({ domain, onClick }) => (
     <Heading as="h3" size="md" mb={2} color="blue.600">
       {domain.domain_name}
     </Heading>
-    <Text fontSize="sm" color="gray.600" mb={4}>
+    <Text fontSize="md" color="gray.600" mb={4}>
       {domain.description || 'No description available'}
     </Text>
     <Text fontSize="xs" color="gray.500">
-      Created at:{' '}
-      {domain.created_at ? new Date(domain.created_at).toLocaleDateString() : 'N/A'}
+      Created at: {domain.created_at ? new Date(domain.created_at).toLocaleDateString() : 'N/A'}
     </Text>
   </Box>
 );
