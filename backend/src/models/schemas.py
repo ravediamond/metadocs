@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict
 from uuid import UUID
 from datetime import datetime
 
@@ -131,3 +131,135 @@ class APIKeyCreateResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+# Base schema for creating entities (concepts, sources, methodologies)
+class EntityBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    domain_id: UUID
+
+
+class EntityCreate(EntityBase):
+    type: str  # 'concept', 'methodology', 'source'
+
+
+class EntityUpdate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class PositionUpdate(BaseModel):
+    position: Dict[str, float]  # {'x': float, 'y': float}
+
+
+# Since we have separate models for Concept, Source, Methodology,
+# we'll define an Entity schema that can represent any of them
+class Entity(BaseModel):
+    id: UUID  # Can be concept_id, source_id, or methodology_id
+    domain_id: UUID
+    name: str
+    description: Optional[str]
+    type: str  # 'concept', 'methodology', 'source'
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
+
+    class Config:
+        orm_mode = True
+
+
+# Adjusted Relationship schemas
+class RelationshipBase(BaseModel):
+    entity_id_1: UUID
+    entity_type_1: str  # 'concept', 'methodology', 'source'
+    entity_id_2: UUID
+    entity_type_2: str  # 'concept', 'methodology', 'source'
+    relationship_type: str
+    domain_id: UUID
+
+
+class RelationshipCreate(RelationshipBase):
+    pass
+
+
+class RelationshipUpdate(BaseModel):
+    relationship_type: str
+
+
+class Relationship(RelationshipBase):
+    relationship_id: UUID
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+
+
+class ConceptCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    type: str
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
+
+
+class ConceptUpdate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    type: str
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
+
+
+# Schemas for Source creation and update
+class SourceCreate(BaseModel):
+    name: str
+    source_type: str
+    location: str
+    description: Optional[str] = None
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
+
+
+class SourceUpdate(BaseModel):
+    name: str
+    source_type: str
+    location: str
+    description: Optional[str] = None
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
+
+
+# Schemas for Methodology creation and update
+class MethodologyCreate(BaseModel):
+    name: str
+    description: str
+    steps: str
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
+
+
+class MethodologyUpdate(BaseModel):
+    name: str
+    description: str
+    steps: str
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
+
+
+# Schemas for Relationship creation and update
+class RelationshipCreate(BaseModel):
+    domain_id: UUID
+    entity_id_1: UUID
+    entity_type_1: str
+    entity_id_2: UUID
+    entity_type_2: str
+    relationship_type: str
+
+
+class RelationshipUpdate(BaseModel):
+    relationship_type: str
+
+
+# Schema for updating entity position
+class PositionUpdate(BaseModel):
+    position: Dict[str, float]  # {'x': float, 'y': float}
