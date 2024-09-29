@@ -34,6 +34,7 @@ const DomainPage = () => {
   const [methodologies, setMethodologies] = useState([]);
   const [sources, setSources] = useState([]);
   const [selectedNode, setSelectedNode] = useState(null);
+  const [selectedEdge, setSelectedEdge] = useState(null);  // To track selected edge
   const { token } = useContext(AuthContext);
   const navigate = useNavigate();
   const { isOpen, onOpen, onClose } = useDisclosure();
@@ -124,7 +125,9 @@ const DomainPage = () => {
 
   const onConnect = (params) => setEdges((eds) => addEdge(params, eds));
   const onNodeClick = (_, node) => setSelectedNode(node);
+  const onEdgeClick = (_, edge) => setSelectedEdge(edge); // Track edge clicks
 
+  // Function to add a new node
   const addNewNode = async () => {
     if (!newNodeName || !newNodeDescription) {
       alert('Please provide a name and description for the node');
@@ -165,6 +168,53 @@ const DomainPage = () => {
     onClose();
     setNewNodeName('');
     setNewNodeDescription('');
+  };
+
+  // Function to remove a node and its relationships
+  const removeNode = async () => {
+    if (!selectedNode) return;
+
+    const nodeId = selectedNode.id;
+
+    // Remove the node from the front end
+    setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)); // Remove related edges
+
+    try {
+      await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/nodes/${nodeId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch (error) {
+      console.error('Error:', error);
+    }
+
+    setSelectedNode(null); // Clear selection
+  };
+
+  // Function to remove a relationship
+  const removeRelationship = async () => {
+    if (!selectedEdge) return;
+
+    const edgeId = selectedEdge.id;
+
+    // Remove the edge from the front end
+    setEdges((eds) => eds.filter((edge) => edge.id !== edgeId));
+
+    try {
+      await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/relationships/${edgeId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch (error) {
+      console.error('Error:', error);
+    }
+
+    setSelectedEdge(null); // Clear selection
   };
 
   const addRelationship = async () => {
@@ -217,6 +267,7 @@ const DomainPage = () => {
                   onEdgesChange={onEdgesChange}
                   onConnect={onConnect}
                   onNodeClick={onNodeClick}
+                  onEdgeClick={onEdgeClick}  // Track edge clicks
                   fitView
                 />
               </Box>
@@ -228,8 +279,18 @@ const DomainPage = () => {
                 <Heading size="lg" color="gray.900">{selectedNode.data.label}</Heading>
                 <Text mt={4} color="gray.600"><b>Type:</b> {selectedNode.data.type}</Text>
                 <Text mt={2} color="gray.600"><b>Description:</b> {selectedNode.data.description || 'No description available'}</Text>
+                <Button colorScheme="red" mt={4} onClick={removeNode}>Remove Node</Button> {/* Button to remove node */}
               </>
-            ) : <Text fontSize="lg" color="gray.500">Select a node to see details</Text>}
+            ) : selectedEdge ? (
+              <>
+                <Heading size="lg" color="gray.900">Relationship</Heading>
+                <Text mt={4} color="gray.600"><b>Source:</b> {selectedEdge.source}</Text>
+                <Text mt={2} color="gray.600"><b>Target:</b> {selectedEdge.target}</Text>
+                <Button colorScheme="red" mt={4} onClick={removeRelationship}>Remove Relationship</Button> {/* Button to remove relationship */}
+              </>
+            ) : (
+              <Text fontSize="lg" color="gray.500">Select a node or relationship to see details</Text>
+            )}
           </Box>
         </Flex>
         <Flex justify="center" mt={8}>
