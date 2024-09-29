@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useContext } from 'react';
 import {
-  Box, Heading, Container, Text, Flex, Badge, Button, Select, Modal, ModalOverlay, ModalContent, ModalHeader,
+  Box, Heading, Container, Text, Flex, Button, Select, Modal, ModalOverlay, ModalContent, ModalHeader,
   ModalFooter, ModalBody, ModalCloseButton, Input, useDisclosure
 } from '@chakra-ui/react';
 import { ReactFlow, addEdge, useNodesState, useEdgesState } from '@xyflow/react';
@@ -36,14 +36,14 @@ const DomainPage = () => {
   const [selectedNode, setSelectedNode] = useState(null);
   const { token } = useContext(AuthContext);
   const navigate = useNavigate();
-  const { isOpen, onOpen, onClose } = useDisclosure(); // For "Add Node" modal
-  const { isOpen: isRelOpen, onOpen: onRelOpen, onClose: onRelClose } = useDisclosure(); // For "Add Relationship" modal
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const { isOpen: isRelOpen, onOpen: onRelOpen, onClose: onRelClose } = useDisclosure();
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [newNodeType, setNewNodeType] = useState('concept');
-  const [newNodeName, setNewNodeName] = useState(''); // New state for node name
-  const [newNodeDescription, setNewNodeDescription] = useState(''); // New state for node description
+  const [newNodeName, setNewNodeName] = useState('');
+  const [newNodeDescription, setNewNodeDescription] = useState('');
   const [selectedSourceNode, setSelectedSourceNode] = useState('');
   const [selectedTargetNode, setSelectedTargetNode] = useState('');
   const [relationshipType, setRelationshipType] = useState('');
@@ -58,9 +58,9 @@ const DomainPage = () => {
       data: { label: item.name, type, description: item.description },
       style: {
         background: typeColors[type] || typeColors.other,
-        borderRadius: '8px',
-        padding: '10px',
-        border: '2px solid #000',
+        borderRadius: '12px',
+        padding: '15px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
       },
       width: nodeWidth,
       height: nodeHeight,
@@ -125,7 +125,6 @@ const DomainPage = () => {
   const onConnect = (params) => setEdges((eds) => addEdge(params, eds));
   const onNodeClick = (_, node) => setSelectedNode(node);
 
-  // Function to add a new node
   const addNewNode = async () => {
     if (!newNodeName || !newNodeDescription) {
       alert('Please provide a name and description for the node');
@@ -139,18 +138,16 @@ const DomainPage = () => {
       position: { x: Math.random() * 300, y: Math.random() * 300 },
       style: {
         background: newNodeType === 'concept' ? '#FFB6C1' : newNodeType === 'methodology' ? '#90EE90' : '#FFD700',
-        borderRadius: '8px',
-        padding: '10px',
-        border: '2px solid #000',
+        borderRadius: '12px',
+        padding: '15px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
       },
       width: nodeWidth,
       height: nodeHeight,
     };
 
-    // Add new node to graph state
     setNodes((nds) => [...nds, newNode]);
 
-    // Send node to backend
     try {
       const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/nodes`, {
         method: 'POST',
@@ -165,12 +162,11 @@ const DomainPage = () => {
       console.error('Error:', error);
     }
 
-    onClose(); // Close the modal after adding a node
-    setNewNodeName(''); // Clear the name field
-    setNewNodeDescription(''); // Clear the description field
+    onClose();
+    setNewNodeName('');
+    setNewNodeDescription('');
   };
 
-  // Function to add a relationship
   const addRelationship = async () => {
     if (!selectedSourceNode || !selectedTargetNode || !relationshipType) return;
 
@@ -183,7 +179,6 @@ const DomainPage = () => {
     };
     setEdges((eds) => [...eds, newEdge]);
 
-    // Send relationship to backend
     try {
       const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/relationships`, {
         method: 'POST',
@@ -202,17 +197,19 @@ const DomainPage = () => {
       console.error('Error:', error);
     }
 
-    onRelClose(); // Close the relationship modal
+    onRelClose();
   };
 
   return (
-    <Box bg="gray.100" minH="100vh" py={10}>
-      <Container maxW="container.lg">
-        <Heading fontSize="2xl" mb={6}>Concepts, Methodologies, and Sources for Domain</Heading>
+    <Box bg="gray.50" minH="100vh" py={10}>
+      <Container maxW="container.xl">
+        <Heading fontSize="3xl" mb={8} fontWeight="bold" color="gray.900" letterSpacing="tight">
+          Explore Domain Concepts, Methodologies, and Sources
+        </Heading>
         <Flex justify="space-between">
           <Box width="70%">
             {concepts.length > 0 || methodologies.length > 0 || sources.length > 0 ? (
-              <Box height="500px" bg="white" borderRadius="md" boxShadow="md">
+              <Box height="500px" bg="white" borderRadius="xl" boxShadow="lg" p={5}>
                 <ReactFlow
                   nodes={nodes}
                   edges={edges}
@@ -223,26 +220,26 @@ const DomainPage = () => {
                   fitView
                 />
               </Box>
-            ) : <Text>No data found for this domain.</Text>}
+            ) : <Text fontSize="lg" color="gray.500">No data found for this domain.</Text>}
           </Box>
-          <Box width="25%" p={4} bg="white" borderRadius="md" boxShadow="md">
+          <Box width="25%" p={6} bg="white" borderRadius="xl" boxShadow="lg">
             {selectedNode ? (
               <>
-                <Heading size="md">{selectedNode.data.label}</Heading>
-                <Text mt={2}><b>Type:</b> {selectedNode.data.type}</Text>
-                <Text mt={2}><b>Description:</b> {selectedNode.data.description || 'No description available'}</Text>
+                <Heading size="lg" color="gray.900">{selectedNode.data.label}</Heading>
+                <Text mt={4} color="gray.600"><b>Type:</b> {selectedNode.data.type}</Text>
+                <Text mt={2} color="gray.600"><b>Description:</b> {selectedNode.data.description || 'No description available'}</Text>
               </>
-            ) : <Text>Select a node to see details</Text>}
+            ) : <Text fontSize="lg" color="gray.500">Select a node to see details</Text>}
           </Box>
         </Flex>
-        <Flex justify="center" mt={6}>
-          <Button colorScheme="blue" size="lg" onClick={() => navigate(`/domains/${domain_id}/config`)}>
-            View Domain Config
+        <Flex justify="center" mt={8}>
+          <Button colorScheme="gray" size="lg" onClick={() => navigate(`/domains/${domain_id}/config`)}>
+            Domain Settings
           </Button>
-          <Button colorScheme="green" size="lg" ml={4} onClick={onOpen}>
+          <Button colorScheme="green" size="lg" ml={6} onClick={onOpen}>
             Add New Node
           </Button>
-          <Button colorScheme="teal" size="lg" ml={4} onClick={onRelOpen}>
+          <Button colorScheme="blue" size="lg" ml={6} onClick={onRelOpen}>
             Add Relationship
           </Button>
         </Flex>
@@ -250,8 +247,8 @@ const DomainPage = () => {
         {/* Modal for adding new node */}
         <Modal isOpen={isOpen} onClose={onClose}>
           <ModalOverlay />
-          <ModalContent>
-            <ModalHeader>Create a New Node</ModalHeader>
+          <ModalContent borderRadius="xl" p={4}>
+            <ModalHeader fontSize="2xl" fontWeight="bold" color="gray.900">Create a New Node</ModalHeader>
             <ModalCloseButton />
             <ModalBody>
               <Select
@@ -259,6 +256,7 @@ const DomainPage = () => {
                 value={newNodeType}
                 onChange={(e) => setNewNodeType(e.target.value)}
                 mb={4}
+                size="lg"
               >
                 <option value="concept">Concept</option>
                 <option value="methodology">Methodology</option>
@@ -269,18 +267,21 @@ const DomainPage = () => {
                 value={newNodeName}
                 onChange={(e) => setNewNodeName(e.target.value)}
                 mb={4}
+                size="lg"
               />
               <Input
                 placeholder="Node description"
                 value={newNodeDescription}
                 onChange={(e) => setNewNodeDescription(e.target.value)}
                 mb={4}
+                size="lg"
               />
             </ModalBody>
-
             <ModalFooter>
-              <Button colorScheme="green" onClick={addNewNode}>Add Node</Button>
-              <Button variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button colorScheme="green" size="lg" onClick={addNewNode}>
+                Add Node
+              </Button>
+              <Button variant="ghost" onClick={onClose} size="lg">Cancel</Button>
             </ModalFooter>
           </ModalContent>
         </Modal>
@@ -288,46 +289,38 @@ const DomainPage = () => {
         {/* Modal for adding relationship */}
         <Modal isOpen={isRelOpen} onClose={onRelClose}>
           <ModalOverlay />
-          <ModalContent>
-            <ModalHeader>Create a New Relationship</ModalHeader>
+          <ModalContent borderRadius="xl" p={4}>
+            <ModalHeader fontSize="2xl" fontWeight="bold" color="gray.900">Create a New Relationship</ModalHeader>
             <ModalCloseButton />
             <ModalBody>
-              <Select placeholder="Select source node" value={selectedSourceNode} onChange={(e) => setSelectedSourceNode(e.target.value)} mb={4}>
+              <Select placeholder="Select source node" value={selectedSourceNode} onChange={(e) => setSelectedSourceNode(e.target.value)} mb={4} size="lg">
                 {nodes.map((node) => (
                   <option key={node.id} value={node.id}>
                     {node.data.label} ({node.data.type})
                   </option>
                 ))}
               </Select>
-              <Select placeholder="Select target node" value={selectedTargetNode} onChange={(e) => setSelectedTargetNode(e.target.value)} mb={4}>
+              <Select placeholder="Select target node" value={selectedTargetNode} onChange={(e) => setSelectedTargetNode(e.target.value)} mb={4} size="lg">
                 {nodes.map((node) => (
                   <option key={node.id} value={node.id}>
                     {node.data.label} ({node.data.type})
                   </option>
                 ))}
               </Select>
-              <Select placeholder="Select relationship type" value={relationshipType} onChange={(e) => setRelationshipType(e.target.value)} mb={4}>
+              <Select placeholder="Select relationship type" value={relationshipType} onChange={(e) => setRelationshipType(e.target.value)} mb={4} size="lg">
                 <option value="depends_on">Depends On</option>
                 <option value="related_to">Related To</option>
                 <option value="part_of">Part Of</option>
               </Select>
             </ModalBody>
-
             <ModalFooter>
-              <Button colorScheme="teal" onClick={addRelationship}>Add Relationship</Button>
-              <Button variant="ghost" onClick={onRelClose}>Cancel</Button>
+              <Button colorScheme="blue" size="lg" onClick={addRelationship}>
+                Add Relationship
+              </Button>
+              <Button variant="ghost" size="lg" onClick={onRelClose}>Cancel</Button>
             </ModalFooter>
           </ModalContent>
         </Modal>
-
-        <Box mt={6} p={4} bg="white" borderRadius="md" boxShadow="md">
-          <Heading size="sm">Color Legend</Heading>
-          <Flex mt={2}>
-            <Badge bg="#FFB6C1" color="white" mr={2}>Concept</Badge>
-            <Badge bg="#90EE90" color="white" mr={2}>Methodology</Badge>
-            <Badge bg="#FFD700" color="white" mr={2}>Source</Badge>
-          </Flex>
-        </Box>
       </Container>
     </Box>
   );
