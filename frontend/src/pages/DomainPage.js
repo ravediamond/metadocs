@@ -48,6 +48,8 @@ const DomainPage = () => {
   const [selectedSourceNode, setSelectedSourceNode] = useState('');
   const [selectedTargetNode, setSelectedTargetNode] = useState('');
   const [relationshipType, setRelationshipType] = useState('');
+  const [currentVersion, setCurrentVersion] = useState(1);  // Add a state for version tracking
+  const [isModified, setIsModified] = useState(false);  // To track if graph has been modified
 
   const generateFlowElements = (concepts, methodologies, sources, relationships) => {
     const typeColors = {
@@ -121,18 +123,21 @@ const DomainPage = () => {
       if (!token) return;
 
       try {
-        const [conceptsRes, methodologiesRes, sourcesRes] = await Promise.all([
+        const [conceptsRes, methodologiesRes, sourcesRes, domainRes] = await Promise.all([
           fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/concepts`, { headers: { Authorization: `Bearer ${token}` } }),
           fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/methodologies`, { headers: { Authorization: `Bearer ${token}` } }),
           fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/sources`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/details`, { headers: { Authorization: `Bearer ${token}` } })
         ]);
 
-        const [conceptsData, methodologiesData, sourcesData] = await Promise.all([conceptsRes.json(), methodologiesRes.json(), sourcesRes.json()]);
+        const [conceptsData, methodologiesData, sourcesData, domainData] = await Promise.all([conceptsRes.json(), methodologiesRes.json(), sourcesRes.json(), domainRes.json()]);
 
         if (conceptsRes.ok && methodologiesRes.ok && sourcesRes.ok) {
           setConcepts(conceptsData);
           setMethodologies(methodologiesData);
           setSources(sourcesData);
+          setCurrentVersion(domainData.version);
+          console.log(domainData);
 
           const relationships = await fetchRelationships();
           generateFlowElements(conceptsData, methodologiesData, sourcesData, relationships);
@@ -164,7 +169,7 @@ const DomainPage = () => {
       alert('Please provide a name and description for the node');
       return;
     }
-
+  
     const newNodeId = `new_node_${nodes.length + 1}`;
     const newNode = {
       id: newNodeId,
@@ -179,9 +184,10 @@ const DomainPage = () => {
       width: nodeWidth,
       height: nodeHeight,
     };
-
+  
     setNodes((nds) => [...nds, newNode]);
-
+    setIsModified(true);  // Set as modified
+  
     try {
       const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/nodes`, {
         method: 'POST',
@@ -195,7 +201,7 @@ const DomainPage = () => {
     } catch (error) {
       console.error('Error:', error);
     }
-
+  
     onClose();
     setNewNodeName('');
     setNewNodeDescription('');
@@ -281,12 +287,120 @@ const DomainPage = () => {
     onRelClose();
   };
 
+  const saveGraph = async () => {
+    try {
+      // Split nodes by type
+      const concepts = nodes.filter(node => node.data.type === 'concept');
+      const sources = nodes.filter(node => node.data.type === 'source');
+      const methodologies = nodes.filter(node => node.data.type === 'methodology');
+  
+      // Prepare the relationships (edges)
+      const relationships = edges.map(edge => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        relationship_type: edge.data.relationship_type,
+      }));
+  
+      const newVersion = currentVersion + 1;  // Increment version number
+  
+      // Send concepts to /concepts endpoint
+      if (concepts.length > 0) {
+        const conceptData = concepts.map(concept => ({
+          id: concept.id,
+          label: concept.data.label,
+          position: concept.position,
+          description: concept.data.description,
+          version: newVersion,  // Add version
+        }));
+        await fetch(`${process.env.REACT_APP_BACKEND_URL}/${domain_id}/concepts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(conceptData),
+        });
+      }
+  
+      // Send sources to /sources endpoint
+      if (sources.length > 0) {
+        const sourceData = sources.map(source => ({
+          id: source.id,
+          label: source.data.label,
+          position: source.position,
+          description: source.data.description,
+          version: newVersion,  // Add version
+        }));
+        await fetch(`${process.env.REACT_APP_BACKEND_URL}/${domain_id}/sources`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(sourceData),
+        });
+      }
+  
+      // Send methodologies to /methodologies endpoint
+      if (methodologies.length > 0) {
+        const methodologyData = methodologies.map(methodology => ({
+          id: methodology.id,
+          label: methodology.data.label,
+          position: methodology.position,
+          description: methodology.data.description,
+          version: newVersion,  // Add version
+        }));
+        await fetch(`${process.env.REACT_APP_BACKEND_URL}/${domain_id}/methodologies`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(methodologyData),
+        });
+      }
+  
+      // Send relationships (edges) to /relationships endpoint
+      if (relationships.length > 0) {
+        await fetch(`${process.env.REACT_APP_BACKEND_URL}/relationships`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(relationships),
+        });
+      }
+  
+      // Increment the domain version
+      await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/version`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ version: newVersion }),
+      });
+  
+      setCurrentVersion(newVersion);  // Update the current version
+      setIsModified(false);  // Reset modification status
+      alert('Graph saved successfully!');
+    } catch (error) {
+      console.error('Error saving graph:', error);
+      alert('An error occurred while saving the graph.');
+    }
+  };
+
   return (
     <Box bg="gray.50" minH="100vh" py={10}>
       <Container maxW="container.xl">
         <Heading fontSize="3xl" mb={8} fontWeight="bold" color="gray.900" letterSpacing="tight">
           Explore Domain Concepts, Methodologies, and Sources
         </Heading>
+        <Text fontSize="lg" color="gray.500" mb={4}>
+          Current Version: {currentVersion} {isModified && '(Unsaved Changes)'}
+        </Text>
         <Flex justify="space-between">
           <Box width="70%">
             {concepts.length > 0 || methodologies.length > 0 || sources.length > 0 ? (
@@ -334,6 +448,9 @@ const DomainPage = () => {
           </Button>
           <Button colorScheme="blue" size="lg" ml={6} onClick={onRelOpen}>
             Add Relationship
+          </Button>
+          <Button colorScheme="teal" size="lg" ml={6} onClick={saveGraph}>
+            Save Graph
           </Button>
         </Flex>
 

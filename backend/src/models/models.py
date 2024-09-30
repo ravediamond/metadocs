@@ -1,6 +1,6 @@
 import uuid
 import secrets
-from sqlalchemy import Column, String, ForeignKey, Text, TIMESTAMP, func
+from sqlalchemy import Column, String, ForeignKey, Text, TIMESTAMP, Integer, func
 from sqlalchemy.dialects.postgresql import UUID as UUIDType
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
@@ -72,6 +72,7 @@ class Domain(Base):
         UUIDType(as_uuid=True), ForeignKey("users.user_id"), nullable=False
     )
     description = Column(Text)
+    version = Column(Integer, default=1)
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationships to other models
@@ -109,8 +110,9 @@ class Concept(Base):
     )
     name = Column(String(255), nullable=False)
     description = Column(Text)
-    type = Column(String(50))  # 'definition', 'process', 'methodology', etc.
-    embedding = Column(Vector(1536))  # Using custom Vector type with dimension 1536
+    type = Column(String(50))
+    embedding = Column(Vector(1536))
+    version = Column(Integer, default=1)
     created_at = Column(TIMESTAMP, default=func.now())
     updated_at = Column(TIMESTAMP, default=func.now(), onupdate=func.now())
 
@@ -132,6 +134,7 @@ class Source(Base):
     source_type = Column(String(50))  # 'table', 'api', etc.
     location = Column(Text, nullable=False)  # URI, table name, or connection string
     description = Column(Text)
+    version = Column(Integer, default=1)
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationship with Domain
@@ -153,6 +156,7 @@ class Methodology(Base):
     steps = Column(
         Text, nullable=False
     )  # Detailed steps on how to join sources or get data
+    version = Column(Integer, default=1)
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationship with Domain
@@ -179,6 +183,7 @@ class Relationship(Base):
         String(50), nullable=False
     )  # 'concept', 'methodology', 'source'
     relationship_type = Column(String(50))  # 'related_to', 'part_of', 'depends_on'
+    version = Column(Integer, default=1)
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationship with Domain

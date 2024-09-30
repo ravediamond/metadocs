@@ -39,6 +39,7 @@ class Domain(BaseModel):
     domain_name: str
     owner_user_id: UUID
     description: Optional[str]
+    version: int
     created_at: datetime
 
 
@@ -49,6 +50,7 @@ class Concept(BaseModel):
     name: str
     description: Optional[str]
     type: str
+    version: int
     created_at: datetime
     updated_at: datetime
 
@@ -61,6 +63,7 @@ class Source(BaseModel):
     source_type: str
     location: str
     description: Optional[str]
+    version: int
     created_at: datetime
 
 
@@ -71,6 +74,7 @@ class Methodology(BaseModel):
     name: str
     description: str
     steps: str
+    version: int
     created_at: datetime
 
 
@@ -82,6 +86,7 @@ class Relationship(BaseModel):
     entity_id_2: UUID
     entity_type_2: str
     relationship_type: str
+    version: int
     created_at: Optional[datetime] = None
 
 
