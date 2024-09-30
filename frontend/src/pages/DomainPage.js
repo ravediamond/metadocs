@@ -54,33 +54,53 @@ const DomainPage = () => {
       concept: '#FFB6C1', methodology: '#90EE90', source: '#FFD700', other: '#FFA07A',
     };
 
-    const createNode = (item, type) => ({
-      id: item[`${type}_id`],
-      data: { label: item.name, type, description: item.description },
-      style: {
-        background: typeColors[type] || typeColors.other,
-        borderRadius: '12px',
-        padding: '15px',
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-      },
-      width: nodeWidth,
-      height: nodeHeight,
-    });
+    // Create a map of node IDs to their labels for easy lookup
+    const nodeLabelMap = {};
 
+    const createNode = (item, type) => {
+      const nodeId = item[`${type}_id`];
+      
+      // Populate the nodeLabelMap with node IDs and their corresponding labels
+      nodeLabelMap[nodeId] = item.name;
+
+      return {
+        id: nodeId,
+        data: { label: item.name, type, description: item.description },
+        style: {
+          background: typeColors[type] || typeColors.other,
+          borderRadius: '12px',
+          padding: '15px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+        },
+        width: nodeWidth,
+        height: nodeHeight,
+      };
+    };
+
+    // Create all nodes for concepts, methodologies, and sources
     const allNodes = [
       ...concepts.map((c) => createNode(c, 'concept')),
       ...methodologies.map((m) => createNode(m, 'methodology')),
       ...sources.map((s) => createNode(s, 'source')),
     ];
 
+    // Create edges for relationships
     const relationshipEdges = relationships
-      .map(({ entity_id_1: source, entity_id_2: target }) =>
+      .map(({ entity_id_1: source, entity_id_2: target, relationship_type }) => 
         allNodes.some((n) => n.id === source) && allNodes.some((n) => n.id === target)
-          ? { id: `e${source}-${target}`, source, target, animated: true, style: { stroke: '#4682B4', strokeWidth: 2 } }
+          ? { 
+              id: `e${source}-${target}`, 
+              source, 
+              target, 
+              animated: true, 
+              style: { stroke: '#4682B4', strokeWidth: 2 },
+              data: { relationship_type },  // Store relationship type in edge data
+            }
           : null
       )
       .filter(Boolean);
 
+    // Layout the nodes and edges using dagre
     setNodes(getLayoutedNodes(allNodes, relationshipEdges));
     setEdges(relationshipEdges);
   };
@@ -125,7 +145,18 @@ const DomainPage = () => {
 
   const onConnect = (params) => setEdges((eds) => addEdge(params, eds));
   const onNodeClick = (_, node) => setSelectedNode(node);
-  const onEdgeClick = (_, edge) => setSelectedEdge(edge); // Track edge clicks
+  
+  // Modify the onEdgeClick function to use the node labels instead of just IDs
+  const onEdgeClick = (_, edge) => {
+    const sourceLabel = nodes.find(node => node.id === edge.source)?.data.label;
+    const targetLabel = nodes.find(node => node.id === edge.target)?.data.label;
+
+    setSelectedEdge({
+      ...edge,
+      sourceLabel,  // Store the source label
+      targetLabel,  // Store the target label
+    });
+  };
 
   // Function to add a new node
   const addNewNode = async () => {
@@ -284,9 +315,10 @@ const DomainPage = () => {
             ) : selectedEdge ? (
               <>
                 <Heading size="lg" color="gray.900">Relationship</Heading>
-                <Text mt={4} color="gray.600"><b>Source:</b> {selectedEdge.source}</Text>
-                <Text mt={2} color="gray.600"><b>Target:</b> {selectedEdge.target}</Text>
-                <Button colorScheme="red" mt={4} onClick={removeRelationship}>Remove Relationship</Button> {/* Button to remove relationship */}
+                <Text mt={4} color="gray.600"><b>Source:</b> {selectedEdge.sourceLabel}</Text> {/* Display source label */}
+                <Text mt={2} color="gray.600"><b>Target:</b> {selectedEdge.targetLabel}</Text> {/* Display target label */}
+                <Text mt={2} color="gray.600"><b>Type:</b> {selectedEdge.data?.relationship_type}</Text>  {/* Display relationship type */}
+                <Button colorScheme="red" mt={4} onClick={removeRelationship}>Remove Relationship</Button> 
               </>
             ) : (
               <Text fontSize="lg" color="gray.500">Select a node or relationship to see details</Text>
