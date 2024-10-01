@@ -138,24 +138,19 @@ const DomainPage = () => {
     if (!token) return;
 
     try {
-      const [conceptsRes, methodologiesRes, sourcesRes, domainRes] = await Promise.all([
-        fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/concepts`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/methodologies`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/sources`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/details`, { headers: { Authorization: `Bearer ${token}` } })
-      ]);
-
-      const [conceptsData, methodologiesData, sourcesData, domainData] = await Promise.all([conceptsRes.json(), methodologiesRes.json(), sourcesRes.json(), domainRes.json()]);
-
-      if (conceptsRes.ok && methodologiesRes.ok && sourcesRes.ok) {
-        setConcepts(conceptsData);
-        setMethodologies(methodologiesData);
-        setSources(sourcesData);
+      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/details`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const domainData = await res.json();
         console.log('Domain Data:', domainData);
-        setCurrentVersion(domainData.version);
+        const { concepts, methodologies, sources, relationships, version } = domainData;
+        setConcepts(concepts);
+        setMethodologies(methodologies);
+        setSources(sources);
+        setCurrentVersion(version);
 
-        const relationships = await fetchRelationships();
-        generateFlowElements(conceptsData, methodologiesData, sourcesData, relationships);
+        generateFlowElements(concepts, methodologies, sources, relationships);
       }
     } catch {}
   };

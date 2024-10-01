@@ -41,13 +41,30 @@ router = APIRouter()
 def get_domains(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    domains = (
-        db.query(Domain).filter(Domain.owner_user_id == current_user.user_id).all()
+    # Subquery to get the latest version for each domain
+    subquery = (
+        db.query(Domain.domain_id, func.max(Domain.version).label("latest_version"))
+        .filter(Domain.owner_user_id == current_user.user_id)
+        .group_by(Domain.domain_id)
+        .subquery()
     )
+
+    # Query to get the domains with the latest version
+    domains = (
+        db.query(Domain)
+        .join(
+            subquery,
+            (Domain.domain_id == subquery.c.domain_id)
+            & (Domain.version == subquery.c.latest_version),
+        )
+        .all()
+    )
+
     if not domains:
         raise HTTPException(
             status_code=404, detail="No domains found for the current user"
         )
+
     return domains
 
 
@@ -65,6 +82,7 @@ def get_domain_details(
         .filter(
             Domain.domain_id == domain_id, Domain.owner_user_id == current_user.user_id
         )
+        .order_by(Domain.version.desc())
         .first()
     )
     if not domain:
