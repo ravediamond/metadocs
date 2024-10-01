@@ -3,9 +3,10 @@
 import React, { useEffect, useState, useContext } from 'react';
 import {
   Box, Heading, Container, Text, Flex, Button, Select, Modal, ModalOverlay, ModalContent, ModalHeader,
-  ModalFooter, ModalBody, ModalCloseButton, Input, useDisclosure
+  ModalFooter, ModalBody, ModalCloseButton, Input, useDisclosure, IconButton
 } from '@chakra-ui/react';
-import { ReactFlow, addEdge, useNodesState, useEdgesState } from '@xyflow/react';
+import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
+import { ReactFlow, addEdge, useNodesState, useEdgesState, Controls, MiniMap } from '@xyflow/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import dagre from 'dagre';
 import AuthContext from '../context/AuthContext';
@@ -62,6 +63,7 @@ const DomainPage = () => {
   const [relationshipType, setRelationshipType] = useState('');
   const [currentVersion, setCurrentVersion] = useState(1);
   const [isModified, setIsModified] = useState(false);
+  const [isInfoPanelCollapsed, setIsInfoPanelCollapsed] = useState(false);
 
   const generateFlowElements = (concepts, methodologies, sources, relationships) => {
     const typeColors = {
@@ -112,6 +114,8 @@ const DomainPage = () => {
               animated: true,
               style: { stroke: '#4682B4', strokeWidth: 2 },
               data: { relationship_type, created_at, updated_at, domain_version }, // Include domain_version
+              label: relationship_type, // Add label to edge
+              labelStyle: { fill: '#4682B4', fontWeight: 700 },
             }
           : null
       )
@@ -156,7 +160,6 @@ const DomainPage = () => {
   };
 
   useEffect(() => {
-
     if (domain_id) fetchData();
   }, [domain_id, token]);
 
@@ -168,6 +171,7 @@ const DomainPage = () => {
 
   const onNodeClick = (_, node) => {
     setSelectedNode(node);
+    setSelectedEdge(null);
     setSelectedSourceNode(node.id);
   };
 
@@ -180,6 +184,7 @@ const DomainPage = () => {
       sourceLabel,
       targetLabel,
     });
+    setSelectedNode(null);
   };
 
   const getNodeTypeById = (id) => {
@@ -323,6 +328,8 @@ const DomainPage = () => {
         updated_at: now,
         domain_version: currentVersion, // Include domain_version
       },
+      label: relationshipType, // Add label to edge
+      labelStyle: { fill: '#4682B4', fontWeight: 700 },
     };
 
     setEdges((eds) => [...eds, newEdge]);
@@ -497,6 +504,16 @@ const DomainPage = () => {
     );
   };
 
+  const isInfoPanelVisible = selectedNode || selectedEdge;
+  const infoPanelWidth = isInfoPanelVisible ? (isInfoPanelCollapsed ? '5%' : '25%') : '0%';
+  const graphWidth = isInfoPanelVisible ? (isInfoPanelCollapsed ? '95%' : '70%') : '100%';
+
+  useEffect(() => {
+    if (!isInfoPanelVisible) {
+      setIsInfoPanelCollapsed(false);
+    }
+  }, [isInfoPanelVisible]);
+
   return (
     <Box bg="gray.50" minH="100vh" py={10}>
       <Container maxW="container.xl">
@@ -507,7 +524,7 @@ const DomainPage = () => {
           Current Version: {currentVersion} {isModified && '(Unsaved Changes)'}
         </Text>
         <Flex justify="space-between">
-          <Box width="70%">
+          <Box width={graphWidth}>
             {concepts.length > 0 || methodologies.length > 0 || sources.length > 0 ? (
               <Box height="500px" bg="white" borderRadius="xl" boxShadow="lg" p={5}>
                 <ReactFlow
@@ -518,31 +535,49 @@ const DomainPage = () => {
                   onConnect={onConnect}
                   onNodeClick={onNodeClick}
                   onEdgeClick={onEdgeClick}
+                  onPaneClick={() => {
+                    setSelectedNode(null);
+                    setSelectedEdge(null);
+                  }}
                   fitView
-                />
+                >
+                  <Controls /> {/* Add zoom controls */}
+                  <MiniMap />   {/* Add mini-map */}
+                </ReactFlow>
               </Box>
             ) : <Text fontSize="lg" color="gray.500">No data found for this domain.</Text>}
           </Box>
-          <Box width="25%" p={6} bg="white" borderRadius="xl" boxShadow="lg">
-            {selectedNode ? (
-              <>
-                <Heading size="lg" color="gray.900">{selectedNode.data.label}</Heading>
-                <Text mt={4} color="gray.600"><b>Type:</b> {selectedNode.data.type}</Text>
-                <Text mt={2} color="gray.600"><b>Description:</b> {selectedNode.data.description || 'No description available'}</Text>
-                <Button colorScheme="red" mt={4} onClick={removeNode}>Remove Node</Button>
-              </>
-            ) : selectedEdge ? (
-              <>
-                <Heading size="lg" color="gray.900">Relationship</Heading>
-                <Text mt={4} color="gray.600"><b>Source:</b> {selectedEdge.sourceLabel}</Text>
-                <Text mt={2} color="gray.600"><b>Target:</b> {selectedEdge.targetLabel}</Text>
-                <Text mt={2} color="gray.600"><b>Type:</b> {selectedEdge.data?.relationship_type}</Text>
-                <Button colorScheme="red" mt={4} onClick={removeRelationship}>Remove Relationship</Button>
-              </>
-            ) : (
-              <Text fontSize="lg" color="gray.500">Select a node or relationship to see details</Text>
-            )}
-          </Box>
+          {isInfoPanelVisible && (
+            <Box width={infoPanelWidth} p={isInfoPanelCollapsed ? 2 : 6} bg="white" borderRadius="xl" boxShadow="lg">
+              <IconButton
+                aria-label={isInfoPanelCollapsed ? 'Expand Info Panel' : 'Collapse Info Panel'}
+                icon={isInfoPanelCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+                onClick={() => setIsInfoPanelCollapsed(!isInfoPanelCollapsed)}
+                size="sm"
+                mb={4}
+              />
+              {!isInfoPanelCollapsed && (
+                <>
+                  {selectedNode ? (
+                    <>
+                      <Heading size="lg" color="gray.900">{selectedNode.data.label}</Heading>
+                      <Text mt={4} color="gray.600"><b>Type:</b> {selectedNode.data.type}</Text>
+                      <Text mt={2} color="gray.600"><b>Description:</b> {selectedNode.data.description || 'No description available'}</Text>
+                      <Button colorScheme="red" mt={4} onClick={removeNode}>Remove Node</Button>
+                    </>
+                  ) : selectedEdge ? (
+                    <>
+                      <Heading size="lg" color="gray.900">Relationship</Heading>
+                      <Text mt={4} color="gray.600"><b>Source:</b> {selectedEdge.sourceLabel}</Text>
+                      <Text mt={2} color="gray.600"><b>Target:</b> {selectedEdge.targetLabel}</Text>
+                      <Text mt={2} color="gray.600"><b>Type:</b> {selectedEdge.data?.relationship_type}</Text>
+                      <Button colorScheme="red" mt={4} onClick={removeRelationship}>Remove Relationship</Button>
+                    </>
+                  ) : null}
+                </>
+              )}
+            </Box>
+          )}
         </Flex>
         <Flex justify="center" mt={8}>
           <Button colorScheme="gray" size="lg" onClick={() => navigate(`/domains/${domain_id}/config`)}>
