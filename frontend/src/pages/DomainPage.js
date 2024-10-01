@@ -1,3 +1,5 @@
+// DomainPage.jsx
+
 import React, { useEffect, useState, useContext } from 'react';
 import {
   Box, Heading, Container, Text, Flex, Button, Select, Modal, ModalOverlay, ModalContent, ModalHeader,
@@ -8,22 +10,32 @@ import { useParams, useNavigate } from 'react-router-dom';
 import dagre from 'dagre';
 import AuthContext from '../context/AuthContext';
 import '@xyflow/react/dist/style.css';
+import { v4 as uuidv4 } from 'uuid'; // Import uuid
 
 const nodeWidth = 200;
 const nodeHeight = 100;
 
-const getLayoutedNodes = (nodes, edges) => {
+const getLayoutedNodes = (nodes, edges, existingPositions = {}) => {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
   dagreGraph.setGraph({ rankdir: 'TB', ranksep: 150, nodesep: 100 });
 
-  nodes.forEach((node) => dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight }));
+  nodes.forEach((node) => {
+    const width = node.width || nodeWidth;
+    const height = node.height || nodeHeight;
+    dagreGraph.setNode(node.id, { width, height });
+  });
   edges.forEach((edge) => dagreGraph.setEdge(edge.source, edge.target));
   dagre.layout(dagreGraph);
 
   return nodes.map((node) => {
-    const { x, y } = dagreGraph.node(node.id);
-    node.position = { x: x - nodeWidth / 2, y: y - nodeHeight / 2 };
+    // Preserve existing positions
+    if (existingPositions[node.id]) {
+      node.position = existingPositions[node.id];
+    } else {
+      const { x, y } = dagreGraph.node(node.id);
+      node.position = { x: x - nodeWidth / 2, y: y - nodeHeight / 2 };
+    }
     return node;
   });
 };
@@ -34,7 +46,7 @@ const DomainPage = () => {
   const [methodologies, setMethodologies] = useState([]);
   const [sources, setSources] = useState([]);
   const [selectedNode, setSelectedNode] = useState(null);
-  const [selectedEdge, setSelectedEdge] = useState(null);  // To track selected edge
+  const [selectedEdge, setSelectedEdge] = useState(null);
   const { token } = useContext(AuthContext);
   const navigate = useNavigate();
   const { isOpen, onOpen, onClose } = useDisclosure();
@@ -48,26 +60,28 @@ const DomainPage = () => {
   const [selectedSourceNode, setSelectedSourceNode] = useState('');
   const [selectedTargetNode, setSelectedTargetNode] = useState('');
   const [relationshipType, setRelationshipType] = useState('');
-  const [currentVersion, setCurrentVersion] = useState(1);  // Add a state for version tracking
-  const [isModified, setIsModified] = useState(false);  // To track if graph has been modified
+  const [currentVersion, setCurrentVersion] = useState(1);
+  const [isModified, setIsModified] = useState(false);
 
   const generateFlowElements = (concepts, methodologies, sources, relationships) => {
     const typeColors = {
       concept: '#FFB6C1', methodology: '#90EE90', source: '#FFD700', other: '#FFA07A',
     };
 
-    // Create a map of node IDs to their labels for easy lookup
-    const nodeLabelMap = {};
-
     const createNode = (item, type) => {
       const nodeId = item[`${type}_id`];
-      
-      // Populate the nodeLabelMap with node IDs and their corresponding labels
-      nodeLabelMap[nodeId] = item.name;
 
       return {
         id: nodeId,
-        data: { label: item.name, type, description: item.description },
+        data: {
+          label: item.name,
+          type,
+          description: item.description,
+          subtype: item.type || item.source_type || 'general',
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          domain_version: item.domain_version, // Include domain_version
+        },
         style: {
           background: typeColors[type] || typeColors.other,
           borderRadius: '12px',
@@ -76,6 +90,7 @@ const DomainPage = () => {
         },
         width: nodeWidth,
         height: nodeHeight,
+        position: { x: 0, y: 0 }, // Positions will be calculated
       };
     };
 
@@ -88,22 +103,23 @@ const DomainPage = () => {
 
     // Create edges for relationships
     const relationshipEdges = relationships
-      .map(({ entity_id_1: source, entity_id_2: target, relationship_type }) => 
+      .map(({ relationship_id, entity_id_1: source, entity_id_2: target, relationship_type, created_at, updated_at, domain_version }) =>
         allNodes.some((n) => n.id === source) && allNodes.some((n) => n.id === target)
-          ? { 
-              id: `e${source}-${target}`, 
-              source, 
-              target, 
-              animated: true, 
+          ? {
+              id: relationship_id,
+              source,
+              target,
+              animated: true,
               style: { stroke: '#4682B4', strokeWidth: 2 },
-              data: { relationship_type },  // Store relationship type in edge data
+              data: { relationship_type, created_at, updated_at, domain_version }, // Include domain_version
             }
           : null
       )
       .filter(Boolean);
 
-    // Layout the nodes and edges using dagre
-    setNodes(getLayoutedNodes(allNodes, relationshipEdges));
+    // Layout the nodes using dagre
+    const layoutedNodes = getLayoutedNodes(allNodes, relationshipEdges);
+    setNodes(layoutedNodes);
     setEdges(relationshipEdges);
   };
 
@@ -118,63 +134,87 @@ const DomainPage = () => {
     }
   };
 
+  const fetchData = async () => {
+    if (!token) return;
+
+    try {
+      const [conceptsRes, methodologiesRes, sourcesRes, domainRes] = await Promise.all([
+        fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/concepts`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/methodologies`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/sources`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/details`, { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+
+      const [conceptsData, methodologiesData, sourcesData, domainData] = await Promise.all([conceptsRes.json(), methodologiesRes.json(), sourcesRes.json(), domainRes.json()]);
+
+      if (conceptsRes.ok && methodologiesRes.ok && sourcesRes.ok) {
+        setConcepts(conceptsData);
+        setMethodologies(methodologiesData);
+        setSources(sourcesData);
+        console.log('Domain Data:', domainData);
+        setCurrentVersion(domainData.version);
+
+        const relationships = await fetchRelationships();
+        generateFlowElements(conceptsData, methodologiesData, sourcesData, relationships);
+      }
+    } catch {}
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      if (!token) return;
-
-      try {
-        const [conceptsRes, methodologiesRes, sourcesRes, domainRes] = await Promise.all([
-          fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/concepts`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/methodologies`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/sources`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/details`, { headers: { Authorization: `Bearer ${token}` } })
-        ]);
-
-        const [conceptsData, methodologiesData, sourcesData, domainData] = await Promise.all([conceptsRes.json(), methodologiesRes.json(), sourcesRes.json(), domainRes.json()]);
-
-        if (conceptsRes.ok && methodologiesRes.ok && sourcesRes.ok) {
-          setConcepts(conceptsData);
-          setMethodologies(methodologiesData);
-          setSources(sourcesData);
-          setCurrentVersion(domainData.version);
-          console.log(domainData);
-
-          const relationships = await fetchRelationships();
-          generateFlowElements(conceptsData, methodologiesData, sourcesData, relationships);
-        }
-      } catch {}
-    };
 
     if (domain_id) fetchData();
   }, [domain_id, token]);
 
-  const onConnect = (params) => setEdges((eds) => addEdge(params, eds));
-  const onNodeClick = (_, node) => setSelectedNode(node);
-  
-  // Modify the onEdgeClick function to use the node labels instead of just IDs
+  const onConnect = (params) => {
+    const newEdge = addEdge(params, edges);
+    setEdges(newEdge);
+    setIsModified(true);
+  };
+
+  const onNodeClick = (_, node) => {
+    setSelectedNode(node);
+    setSelectedSourceNode(node.id);
+  };
+
   const onEdgeClick = (_, edge) => {
     const sourceLabel = nodes.find(node => node.id === edge.source)?.data.label;
     const targetLabel = nodes.find(node => node.id === edge.target)?.data.label;
 
     setSelectedEdge({
       ...edge,
-      sourceLabel,  // Store the source label
-      targetLabel,  // Store the target label
+      sourceLabel,
+      targetLabel,
     });
   };
 
+  const getNodeTypeById = (id) => {
+    const node = nodes.find(node => node.id === id);
+    return node ? node.data.type : null;
+  };
+
   // Function to add a new node
-  const addNewNode = async () => {
+  const addNewNode = () => {
     if (!newNodeName || !newNodeDescription) {
       alert('Please provide a name and description for the node');
       return;
     }
-  
-    const newNodeId = `new_node_${nodes.length + 1}`;
+
+    const newNodeId = uuidv4(); // Generate a valid UUID
+
+    const now = new Date().toISOString();
+
     const newNode = {
       id: newNodeId,
-      data: { label: newNodeName, type: newNodeType, description: newNodeDescription },
-      position: { x: Math.random() * 300, y: Math.random() * 300 },
+      data: {
+        label: newNodeName,
+        type: newNodeType,
+        description: newNodeDescription,
+        subtype: 'general', // Default subtype
+        created_at: now,
+        updated_at: now,
+        domain_version: currentVersion, // Include domain_version
+      },
+      position: { x: 0, y: 0 }, // Position will be set by layout
       style: {
         background: newNodeType === 'concept' ? '#FFB6C1' : newNodeType === 'methodology' ? '#90EE90' : '#FFD700',
         borderRadius: '12px',
@@ -184,24 +224,20 @@ const DomainPage = () => {
       width: nodeWidth,
       height: nodeHeight,
     };
-  
-    setNodes((nds) => [...nds, newNode]);
-    setIsModified(true);  // Set as modified
-  
-    try {
-      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/nodes`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ label: newNodeName, description: newNodeDescription, type: newNodeType }),
-      });
-      if (!response.ok) throw new Error('Failed to register the new node.');
-    } catch (error) {
-      console.error('Error:', error);
-    }
-  
+
+    // Add the new node
+    const updatedNodes = [...nodes, newNode];
+
+    // Apply layout only to the new node
+    const existingPositions = {};
+    nodes.forEach(node => {
+      existingPositions[node.id] = node.position;
+    });
+
+    const layoutedNodes = getLayoutedNodes(updatedNodes, edges, existingPositions);
+    setNodes(layoutedNodes);
+    setIsModified(true);
+
     onClose();
     setNewNodeName('');
     setNewNodeDescription('');
@@ -213,12 +249,29 @@ const DomainPage = () => {
 
     const nodeId = selectedNode.id;
 
-    // Remove the node from the front end
-    setNodes((nds) => nds.filter((node) => node.id !== nodeId));
-    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)); // Remove related edges
+    const updatedNodes = nodes.filter((node) => node.id !== nodeId);
+    const updatedEdges = edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId);
+
+    setNodes(updatedNodes);
+    setEdges(updatedEdges);
+    setIsModified(true);
+
+    const nodeType = selectedNode.data.type;
+    const endpointMap = {
+      concept: 'concepts',
+      methodology: 'methodologies',
+      source: 'sources',
+    };
+
+    const endpoint = endpointMap[nodeType];
+
+    if (!endpoint) {
+      console.error('Unknown node type:', nodeType);
+      return;
+    }
 
     try {
-      await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/nodes/${nodeId}`, {
+      await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/${endpoint}/${nodeId}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -228,7 +281,7 @@ const DomainPage = () => {
       console.error('Error:', error);
     }
 
-    setSelectedNode(null); // Clear selection
+    setSelectedNode(null);
   };
 
   // Function to remove a relationship
@@ -237,8 +290,10 @@ const DomainPage = () => {
 
     const edgeId = selectedEdge.id;
 
-    // Remove the edge from the front end
-    setEdges((eds) => eds.filter((edge) => edge.id !== edgeId));
+    const updatedEdges = edges.filter((edge) => edge.id !== edgeId);
+
+    setEdges(updatedEdges);
+    setIsModified(true);
 
     try {
       await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/relationships/${edgeId}`, {
@@ -251,145 +306,200 @@ const DomainPage = () => {
       console.error('Error:', error);
     }
 
-    setSelectedEdge(null); // Clear selection
+    setSelectedEdge(null);
   };
 
-  const addRelationship = async () => {
+  const addRelationship = () => {
     if (!selectedSourceNode || !selectedTargetNode || !relationshipType) return;
 
+    const newEdgeId = uuidv4(); // Generate a valid UUID
+
+    const now = new Date().toISOString();
+
     const newEdge = {
-      id: `e${selectedSourceNode}-${selectedTargetNode}`,
+      id: newEdgeId,
       source: selectedSourceNode,
       target: selectedTargetNode,
       animated: true,
       style: { stroke: '#4682B4', strokeWidth: 2 },
+      data: {
+        relationship_type: relationshipType,
+        created_at: now,
+        updated_at: now,
+        domain_version: currentVersion, // Include domain_version
+      },
     };
-    setEdges((eds) => [...eds, newEdge]);
 
-    try {
-      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/relationships`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          source_id: selectedSourceNode,
-          target_id: selectedTargetNode,
-          relationship_type: relationshipType,
-        }),
-      });
-      if (!response.ok) throw new Error('Failed to register the new relationship.');
-    } catch (error) {
-      console.error('Error:', error);
-    }
+    setEdges((eds) => [...eds, newEdge]);
+    setIsModified(true);
 
     onRelClose();
   };
 
   const saveGraph = async () => {
     try {
-      // Split nodes by type
-      const concepts = nodes.filter(node => node.data.type === 'concept');
-      const sources = nodes.filter(node => node.data.type === 'source');
-      const methodologies = nodes.filter(node => node.data.type === 'methodology');
-  
-      // Prepare the relationships (edges)
+      const now = new Date().toISOString();
+
+      const concepts = nodes
+        .filter(node => node.data.type === 'concept')
+        .map(node => ({
+          concept_id: node.id,
+          name: node.data.label,
+          description: node.data.description,
+          type: node.data.subtype || 'general', // Provide a default type
+          domain_id: domain_id,
+          domain_version: node.data.domain_version || currentVersion,
+          created_at: node.data.created_at || now,
+          updated_at: now,
+        }));
+
+      const sources = nodes
+        .filter(node => node.data.type === 'source')
+        .map(node => ({
+          source_id: node.id,
+          name: node.data.label,
+          description: node.data.description,
+          source_type: node.data.subtype || 'general',
+          location: node.data.location || '',
+          domain_id: domain_id,
+          domain_version: node.data.domain_version || currentVersion,
+          created_at: node.data.created_at || now,
+          updated_at: now,
+        }));
+
+      const methodologies = nodes
+        .filter(node => node.data.type === 'methodology')
+        .map(node => ({
+          methodology_id: node.id,
+          name: node.data.label,
+          description: node.data.description,
+          steps: node.data.steps || 'No steps provided',
+          domain_id: domain_id,
+          domain_version: node.data.domain_version || currentVersion,
+          created_at: node.data.created_at || now,
+          updated_at: now,
+        }));
+
       const relationships = edges.map(edge => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
+        relationship_id: edge.id,
+        entity_id_1: edge.source,
+        entity_type_1: getNodeTypeById(edge.source),
+        entity_id_2: edge.target,
+        entity_type_2: getNodeTypeById(edge.target),
         relationship_type: edge.data.relationship_type,
+        domain_id: domain_id,
+        domain_version: edge.data.domain_version || currentVersion,
+        created_at: edge.data.created_at || now,
+        updated_at: now,
       }));
-  
-      const newVersion = currentVersion + 1;  // Increment version number
-  
-      // Send concepts to /concepts endpoint
-      if (concepts.length > 0) {
-        const conceptData = concepts.map(concept => ({
-          id: concept.id,
-          label: concept.data.label,
-          position: concept.position,
-          description: concept.data.description,
-          version: newVersion,  // Add version
-        }));
-        await fetch(`${process.env.REACT_APP_BACKEND_URL}/${domain_id}/concepts`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(conceptData),
-        });
-      }
-  
-      // Send sources to /sources endpoint
-      if (sources.length > 0) {
-        const sourceData = sources.map(source => ({
-          id: source.id,
-          label: source.data.label,
-          position: source.position,
-          description: source.data.description,
-          version: newVersion,  // Add version
-        }));
-        await fetch(`${process.env.REACT_APP_BACKEND_URL}/${domain_id}/sources`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(sourceData),
-        });
-      }
-  
-      // Send methodologies to /methodologies endpoint
-      if (methodologies.length > 0) {
-        const methodologyData = methodologies.map(methodology => ({
-          id: methodology.id,
-          label: methodology.data.label,
-          position: methodology.position,
-          description: methodology.data.description,
-          version: newVersion,  // Add version
-        }));
-        await fetch(`${process.env.REACT_APP_BACKEND_URL}/${domain_id}/methodologies`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(methodologyData),
-        });
-      }
-  
-      // Send relationships (edges) to /relationships endpoint
-      if (relationships.length > 0) {
-        await fetch(`${process.env.REACT_APP_BACKEND_URL}/relationships`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(relationships),
-        });
-      }
-  
-      // Increment the domain version
-      await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/version`, {
+
+      const domainData = {
+        concepts,
+        sources,
+        methodologies,
+        relationships,
+      };
+
+      console.log('Data being sent to backend:', JSON.stringify(domainData, null, 2));
+
+      // Send POST request to /domains/{domain_id}/save
+      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/save`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ version: newVersion }),
+        body: JSON.stringify(domainData),
       });
-  
-      setCurrentVersion(newVersion);  // Update the current version
-      setIsModified(false);  // Reset modification status
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      const responseData = await response.json();
+
+      // Update currentVersion from the response
+      setCurrentVersion(responseData.version);
+      console.log('Response data:', responseData);
+
+      // Fetch the latest data
+      await fetchData()
+
+      setIsModified(false);
       alert('Graph saved successfully!');
     } catch (error) {
       console.error('Error saving graph:', error);
       alert('An error occurred while saving the graph.');
     }
+  };
+
+  // Helper function to update local entities with IDs from the server response
+  const updateLocalEntities = (responseData) => {
+    // Update Concepts
+    const updatedConcepts = responseData.concepts;
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.data.type === 'concept') {
+          const updatedConcept = updatedConcepts.find(c => c.name === node.data.label);
+          if (updatedConcept && node.id !== updatedConcept.concept_id) {
+            node.id = updatedConcept.concept_id;
+            node.data.id = updatedConcept.concept_id;
+            node.data.domain_version = updatedConcept.domain_version; // Update domain_version
+          }
+        }
+        return node;
+      })
+    );
+
+    // Update Sources
+    const updatedSources = responseData.sources;
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.data.type === 'source') {
+          const updatedSource = updatedSources.find(s => s.name === node.data.label);
+          if (updatedSource && node.id !== updatedSource.source_id) {
+            node.id = updatedSource.source_id;
+            node.data.id = updatedSource.source_id;
+            node.data.domain_version = updatedSource.domain_version; // Update domain_version
+          }
+        }
+        return node;
+      })
+    );
+
+    // Update Methodologies
+    const updatedMethodologies = responseData.methodologies;
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.data.type === 'methodology') {
+          const updatedMethodology = updatedMethodologies.find(m => m.name === node.data.label);
+          if (updatedMethodology && node.id !== updatedMethodology.methodology_id) {
+            node.id = updatedMethodology.methodology_id;
+            node.data.id = updatedMethodology.methodology_id;
+            node.data.domain_version = updatedMethodology.domain_version; // Update domain_version
+          }
+        }
+        return node;
+      })
+    );
+
+    // Update Relationships
+    const updatedRelationships = responseData.relationships;
+    setEdges((eds) =>
+      eds.map((edge) => {
+        const updatedRelationship = updatedRelationships.find(r =>
+          r.entity_id_1 === edge.source &&
+          r.entity_id_2 === edge.target &&
+          r.relationship_type === edge.data.relationship_type
+        );
+        if (updatedRelationship && edge.id !== updatedRelationship.relationship_id) {
+          edge.id = updatedRelationship.relationship_id;
+          edge.data.id = updatedRelationship.relationship_id;
+          edge.data.domain_version = updatedRelationship.domain_version; // Update domain_version
+        }
+        return edge;
+      })
+    );
   };
 
   return (
@@ -412,7 +522,7 @@ const DomainPage = () => {
                   onEdgesChange={onEdgesChange}
                   onConnect={onConnect}
                   onNodeClick={onNodeClick}
-                  onEdgeClick={onEdgeClick}  // Track edge clicks
+                  onEdgeClick={onEdgeClick}
                   fitView
                 />
               </Box>
@@ -424,15 +534,15 @@ const DomainPage = () => {
                 <Heading size="lg" color="gray.900">{selectedNode.data.label}</Heading>
                 <Text mt={4} color="gray.600"><b>Type:</b> {selectedNode.data.type}</Text>
                 <Text mt={2} color="gray.600"><b>Description:</b> {selectedNode.data.description || 'No description available'}</Text>
-                <Button colorScheme="red" mt={4} onClick={removeNode}>Remove Node</Button> {/* Button to remove node */}
+                <Button colorScheme="red" mt={4} onClick={removeNode}>Remove Node</Button>
               </>
             ) : selectedEdge ? (
               <>
                 <Heading size="lg" color="gray.900">Relationship</Heading>
-                <Text mt={4} color="gray.600"><b>Source:</b> {selectedEdge.sourceLabel}</Text> {/* Display source label */}
-                <Text mt={2} color="gray.600"><b>Target:</b> {selectedEdge.targetLabel}</Text> {/* Display target label */}
-                <Text mt={2} color="gray.600"><b>Type:</b> {selectedEdge.data?.relationship_type}</Text>  {/* Display relationship type */}
-                <Button colorScheme="red" mt={4} onClick={removeRelationship}>Remove Relationship</Button> 
+                <Text mt={4} color="gray.600"><b>Source:</b> {selectedEdge.sourceLabel}</Text>
+                <Text mt={2} color="gray.600"><b>Target:</b> {selectedEdge.targetLabel}</Text>
+                <Text mt={2} color="gray.600"><b>Type:</b> {selectedEdge.data?.relationship_type}</Text>
+                <Button colorScheme="red" mt={4} onClick={removeRelationship}>Remove Relationship</Button>
               </>
             ) : (
               <Text fontSize="lg" color="gray.500">Select a node or relationship to see details</Text>

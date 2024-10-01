@@ -1,114 +1,56 @@
-from pydantic import BaseModel
-from typing import Optional, Dict
+from pydantic import BaseModel, EmailStr
+from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
 
 
-class UserLogin(BaseModel):
-    email: str
-    password: str
-
-
-class UserCreate(BaseModel):
-    email: str
-    password: str
+# User Schemas
+class UserBase(BaseModel):
+    email: EmailStr
     name: str
 
 
+class UserCreate(UserBase):
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserResponse(UserBase):
+    user_id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Token Schemas
 class Token(BaseModel):
     access_token: str
     token_type: str
 
 
-class UserResponse(BaseModel):
-    user_id: UUID
-    email: str
-    name: str
+# API Key Schemas
+class APIKeyBase(BaseModel):
+    api_key_id: UUID
+    api_key: str
     created_at: datetime
+    revoked: Optional[datetime]
 
 
-# Schema for domain creation
-class DomainCreate(BaseModel):
-    domain_name: str
-    description: Optional[str] = None
+class APIKeyResponse(APIKeyBase):
+    class Config:
+        from_attributes = True
 
 
-# Schema for domain details
-class Domain(BaseModel):
-    domain_id: UUID
-    domain_name: str
-    owner_user_id: UUID
-    description: Optional[str]
-    version: int
-    created_at: datetime
+class APIKeyCreateResponse(BaseModel):
+    api_key: str
 
 
-# Schema for concept details
-class Concept(BaseModel):
-    concept_id: UUID
-    domain_id: UUID
-    name: str
-    description: Optional[str]
-    type: str
-    version: int
-    created_at: datetime
-    updated_at: datetime
-
-
-# Schema for source details
-class Source(BaseModel):
-    source_id: UUID
-    domain_id: UUID
-    name: str
-    source_type: str
-    location: str
-    description: Optional[str]
-    version: int
-    created_at: datetime
-
-
-# Schema for methodology details
-class Methodology(BaseModel):
-    methodology_id: UUID
-    domain_id: UUID
-    name: str
-    description: str
-    steps: str
-    version: int
-    created_at: datetime
-
-
-# Schema for relationship details
-class Relationship(BaseModel):
-    relationship_id: UUID
-    entity_id_1: UUID
-    entity_type_1: str
-    entity_id_2: UUID
-    entity_type_2: str
-    relationship_type: str
-    version: int
-    created_at: Optional[datetime] = None
-
-
-# New: Schema for DomainConfig
-class DomainConfig(BaseModel):
-    config_id: UUID
-    domain_id: UUID
-    config_key: str
-    config_value: str
-    created_at: datetime
-
-
-# New: Schema for UserConfig
-class UserConfig(BaseModel):
-    config_id: UUID
-    user_id: UUID
-    config_key: str
-    config_value: str
-    created_at: datetime
-
-
-# UserConfig schema
+# User Config Schemas
 class UserConfigSchema(BaseModel):
     config_id: UUID
     user_id: UUID
@@ -117,154 +59,143 @@ class UserConfigSchema(BaseModel):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
-# Schema for displaying API Key in the response
-class APIKeyResponse(BaseModel):
-    api_key_id: UUID
-    created_at: datetime
-    revoked: datetime | None = None
-
-    class Config:
-        orm_mode = True  # This allows compatibility with SQLAlchemy models
-
-
-# Schema for creating an API Key (response)
-class APIKeyCreateResponse(BaseModel):
-    api_key: str
-
-    class Config:
-        orm_mode = True
-
-
-# Base schema for creating entities (concepts, sources, methodologies)
-class EntityBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-    domain_id: UUID
-
-
-class EntityCreate(EntityBase):
-    type: str  # 'concept', 'methodology', 'source'
-
-
-class EntityUpdate(BaseModel):
-    name: str
-    description: Optional[str] = None
-
-
-class PositionUpdate(BaseModel):
-    position: Dict[str, float]  # {'x': float, 'y': float}
-
-
-# Since we have separate models for Concept, Source, Methodology,
-# we'll define an Entity schema that can represent any of them
-class Entity(BaseModel):
-    id: UUID  # Can be concept_id, source_id, or methodology_id
-    domain_id: UUID
-    name: str
+# Domain Schemas
+class DomainBase(BaseModel):
+    domain_name: str
     description: Optional[str]
-    type: str  # 'concept', 'methodology', 'source'
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
-
-    class Config:
-        orm_mode = True
 
 
-# Adjusted Relationship schemas
-class RelationshipBase(BaseModel):
-    entity_id_1: UUID
-    entity_type_1: str  # 'concept', 'methodology', 'source'
-    entity_id_2: UUID
-    entity_type_2: str  # 'concept', 'methodology', 'source'
-    relationship_type: str
-    domain_id: UUID
-
-
-class RelationshipCreate(RelationshipBase):
+class DomainCreate(DomainBase):
     pass
 
 
-class RelationshipUpdate(BaseModel):
-    relationship_type: str
-
-
-class Relationship(RelationshipBase):
-    relationship_id: UUID
+class Domain(DomainBase):
+    domain_id: UUID
+    version: int
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
-class ConceptCreate(BaseModel):
+# Concept Schemas
+class ConceptBase(BaseModel):
     name: str
-    description: Optional[str] = None
-    type: str
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
+    description: Optional[str]
+    type: Optional[str]
 
 
-class ConceptUpdate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    type: str
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
+class ConceptCreate(ConceptBase):
+    concept_id: Optional[UUID]
 
 
-# Schemas for Source creation and update
-class SourceCreate(BaseModel):
-    name: str
-    source_type: str
-    location: str
-    description: Optional[str] = None
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
-
-
-class SourceUpdate(BaseModel):
-    name: str
-    source_type: str
-    location: str
-    description: Optional[str] = None
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
-
-
-# Schemas for Methodology creation and update
-class MethodologyCreate(BaseModel):
-    name: str
-    description: str
-    steps: str
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
-
-
-class MethodologyUpdate(BaseModel):
-    name: str
-    description: str
-    steps: str
-    position_x: Optional[float] = None
-    position_y: Optional[float] = None
-
-
-# Schemas for Relationship creation and update
-class RelationshipCreate(BaseModel):
+class Concept(ConceptBase):
+    concept_id: UUID
     domain_id: UUID
+    domain_version: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Source Schemas
+class SourceBase(BaseModel):
+    name: str
+    description: Optional[str]
+    source_type: Optional[str]
+    location: Optional[str]
+
+
+class SourceCreate(SourceBase):
+    source_id: Optional[UUID]
+
+
+class Source(SourceBase):
+    source_id: UUID
+    domain_id: UUID
+    domain_version: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Methodology Schemas
+class MethodologyBase(BaseModel):
+    name: str
+    description: Optional[str]
+    steps: Optional[str]
+
+
+class MethodologyCreate(MethodologyBase):
+    methodology_id: Optional[UUID]
+
+
+class Methodology(MethodologyBase):
+    methodology_id: UUID
+    domain_id: UUID
+    domain_version: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Relationship Schemas
+class RelationshipBase(BaseModel):
     entity_id_1: UUID
     entity_type_1: str
     entity_id_2: UUID
     entity_type_2: str
-    relationship_type: str
+    relationship_type: Optional[str]
 
 
-class RelationshipUpdate(BaseModel):
-    relationship_type: str
+class RelationshipCreate(RelationshipBase):
+    relationship_id: Optional[UUID]
 
 
-# Schema for updating entity position
-class PositionUpdate(BaseModel):
-    position: Dict[str, float]  # {'x': float, 'y': float}
+class Relationship(RelationshipBase):
+    relationship_id: UUID
+    domain_id: UUID
+    domain_version: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Domain Config Schema
+class DomainConfig(BaseModel):
+    config_id: UUID
+    domain_id: UUID
+    config_key: str
+    config_value: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Updated Domain Data Schema to include domain-level info
+class DomainDataSchema(BaseModel):
+    domain_id: UUID
+    domain_name: str
+    description: Optional[str]
+    version: int
+    created_at: datetime
+    concepts: List[Concept]
+    sources: List[Source]
+    methodologies: List[Methodology]
+    relationships: List[Relationship]
+
+
+class DomainSaveSchema(BaseModel):
+    concepts: List[Concept]
+    sources: List[Source]
+    methodologies: List[Methodology]
+    relationships: List[Relationship]
