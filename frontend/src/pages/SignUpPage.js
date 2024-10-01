@@ -1,5 +1,5 @@
 import React, { useState, useContext } from 'react';
-import { Box, Input, Button, VStack, Heading } from '@chakra-ui/react';
+import { Box, Input, Button, VStack, Heading, Text, FormControl, FormLabel } from '@chakra-ui/react';
 import AuthContext from '../context/AuthContext';
 
 const SignUpPage = () => {
@@ -21,7 +21,7 @@ const SignUpPage = () => {
 
       const data = await response.json();
       if (response.ok) {
-        await handleLogin(email, password);  // Automatically log in after successful registration
+        await handleLogin(email, password); // Automatically log in after successful registration
       } else {
         alert(data.detail || 'Registration failed');
       }
@@ -32,36 +32,82 @@ const SignUpPage = () => {
   };
 
   return (
-    <Box p={4} maxW="md" mx="auto">
-      <VStack spacing={4}>
-        <Heading>Sign Up</Heading>
-        <form onSubmit={handleSubmit}>
-          <Input
-            type="text"
-            placeholder="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            mb={3}
-          />
-          <Input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            mb={3}
-          />
-          <Input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            mb={3}
-          />
-          <Button type="submit" colorScheme="teal" width="full">
+    <Box bg="gray.50" minH="100vh" display="flex" justifyContent="center" alignItems="center" p={6}>
+      <Box
+        bg="white"
+        p={8}
+        maxW="lg"
+        w="full"
+        borderRadius="lg"
+        shadow="lg"
+      >
+        <VStack spacing={6}>
+          <Heading as="h1" size="xl" textAlign="center" color="gray.800">
             Sign Up
-          </Button>
-        </form>
-      </VStack>
+          </Heading>
+          <Text fontSize="lg" color="gray.600" textAlign="center">
+            Create an account to get started.
+          </Text>
+          
+          <form onSubmit={handleSubmit} style={{ width: '100%' }}>
+            <VStack spacing={5}>
+              {/* Name Input */}
+              <FormControl id="name" isRequired>
+                <FormLabel fontSize="lg" color="gray.700">Name</FormLabel>
+                <Input
+                  type="text"
+                  placeholder="Enter your name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  size="lg"
+                  bg="gray.100"
+                  _focus={{ bg: "white", borderColor: "blue.500" }}
+                />
+              </FormControl>
+
+              {/* Email Input */}
+              <FormControl id="email" isRequired>
+                <FormLabel fontSize="lg" color="gray.700">Email</FormLabel>
+                <Input
+                  type="email"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  size="lg"
+                  bg="gray.100"
+                  _focus={{ bg: "white", borderColor: "blue.500" }}
+                />
+              </FormControl>
+
+              {/* Password Input */}
+              <FormControl id="password" isRequired>
+                <FormLabel fontSize="lg" color="gray.700">Password</FormLabel>
+                <Input
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  size="lg"
+                  bg="gray.100"
+                  _focus={{ bg: "white", borderColor: "blue.500" }}
+                />
+              </FormControl>
+
+              {/* Submit Button */}
+              <Button
+                type="submit"
+                colorScheme="blue"
+                size="lg"
+                width="full"
+                py={6}
+                _hover={{ bg: 'blue.600' }}
+              >
+                Sign Up
+              </Button>
+            </VStack>
+          </form>
+        </VStack>
+      </Box>
     </Box>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { Box, Heading, Container, Text, Button, Flex, VStack, Input } from '@chakra-ui/react';
+import { Box, Heading, Container, Text, Button, Flex, VStack, Input, useToast } from '@chakra-ui/react';
 import AuthContext from '../context/AuthContext';
 
 const UserConfigPage = () => {
@@ -7,6 +7,7 @@ const UserConfigPage = () => {
   const [apiKeys, setApiKeys] = useState([]);
   const [newKey, setNewKey] = useState(null);
   const [showNewKey, setShowNewKey] = useState(false); // Control visibility of new API key
+  const toast = useToast();
 
   useEffect(() => {
     // Fetch API keys
@@ -38,6 +39,13 @@ const UserConfigPage = () => {
       setNewKey(data.api_key);  // Store the new API key
       setShowNewKey(true);      // Show the key to the user
       setApiKeys([...apiKeys, data]);  // Add the new key to the list
+    } else {
+      toast({
+        title: 'Error generating API key.',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
     }
   };
 
@@ -58,36 +66,48 @@ const UserConfigPage = () => {
   };
 
   return (
-    <Box bg="gray.100" minH="100vh" py={10}>
-      <Container maxW="container.lg">
-        <Heading fontSize="2xl" mb={6}>
+    <Box bg="gray.50" minH="100vh" py={12} display="flex" justifyContent="center" alignItems="center">
+      <Container maxW="container.lg" bg="white" p={10} borderRadius="lg" shadow="lg">
+        <Heading as="h1" size="xl" fontWeight="bold" textAlign="center" mb={8} color="gray.800">
           API Key Management
         </Heading>
 
         {/* Display the newly generated API key */}
         {showNewKey && newKey && (
-          <Box mb={4} p={4} bg="white" boxShadow="md" borderRadius="md">
-            <Text fontWeight="bold" mb={2}>Your new API Key:</Text>
-            <Input value={newKey} isReadOnly mb={4} />
-            <Text color="red.500" fontSize="sm" mb={4}>
-              Please store this key securely. You won't be able to view it again after you close this message.
+          <Box mb={6} p={6} bg="gray.100" borderRadius="md" shadow="md">
+            <Text fontWeight="bold" fontSize="lg" mb={4} color="blue.600">
+              Your new API Key:
             </Text>
-            <Button colorScheme="blue" onClick={acknowledgeNewKey}>
-              Okay, I have stored it
+            <Input value={newKey} isReadOnly size="lg" bg="white" mb={4} />
+            <Text color="red.500" fontSize="sm" mb={6}>
+              Please store this key securely. You won’t be able to view it again after closing this message.
+            </Text>
+            <Button colorScheme="blue" onClick={acknowledgeNewKey} size="lg" width="full">
+              I have stored it
             </Button>
           </Box>
         )}
 
         {/* Button to generate a new API Key */}
-        <Button colorScheme="blue" onClick={generateAPIKey} mb={6}>
+        <Button
+          colorScheme="blue"
+          size="lg"
+          onClick={generateAPIKey}
+          mb={8}
+          py={6}
+          width="full"
+          _hover={{ bg: 'blue.600' }}
+        >
           Generate New API Key
         </Button>
 
         {/* List of existing API keys */}
-        <VStack spacing={4}>
+        <VStack spacing={6} width="full">
           {apiKeys.map(key => (
-            <Flex key={key.api_key_id} width="100%" justify="space-between" p={4} bg="white" boxShadow="sm" borderRadius="md">
-              <Text>Key Created: {new Date(key.created_at).toLocaleString()}</Text>
+            <Flex key={key.api_key_id} width="full" justify="space-between" p={4} bg="gray.50" boxShadow="sm" borderRadius="md">
+              <Text fontSize="md" color="gray.700">
+                Key Created: {new Date(key.created_at).toLocaleString()}
+              </Text>
               <Button colorScheme="red" size="sm" onClick={() => revokeAPIKey(key.api_key_id)}>
                 Revoke
               </Button>

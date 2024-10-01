@@ -1,6 +1,16 @@
 import uuid
 import secrets
-from sqlalchemy import Column, String, ForeignKey, Text, TIMESTAMP, func
+from sqlalchemy import (
+    Column,
+    String,
+    ForeignKey,
+    Text,
+    TIMESTAMP,
+    Integer,
+    func,
+    PrimaryKeyConstraint,
+    ForeignKeyConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID as UUIDType
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
@@ -64,9 +74,8 @@ class APIKey(Base):
 class Domain(Base):
     __tablename__ = "domains"
 
-    domain_id = Column(
-        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
-    )
+    domain_id = Column(UUIDType(as_uuid=True), nullable=False)
+    version = Column(Integer, nullable=False, default=1)
     domain_name = Column(String(255), nullable=False)
     owner_user_id = Column(
         UUIDType(as_uuid=True), ForeignKey("users.user_id"), nullable=False
@@ -74,18 +83,32 @@ class Domain(Base):
     description = Column(Text)
     created_at = Column(TIMESTAMP, default=func.now())
 
+    __table_args__ = (PrimaryKeyConstraint("domain_id", "version"),)
+
     # Relationships to other models
     concepts = relationship(
-        "Concept", back_populates="domain", cascade="all, delete-orphan"
+        "Concept",
+        back_populates="domain",
+        cascade="all, delete-orphan",
+        primaryjoin="and_(Domain.domain_id==Concept.domain_id, Domain.version==Concept.domain_version)",
     )
     sources = relationship(
-        "Source", back_populates="domain", cascade="all, delete-orphan"
+        "Source",
+        back_populates="domain",
+        cascade="all, delete-orphan",
+        primaryjoin="and_(Domain.domain_id==Source.domain_id, Domain.version==Source.domain_version)",
     )
     methodologies = relationship(
-        "Methodology", back_populates="domain", cascade="all, delete-orphan"
+        "Methodology",
+        back_populates="domain",
+        cascade="all, delete-orphan",
+        primaryjoin="and_(Domain.domain_id==Methodology.domain_id, Domain.version==Methodology.domain_version)",
     )
     relationships = relationship(
-        "Relationship", back_populates="domain", cascade="all, delete-orphan"
+        "Relationship",
+        back_populates="domain",
+        cascade="all, delete-orphan",
+        primaryjoin="and_(Domain.domain_id==Relationship.domain_id, Domain.version==Relationship.domain_version)",
     )
 
     # Add the relationship to DomainConfig
@@ -101,53 +124,68 @@ class Domain(Base):
 class Concept(Base):
     __tablename__ = "concepts"
 
-    concept_id = Column(
-        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
-    )
-    domain_id = Column(
-        UUIDType(as_uuid=True), ForeignKey("domains.domain_id"), nullable=False
-    )
+    concept_id = Column(UUIDType(as_uuid=True), nullable=False)
+    domain_id = Column(UUIDType(as_uuid=True), nullable=False)
+    domain_version = Column(Integer, nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text)
-    type = Column(String(50))  # 'definition', 'process', 'methodology', etc.
-    embedding = Column(Vector(1536))  # Using custom Vector type with dimension 1536
+    type = Column(String(50))
+    embedding = Column(Vector(1536))
     created_at = Column(TIMESTAMP, default=func.now())
-    updated_at = Column(TIMESTAMP, default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        TIMESTAMP, default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        PrimaryKeyConstraint("concept_id", "domain_version"),
+        ForeignKeyConstraint(
+            ["domain_id", "domain_version"], ["domains.domain_id", "domains.version"]
+        ),
+    )
 
     # Relationship with Domain
-    domain = relationship("Domain", back_populates="concepts")
+    domain = relationship(
+        "Domain",
+        back_populates="concepts",
+        primaryjoin="and_(Concept.domain_id==Domain.domain_id, Concept.domain_version==Domain.version)",
+    )
 
 
 # Source Model
 class Source(Base):
     __tablename__ = "sources"
 
-    source_id = Column(
-        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
-    )
-    domain_id = Column(
-        UUIDType(as_uuid=True), ForeignKey("domains.domain_id"), nullable=False
-    )
+    source_id = Column(UUIDType(as_uuid=True), nullable=False)
+    domain_id = Column(UUIDType(as_uuid=True), nullable=False)
+    domain_version = Column(Integer, nullable=False)
     name = Column(String(255), nullable=False)
     source_type = Column(String(50))  # 'table', 'api', etc.
     location = Column(Text, nullable=False)  # URI, table name, or connection string
     description = Column(Text)
     created_at = Column(TIMESTAMP, default=func.now())
 
+    __table_args__ = (
+        PrimaryKeyConstraint("source_id", "domain_version"),
+        ForeignKeyConstraint(
+            ["domain_id", "domain_version"], ["domains.domain_id", "domains.version"]
+        ),
+    )
+
     # Relationship with Domain
-    domain = relationship("Domain", back_populates="sources")
+    domain = relationship(
+        "Domain",
+        back_populates="sources",
+        primaryjoin="and_(Source.domain_id==Domain.domain_id, Source.domain_version==Domain.version)",
+    )
 
 
 # Methodology Model
 class Methodology(Base):
     __tablename__ = "methodologies"
 
-    methodology_id = Column(
-        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
-    )
-    domain_id = Column(
-        UUIDType(as_uuid=True), ForeignKey("domains.domain_id"), nullable=False
-    )
+    methodology_id = Column(UUIDType(as_uuid=True), nullable=False)
+    domain_id = Column(UUIDType(as_uuid=True), nullable=False)
+    domain_version = Column(Integer, nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
     steps = Column(
@@ -155,17 +193,28 @@ class Methodology(Base):
     )  # Detailed steps on how to join sources or get data
     created_at = Column(TIMESTAMP, default=func.now())
 
+    __table_args__ = (
+        PrimaryKeyConstraint("methodology_id", "domain_version"),
+        ForeignKeyConstraint(
+            ["domain_id", "domain_version"], ["domains.domain_id", "domains.version"]
+        ),
+    )
+
     # Relationship with Domain
-    domain = relationship("Domain", back_populates="methodologies")
+    domain = relationship(
+        "Domain",
+        back_populates="methodologies",
+        primaryjoin="and_(Methodology.domain_id==Domain.domain_id, Methodology.domain_version==Domain.version)",
+    )
 
 
 # Relationship Model
 class Relationship(Base):
     __tablename__ = "relationships"
 
-    relationship_id = Column(
-        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
-    )
+    relationship_id = Column(UUIDType(as_uuid=True), nullable=False)
+    domain_id = Column(UUIDType(as_uuid=True), nullable=False)
+    domain_version = Column(Integer, nullable=False)
     entity_id_1 = Column(
         UUIDType(as_uuid=True), nullable=False
     )  # Can point to concept, methodology, or source
@@ -181,9 +230,19 @@ class Relationship(Base):
     relationship_type = Column(String(50))  # 'related_to', 'part_of', 'depends_on'
     created_at = Column(TIMESTAMP, default=func.now())
 
+    __table_args__ = (
+        PrimaryKeyConstraint("relationship_id", "domain_version"),
+        ForeignKeyConstraint(
+            ["domain_id", "domain_version"], ["domains.domain_id", "domains.version"]
+        ),
+    )
+
     # Relationship with Domain
-    domain_id = Column(UUIDType(as_uuid=True), ForeignKey("domains.domain_id"))
-    domain = relationship("Domain", back_populates="relationships")
+    domain = relationship(
+        "Domain",
+        back_populates="relationships",
+        primaryjoin="and_(Relationship.domain_id==Domain.domain_id, Relationship.domain_version==Domain.version)",
+    )
 
 
 # DomainConfig Model

@@ -40,23 +40,38 @@ const HomePage = () => {
   const navigate = useNavigate();  // Navigation hook
 
   return (
-    <Box bg="gray.100" minH="100vh" py={10}>
+    <Box bg="gray.50" minH="100vh" py={10}>
       {/* Hero Section */}
-      <Box bg="white" shadow="md" py={{ base: 12, md: 16 }} mb={8}>
-        <Container maxW="container.lg">
+      <Box bgGradient="linear(to-r, white, gray.50)" py={{ base: 12, md: 16 }} mb={8} shadow="sm">
+        <Container maxW="container.xl">
           <Stack spacing={6} textAlign="center">
-            <Heading fontSize={{ base: '2xl', md: '4xl' }}>
-              Enhance Your RAG Systems with Advanced Concept Management
+            <Heading fontSize={{ base: '3xl', md: '5xl' }} fontWeight="bold" color="gray.800">
+              Elevate Your RAG System with Seamless Concept Management
             </Heading>
-            <Text fontSize={{ base: 'lg', md: 'xl' }} color="gray.600">
-              Manage domain-specific concepts and definitions, integrate with LangChain, 
-              and dynamically detect undefined concepts—all in one place.
+            <Text fontSize={{ base: 'lg', md: 'xl' }} color="gray.600" maxW="xl" mx="auto">
+              Effortlessly manage domain-specific concepts, integrate with LangChain, and detect undefined terms dynamically.
             </Text>
-            <Stack direction={{ base: 'column', md: 'row' }} spacing={4} justify="center">
-              <Button colorScheme="blue" size="md" onClick={() => navigate('/signup')}>
-                Create an Account
+            <Stack direction={{ base: 'column', md: 'row' }} spacing={4} justify="center" pt={4}>
+              <Button
+                colorScheme="blue"
+                size="lg"
+                px={8}
+                py={6}
+                onClick={() => navigate('/signup')}
+                shadow="md"
+                _hover={{ bg: "blue.600" }}
+              >
+                Get Started
               </Button>
-              <Button variant="outline" colorScheme="blue" size="md" onClick={() => navigate('/login')}>
+              <Button
+                variant="outline"
+                colorScheme="blue"
+                size="lg"
+                px={8}
+                py={6}
+                onClick={() => navigate('/login')}
+                _hover={{ bg: "gray.100" }}
+              >
                 Login
               </Button>
             </Stack>
@@ -65,28 +80,30 @@ const HomePage = () => {
       </Box>
 
       {/* Features Section */}
-      <Container maxW="container.lg">
+      <Container maxW="container.xl">
         <Stack spacing={8} textAlign="center">
-          <Heading as="h2" size="lg" mb={4}>
+          <Heading as="h2" size="xl" fontWeight="semibold" color="gray.800" mb={6}>
             Key Features
           </Heading>
-          <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={8}>
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={10}>
             {features.map((feature, index) => (
               <Box
                 key={index}
-                p={6}
-                border="1px"
+                p={8}
+                border="1px solid"
                 borderColor="gray.200"
-                borderRadius="md"
+                borderRadius="lg"
                 bg="white"
                 shadow="sm"
                 textAlign="left"
+                transition="all 0.3s"
+                _hover={{ shadow: "lg", transform: "scale(1.02)" }}
               >
-                <Icon as={CheckCircleIcon} w={6} h={6} color="blue.500" mb={4} />
-                <Heading as="h3" size="md" mb={2}>
+                <Icon as={CheckCircleIcon} w={8} h={8} color="blue.500" mb={4} />
+                <Heading as="h3" size="md" mb={2} color="gray.700">
                   {feature.title}
                 </Heading>
-                <Text fontSize="sm" color="gray.600">
+                <Text fontSize="md" color="gray.600">
                   {feature.description}
                 </Text>
               </Box>
@@ -96,17 +113,25 @@ const HomePage = () => {
       </Container>
 
       {/* Call to Action Section */}
-      <Box bg="white" mt={10} py={12} shadow="md">
-        <Container maxW="container.lg">
-          <VStack spacing={4}>
-            <Heading as="h2" size="lg" mb={4}>
-              Ready to Take Your RAG Systems to the Next Level?
+      <Box bgGradient="linear(to-r, gray.50, white)" mt={10} py={12} shadow="sm">
+        <Container maxW="container.xl">
+          <VStack spacing={6}>
+            <Heading as="h2" size="xl" fontWeight="bold" color="gray.800" mb={4}>
+              Ready to Transform Your Workflow?
             </Heading>
-            <Text fontSize="md" color="gray.600" textAlign="center">
-              Sign up now to start managing concepts, integrating with LangChain, and more!
+            <Text fontSize="lg" color="gray.600" maxW="md" textAlign="center">
+              Join today to experience the power of dynamic concept management and seamless integration.
             </Text>
-            <Button colorScheme="blue" size="md" onClick={() => navigate('/signup')}>
-              Get Started for Free
+            <Button
+              colorScheme="blue"
+              size="lg"
+              px={8}
+              py={6}
+              onClick={() => navigate('/signup')}
+              shadow="md"
+              _hover={{ bg: "blue.600" }}
+            >
+              Sign Up for Free
             </Button>
           </VStack>
         </Container>

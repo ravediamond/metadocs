@@ -25,7 +25,7 @@ const NewDomainPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!domainName) {
       toast({
         title: 'Domain Name is required.',
@@ -37,7 +37,7 @@ const NewDomainPage = () => {
     }
 
     setLoading(true);
-    
+
     try {
       const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains`, {
         method: 'POST',
@@ -82,50 +82,54 @@ const NewDomainPage = () => {
   };
 
   return (
-    <Box bg="gray.100" minH="100vh" py={10}>
-      <Container maxW="container.md" bg="white" p={8} borderRadius="md" shadow="md">
-        <Stack spacing={6}>
-          <Heading as="h1" size="xl" textAlign="center">
+    <Box bg="gray.50" minH="100vh" py={12} display="flex" justifyContent="center" alignItems="center">
+      <Container maxW="container.md" bg="white" p={10} borderRadius="lg" shadow="lg">
+        <Stack spacing={8}>
+          <Heading as="h1" size="xl" textAlign="center" fontWeight="bold" color="gray.800">
             Create New Domain
           </Heading>
-          <Text fontSize="md" color="gray.600" textAlign="center">
+          <Text fontSize="lg" color="gray.600" textAlign="center">
             Add a new domain to manage your data efficiently.
           </Text>
 
           <form onSubmit={handleSubmit}>
-            <Stack spacing={4}>
+            <Stack spacing={6}>
               {/* Domain Name Input */}
               <FormControl id="domain-name" isRequired>
-                <FormLabel>Domain Name</FormLabel>
+                <FormLabel fontSize="lg" color="gray.700">Domain Name</FormLabel>
                 <Input
                   type="text"
                   placeholder="Enter domain name"
                   value={domainName}
                   onChange={(e) => setDomainName(e.target.value)}
-                  bg="gray.50"
-                  borderColor="gray.200"
+                  size="lg"
+                  bg="gray.100"
+                  _focus={{ bg: "white", borderColor: "blue.500" }}
                 />
               </FormControl>
 
               {/* Description Textarea */}
               <FormControl id="description">
-                <FormLabel>Description</FormLabel>
+                <FormLabel fontSize="lg" color="gray.700">Description</FormLabel>
                 <Textarea
                   placeholder="Enter domain description (optional)"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  bg="gray.50"
-                  borderColor="gray.200"
+                  size="lg"
+                  bg="gray.100"
+                  _focus={{ bg: "white", borderColor: "blue.500" }}
                 />
               </FormControl>
 
               {/* Submit Button */}
               <Button
                 colorScheme="blue"
-                size="md"
+                size="lg"
                 type="submit"
                 isLoading={loading}
                 loadingText="Creating Domain"
+                py={6}
+                _hover={{ bg: 'blue.600' }}
               >
                 Create Domain
               </Button>
