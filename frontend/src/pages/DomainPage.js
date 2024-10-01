@@ -3,9 +3,8 @@
 import React, { useEffect, useState, useContext } from 'react';
 import {
   Box, Heading, Container, Text, Flex, Button, Select, Modal, ModalOverlay, ModalContent, ModalHeader,
-  ModalFooter, ModalBody, ModalCloseButton, Input, useDisclosure, IconButton
+  ModalFooter, ModalBody, ModalCloseButton, Input, useDisclosure
 } from '@chakra-ui/react';
-import { ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { ReactFlow, addEdge, useNodesState, useEdgesState, Controls, MiniMap } from '@xyflow/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import dagre from 'dagre';
@@ -54,7 +53,7 @@ const DomainPage = () => {
   const { isOpen: isRelOpen, onOpen: onRelOpen, onClose: onRelClose } = useDisclosure();
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [edges, setEdges, onEdgesState] = useEdgesState([]);
   const [newNodeType, setNewNodeType] = useState('concept');
   const [newNodeName, setNewNodeName] = useState('');
   const [newNodeDescription, setNewNodeDescription] = useState('');
@@ -63,7 +62,10 @@ const DomainPage = () => {
   const [relationshipType, setRelationshipType] = useState('');
   const [currentVersion, setCurrentVersion] = useState(1);
   const [isModified, setIsModified] = useState(false);
-  const [isInfoPanelCollapsed, setIsInfoPanelCollapsed] = useState(false);
+
+  // New state variables for modals
+  const [isNodeModalOpen, setIsNodeModalOpen] = useState(false);
+  const [isEdgeModalOpen, setIsEdgeModalOpen] = useState(false);
 
   const generateFlowElements = (concepts, methodologies, sources, relationships) => {
     const typeColors = {
@@ -127,17 +129,6 @@ const DomainPage = () => {
     setEdges(relationshipEdges);
   };
 
-  const fetchRelationships = async () => {
-    try {
-      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/relationships`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      return res.ok ? await res.json() : [];
-    } catch {
-      return [];
-    }
-  };
-
   const fetchData = async () => {
     if (!token) return;
 
@@ -172,7 +163,7 @@ const DomainPage = () => {
   const onNodeClick = (_, node) => {
     setSelectedNode(node);
     setSelectedEdge(null);
-    setSelectedSourceNode(node.id);
+    setIsNodeModalOpen(true);
   };
 
   const onEdgeClick = (_, edge) => {
@@ -185,6 +176,7 @@ const DomainPage = () => {
       targetLabel,
     });
     setSelectedNode(null);
+    setIsEdgeModalOpen(true);
   };
 
   const getNodeTypeById = (id) => {
@@ -282,6 +274,7 @@ const DomainPage = () => {
     }
 
     setSelectedNode(null);
+    setIsNodeModalOpen(false);
   };
 
   // Function to remove a relationship
@@ -307,6 +300,7 @@ const DomainPage = () => {
     }
 
     setSelectedEdge(null);
+    setIsEdgeModalOpen(false);
   };
 
   const addRelationship = () => {
@@ -435,85 +429,6 @@ const DomainPage = () => {
     }
   };
 
-  // Helper function to update local entities with IDs from the server response
-  const updateLocalEntities = (responseData) => {
-    // Update Concepts
-    const updatedConcepts = responseData.concepts;
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.data.type === 'concept') {
-          const updatedConcept = updatedConcepts.find(c => c.name === node.data.label);
-          if (updatedConcept && node.id !== updatedConcept.concept_id) {
-            node.id = updatedConcept.concept_id;
-            node.data.id = updatedConcept.concept_id;
-            node.data.domain_version = updatedConcept.domain_version; // Update domain_version
-          }
-        }
-        return node;
-      })
-    );
-
-    // Update Sources
-    const updatedSources = responseData.sources;
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.data.type === 'source') {
-          const updatedSource = updatedSources.find(s => s.name === node.data.label);
-          if (updatedSource && node.id !== updatedSource.source_id) {
-            node.id = updatedSource.source_id;
-            node.data.id = updatedSource.source_id;
-            node.data.domain_version = updatedSource.domain_version; // Update domain_version
-          }
-        }
-        return node;
-      })
-    );
-
-    // Update Methodologies
-    const updatedMethodologies = responseData.methodologies;
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.data.type === 'methodology') {
-          const updatedMethodology = updatedMethodologies.find(m => m.name === node.data.label);
-          if (updatedMethodology && node.id !== updatedMethodology.methodology_id) {
-            node.id = updatedMethodology.methodology_id;
-            node.data.id = updatedMethodology.methodology_id;
-            node.data.domain_version = updatedMethodology.domain_version; // Update domain_version
-          }
-        }
-        return node;
-      })
-    );
-
-    // Update Relationships
-    const updatedRelationships = responseData.relationships;
-    setEdges((eds) =>
-      eds.map((edge) => {
-        const updatedRelationship = updatedRelationships.find(r =>
-          r.entity_id_1 === edge.source &&
-          r.entity_id_2 === edge.target &&
-          r.relationship_type === edge.data.relationship_type
-        );
-        if (updatedRelationship && edge.id !== updatedRelationship.relationship_id) {
-          edge.id = updatedRelationship.relationship_id;
-          edge.data.id = updatedRelationship.relationship_id;
-          edge.data.domain_version = updatedRelationship.domain_version; // Update domain_version
-        }
-        return edge;
-      })
-    );
-  };
-
-  const isInfoPanelVisible = selectedNode || selectedEdge;
-  const infoPanelWidth = isInfoPanelVisible ? (isInfoPanelCollapsed ? '5%' : '25%') : '0%';
-  const graphWidth = isInfoPanelVisible ? (isInfoPanelCollapsed ? '95%' : '70%') : '100%';
-
-  useEffect(() => {
-    if (!isInfoPanelVisible) {
-      setIsInfoPanelCollapsed(false);
-    }
-  }, [isInfoPanelVisible]);
-
   return (
     <Box bg="gray.50" minH="100vh" py={10}>
       <Container maxW="container.xl">
@@ -523,15 +438,15 @@ const DomainPage = () => {
         <Text fontSize="lg" color="gray.500" mb={4}>
           Current Version: {currentVersion} {isModified && '(Unsaved Changes)'}
         </Text>
-        <Flex justify="space-between">
-          <Box width={graphWidth}>
+        <Flex justify="center">
+          <Box width="100%">
             {concepts.length > 0 || methodologies.length > 0 || sources.length > 0 ? (
               <Box height="500px" bg="white" borderRadius="xl" boxShadow="lg" p={5}>
                 <ReactFlow
                   nodes={nodes}
                   edges={edges}
                   onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
+                  onEdgesChange={onEdgesState}
                   onConnect={onConnect}
                   onNodeClick={onNodeClick}
                   onEdgeClick={onEdgeClick}
@@ -547,37 +462,6 @@ const DomainPage = () => {
               </Box>
             ) : <Text fontSize="lg" color="gray.500">No data found for this domain.</Text>}
           </Box>
-          {isInfoPanelVisible && (
-            <Box width={infoPanelWidth} p={isInfoPanelCollapsed ? 2 : 6} bg="white" borderRadius="xl" boxShadow="lg">
-              <IconButton
-                aria-label={isInfoPanelCollapsed ? 'Expand Info Panel' : 'Collapse Info Panel'}
-                icon={isInfoPanelCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-                onClick={() => setIsInfoPanelCollapsed(!isInfoPanelCollapsed)}
-                size="sm"
-                mb={4}
-              />
-              {!isInfoPanelCollapsed && (
-                <>
-                  {selectedNode ? (
-                    <>
-                      <Heading size="lg" color="gray.900">{selectedNode.data.label}</Heading>
-                      <Text mt={4} color="gray.600"><b>Type:</b> {selectedNode.data.type}</Text>
-                      <Text mt={2} color="gray.600"><b>Description:</b> {selectedNode.data.description || 'No description available'}</Text>
-                      <Button colorScheme="red" mt={4} onClick={removeNode}>Remove Node</Button>
-                    </>
-                  ) : selectedEdge ? (
-                    <>
-                      <Heading size="lg" color="gray.900">Relationship</Heading>
-                      <Text mt={4} color="gray.600"><b>Source:</b> {selectedEdge.sourceLabel}</Text>
-                      <Text mt={2} color="gray.600"><b>Target:</b> {selectedEdge.targetLabel}</Text>
-                      <Text mt={2} color="gray.600"><b>Type:</b> {selectedEdge.data?.relationship_type}</Text>
-                      <Button colorScheme="red" mt={4} onClick={removeRelationship}>Remove Relationship</Button>
-                    </>
-                  ) : null}
-                </>
-              )}
-            </Box>
-          )}
         </Flex>
         <Flex justify="center" mt={8}>
           <Button colorScheme="gray" size="lg" onClick={() => navigate(`/domains/${domain_id}/config`)}>
@@ -671,6 +555,48 @@ const DomainPage = () => {
             </ModalFooter>
           </ModalContent>
         </Modal>
+
+        {/* Modal for node information */}
+        <Modal isOpen={isNodeModalOpen} onClose={() => setIsNodeModalOpen(false)}>
+          <ModalOverlay />
+          <ModalContent borderRadius="xl" p={4}>
+            <ModalHeader fontSize="2xl" fontWeight="bold" color="gray.900">
+              {selectedNode?.data.label}
+            </ModalHeader>
+            <ModalCloseButton />
+            <ModalBody>
+              <Text mt={4} color="gray.600">
+                <b>Type:</b> {selectedNode?.data.type}
+              </Text>
+              <Text mt={2} color="gray.600">
+                <b>Description:</b> {selectedNode?.data.description || 'No description available'}
+              </Text>
+            </ModalBody>
+            <ModalFooter>
+              <Button colorScheme="red" onClick={removeNode}>Remove Node</Button>
+              <Button variant="ghost" onClick={() => setIsNodeModalOpen(false)}>Close</Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+
+        {/* Modal for edge information */}
+        <Modal isOpen={isEdgeModalOpen} onClose={() => setIsEdgeModalOpen(false)}>
+          <ModalOverlay />
+          <ModalContent borderRadius="xl" p={4}>
+            <ModalHeader fontSize="2xl" fontWeight="bold" color="gray.900">Relationship</ModalHeader>
+            <ModalCloseButton />
+            <ModalBody>
+              <Text mt={4} color="gray.600"><b>Source:</b> {selectedEdge?.sourceLabel}</Text>
+              <Text mt={2} color="gray.600"><b>Target:</b> {selectedEdge?.targetLabel}</Text>
+              <Text mt={2} color="gray.600"><b>Type:</b> {selectedEdge?.data?.relationship_type}</Text>
+            </ModalBody>
+            <ModalFooter>
+              <Button colorScheme="red" onClick={removeRelationship}>Remove Relationship</Button>
+              <Button variant="ghost" onClick={() => setIsEdgeModalOpen(false)}>Close</Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+
       </Container>
     </Box>
   );
