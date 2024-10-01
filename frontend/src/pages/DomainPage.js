@@ -457,7 +457,7 @@ const DomainPage = () => {
                   fitView
                 >
                   <Controls /> {/* Add zoom controls */}
-                  <MiniMap />   {/* Add mini-map */}
+                  <MiniMap pannable />   {/* Add mini-map */}
                 </ReactFlow>
               </Box>
             ) : <Text fontSize="lg" color="gray.500">No data found for this domain.</Text>}
