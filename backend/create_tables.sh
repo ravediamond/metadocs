@@ -134,6 +134,21 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       revoked TIMESTAMP
   );
+
+  -- Create Roles table
+  CREATE TABLE IF NOT EXISTS roles (
+    role_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    role_name VARCHAR(50) UNIQUE NOT NULL,
+    description TEXT
+  );
+
+  -- Create UserRoles table
+  CREATE TABLE IF NOT EXISTS user_roles (
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
+    role_id UUID REFERENCES roles(role_id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, domain_id, role_id)
+  );
 EOSQL
 
 echo "Tables created successfully."
@@ -255,8 +270,15 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       'depends_on', 
       CURRENT_TIMESTAMP);
 
-  -- Insert more data for IT domain if needed (Update domain_id and domain_version accordingly)
-  -- For brevity, I'll skip re-writing the IT domain data. Ensure you update the domain_version to match the version in the domains table.
+  INSERT INTO roles (role_name, description)
+  VALUES
+    ('owner', 'Full access to the domain, including managing roles'),
+    ('admin', 'Administrative access to the domain'),
+    ('member', 'Can contribute to the domain'),
+    ('viewer', 'Can view domain content')
+  ON CONFLICT (role_name) DO NOTHING;
+
+
 EOSQL
 
 echo "Data inserted successfully."

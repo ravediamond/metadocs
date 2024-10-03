@@ -13,6 +13,12 @@ from ..models.schemas import (
     UserConfigSchema,
     APIKeyResponse,
     APIKeyCreateResponse,
+    Role as RoleSchema,
+    RoleCreate,
+    UserRoleCreate,
+    UserRole as UserRoleSchema,
+    Role,
+    UserRole,
 )
 
 router = APIRouter()
@@ -100,3 +106,19 @@ def revoke_api_key(
     api_key.revoked = func.now()  # Set the revocation timestamp
     db.commit()
     return {"message": "API key revoked"}
+
+
+@router.get("/users/{user_id}/roles", response_model=List[RoleSchema])
+def get_user_roles(
+    user_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    user_roles = db.query(UserRole).filter(UserRole.user_id == user_id).all()
+    roles = [
+        db.query(Role).filter(Role.role_id == ur.role_id).first() for ur in user_roles
+    ]
+    return roles

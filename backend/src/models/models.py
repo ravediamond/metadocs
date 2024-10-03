@@ -54,6 +54,9 @@ class User(Base):
         "APIKey", back_populates="user", cascade="all, delete-orphan"
     )
 
+    # Relationship to UserRole
+    user_roles = relationship("UserRole", back_populates="user")
+
 
 class APIKey(Base):
     __tablename__ = "api_keys"
@@ -118,6 +121,9 @@ class Domain(Base):
 
     # Relationship to user
     owner = relationship("User", back_populates="domains")
+
+    # Relationship to UserRole
+    user_roles = relationship("UserRole", back_populates="domain")
 
 
 # Concept Model
@@ -279,3 +285,35 @@ class UserConfig(Base):
 
     # Relationship with User
     user = relationship("User", back_populates="configurations")
+
+
+# Role Model
+class Role(Base):
+    __tablename__ = "roles"
+
+    role_id = Column(UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid)
+    role_name = Column(String(50), unique=True, nullable=False)
+    description = Column(Text)
+
+    # Relationship to UserRole
+    user_roles = relationship("UserRole", back_populates="role")
+
+
+# UserRole Association Model
+class UserRole(Base):
+    __tablename__ = "user_roles"
+
+    user_id = Column(
+        UUIDType(as_uuid=True), ForeignKey("users.user_id"), primary_key=True
+    )
+    domain_id = Column(
+        UUIDType(as_uuid=True), ForeignKey("domains.domain_id"), primary_key=True
+    )
+    role_id = Column(
+        UUIDType(as_uuid=True), ForeignKey("roles.role_id"), primary_key=True
+    )
+
+    # Relationships
+    user = relationship("User", back_populates="user_roles")
+    domain = relationship("Domain", back_populates="user_roles")
+    role = relationship("Role", back_populates="user_roles")

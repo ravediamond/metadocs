@@ -199,3 +199,36 @@ class DomainSaveSchema(BaseModel):
     sources: List[Source]
     methodologies: List[Methodology]
     relationships: List[Relationship]
+
+
+# Role Schemas
+class RoleBase(BaseModel):
+    role_name: str
+    description: Optional[str]
+
+
+class RoleCreate(RoleBase):
+    pass
+
+
+class Role(RoleBase):
+    role_id: UUID
+
+    class Config:
+        from_attributes = True
+
+
+# UserRole Schemas
+class UserRoleBase(BaseModel):
+    user_id: UUID
+    domain_id: UUID
+    role_id: UUID
+
+
+class UserRoleCreate(UserRoleBase):
+    pass
+
+
+class UserRole(UserRoleBase):
+    class Config:
+        from_attributes = True

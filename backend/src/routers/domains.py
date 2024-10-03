@@ -8,6 +8,7 @@ from sqlalchemy import func
 
 from ..core.database import get_db
 from ..core.security import get_current_user
+from ..core.permissions import has_permission
 from ..models.models import (
     Domain,
     User,
@@ -31,6 +32,9 @@ from ..models.schemas import (
     DomainConfig as DomainConfigSchema,
     DomainDataSchema,
     DomainSaveSchema,
+    Role,
+    UserRole,
+    DomainCreate,
 )
 
 router = APIRouter()
@@ -68,6 +72,40 @@ def get_domains(
     return domains
 
 
+@router.post("/", response_model=DomainSchema)
+def create_domain(
+    domain_create: DomainCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Create the domain
+    domain_id = uuid.uuid4()
+    new_domain = Domain(
+        domain_id=domain_id,
+        version=1,
+        domain_name=domain_create.domain_name,
+        owner_user_id=current_user.user_id,
+        description=domain_create.description,
+        created_at=func.now(),
+    )
+    db.add(new_domain)
+    db.commit()
+    db.refresh(new_domain)
+
+    # Assign 'owner' role to the creator
+    owner_role = db.query(Role).filter(Role.role_name == "owner").first()
+    if not owner_role:
+        raise HTTPException(status_code=500, detail="Owner role not found")
+
+    user_role = UserRole(
+        user_id=current_user.user_id, domain_id=domain_id, role_id=owner_role.role_id
+    )
+    db.add(user_role)
+    db.commit()
+
+    return new_domain
+
+
 # Get all concepts, sources, methodologies, and relationships related to a domain for the current user
 @router.get("/{domain_id}/details", response_model=DomainDataSchema)
 def get_domain_details(
@@ -85,7 +123,9 @@ def get_domain_details(
         .order_by(Domain.version.desc())
         .first()
     )
-    if not domain:
+    if not has_permission(
+        current_user, domain_id, ["owner", "admin", "member", "viewer"], db
+    ):
         raise HTTPException(
             status_code=403, detail="Access to this domain is forbidden"
         )
@@ -414,7 +454,9 @@ def get_concepts_for_domain(
         )
         .first()
     )
-    if not domain:
+    if not has_permission(
+        current_user, domain_id, ["owner", "admin", "member", "viewer"], db
+    ):
         raise HTTPException(
             status_code=403, detail="Access to this domain is forbidden"
         )
@@ -450,7 +492,9 @@ def get_sources_for_domain(
         )
         .first()
     )
-    if not domain:
+    if not has_permission(
+        current_user, domain_id, ["owner", "admin", "member", "viewer"], db
+    ):
         raise HTTPException(
             status_code=403, detail="Access to this domain is forbidden"
         )
@@ -486,7 +530,9 @@ def get_methodologies_for_domain(
         )
         .first()
     )
-    if not domain:
+    if not has_permission(
+        current_user, domain_id, ["owner", "admin", "member", "viewer"], db
+    ):
         raise HTTPException(
             status_code=403, detail="Access to this domain is forbidden"
         )
@@ -522,7 +568,9 @@ def get_relationships_for_domain(
         )
         .first()
     )
-    if not domain:
+    if not has_permission(
+        current_user, domain_id, ["owner", "admin", "member", "viewer"], db
+    ):
         raise HTTPException(
             status_code=403, detail="Access to this domain is forbidden"
         )
@@ -542,37 +590,6 @@ def get_relationships_for_domain(
     return relationships
 
 
-# Update position of an entity
-@router.put("/entities/{entity_type}/{entity_id}/position")
-def update_entity_position(
-    entity_type: str,
-    entity_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    # Get the latest domain version for the entity
-    entity = get_entity_by_id_and_type(db, entity_id, entity_type)
-    if not entity:
-        raise HTTPException(status_code=404, detail="Entity not found")
-
-    # Check if the entity belongs to a domain owned by the current user
-    domain = (
-        db.query(Domain)
-        .filter(
-            Domain.domain_id == entity.domain_id,
-            Domain.owner_user_id == current_user.user_id,
-        )
-        .first()
-    )
-    if not domain:
-        raise HTTPException(
-            status_code=403, detail="Access to this entity is forbidden"
-        )
-
-    db.commit()
-    return {"detail": "Position updated"}
-
-
 # Get domain configuration
 @router.get("/{domain_id}/config", response_model=List[DomainConfigSchema])
 def get_domain_config(
@@ -587,7 +604,9 @@ def get_domain_config(
         )
         .first()
     )
-    if not domain:
+    if not has_permission(
+        current_user, domain_id, ["owner", "admin", "member", "viewer"], db
+    ):
         raise HTTPException(
             status_code=403, detail="Access to this domain is forbidden"
         )
@@ -616,7 +635,9 @@ def update_domain_config(
         )
         .first()
     )
-    if not domain:
+    if not has_permission(
+        current_user, domain_id, ["owner", "admin", "member", "viewer"], db
+    ):
         raise HTTPException(
             status_code=403, detail="Access to this domain is forbidden"
         )
