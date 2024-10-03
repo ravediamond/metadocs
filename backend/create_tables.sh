@@ -194,6 +194,20 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
   SELECT owner_user_id, domain_id, (SELECT role_id FROM roles WHERE role_name = 'admin')
   FROM domains;
 
+  -- Insert additional roles as needed
+  -- Example: Assign 'member' role to user1 for the IT domain
+  INSERT INTO user_roles (user_id, domain_id, role_id)
+  VALUES
+    ('b11f11d1-1c1c-41f1-bf2d-4bfbf1c1d1d1', 'd22d22d2-2a2a-42a2-bf2a-4cfcf2b2d2d2', (SELECT role_id FROM roles WHERE role_name = 'member'))
+  ON CONFLICT (user_id, domain_id, role_id) DO NOTHING;
+
+  -- Insert more roles for other users if necessary
+  -- Example: Assign 'viewer' role to user2 for the Sales domain
+  INSERT INTO user_roles (user_id, domain_id, role_id)
+  VALUES
+    ('b22f22d2-2c2c-42f2-bf3d-4cfcf2c2e2e2', 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', (SELECT role_id FROM roles WHERE role_name = 'viewer'))
+  ON CONFLICT (user_id, domain_id, role_id) DO NOTHING;
+
   -- Insert concepts for Sales domain
   INSERT INTO concepts (concept_id, domain_id, domain_version, name, description, type, embedding, created_at, updated_at)
   VALUES
@@ -291,6 +305,25 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
       'source',
       'depends_on', 
       CURRENT_TIMESTAMP);
+
+  -- Insert data into User Config table
+  INSERT INTO user_config (config_id, user_id, config_key, config_value, created_at)
+  VALUES
+    (gen_random_uuid(), 'b11f11d1-1c1c-41f1-bf2d-4bfbf1c1d1d1', 'theme', 'dark', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'b11f11d1-1c1c-41f1-bf2d-4bfbf1c1d1d1', 'notifications', 'enabled', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'b22f22d2-2c2c-42f2-bf3d-4cfcf2c2e2e2', 'theme', 'light', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'b22f22d2-2c2c-42f2-bf3d-4cfcf2c2e2e2', 'notifications', 'disabled', CURRENT_TIMESTAMP)
+  ON CONFLICT (config_id) DO NOTHING;
+
+  -- Insert data into Domain Config table
+  INSERT INTO domain_config (config_id, domain_id, config_key, config_value, created_at)
+  VALUES
+    (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'default_language', 'en', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'd11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'time_zone', 'UTC', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'd22d22d2-2a2a-42a2-bf2a-4cfcf2b2d2d2', 'default_language', 'es', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), 'd22d22d2-2a2a-42a2-bf2a-4cfcf2b2d2d2', 'time_zone', 'CET', CURRENT_TIMESTAMP)
+  ON CONFLICT (config_id) DO NOTHING;
+
 EOSQL
 
 echo "Data inserted successfully."

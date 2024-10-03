@@ -212,6 +212,11 @@ class RoleCreate(RoleBase):
     pass
 
 
+class RoleUpdate(BaseModel):
+    role_name: Optional[str] = None
+    description: Optional[str] = None
+
+
 class Role(RoleBase):
     role_id: UUID
 
@@ -231,5 +236,18 @@ class UserRoleCreate(UserRoleBase):
 
 
 class UserRole(UserRoleBase):
+    role_name: str  # Add role_name for better readability
+
+    class Config:
+        from_attributes = True
+
+
+class UserRoleResponse(BaseModel):
+    user_id: UUID
+    domain_id: UUID
+    role_name: str
+    email: str
+    name: str
+
     class Config:
         from_attributes = True

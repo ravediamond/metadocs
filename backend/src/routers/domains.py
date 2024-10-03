@@ -19,6 +19,10 @@ from ..models.models import (
     DomainConfig,
     Role,
     UserRole,
+    Role,
+    UserRole,
+    User,
+    Domain,
 )
 from ..models.schemas import (
     Domain as DomainSchema,
@@ -34,6 +38,9 @@ from ..models.schemas import (
     RelationshipCreate as RelationshipCreateSchema,
     DomainConfig as DomainConfigSchema,
     DomainSaveSchema,
+    UserRoleCreate,
+    UserRole as UserRoleSchema,
+    UserRoleResponse,
 )
 from ..core.permissions import has_permission
 
@@ -634,3 +641,135 @@ def get_entity_by_id_and_type(db: Session, entity_id: UUID, entity_type: str):
         )
         .first()
     )
+
+
+@router.post(
+    "/domains/{domain_id}/users/{user_id}/roles", response_model=UserRoleSchema
+)
+def assign_role_to_user(
+    domain_id: UUID,
+    user_id: UUID,
+    user_role_create: UserRoleCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Check if current_user has 'owner' role in the domain
+    if not has_permission(current_user, domain_id, ["owner"], db):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    # Check if user exists
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if domain exists
+    domain = db.query(Domain).filter(Domain.domain_id == domain_id).first()
+    if not domain:
+        raise HTTPException(status_code=404, detail="Domain not found")
+
+    # Check if role exists
+    role = db.query(Role).filter(Role.role_id == user_role_create.role_id).first()
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
+
+    # Check if the user already has the role in the domain
+    existing_user_role = (
+        db.query(UserRole)
+        .filter(
+            UserRole.user_id == user_id,
+            UserRole.domain_id == domain_id,
+            UserRole.role_id == role.role_id,
+        )
+        .first()
+    )
+    if existing_user_role:
+        raise HTTPException(
+            status_code=400, detail="User already has this role in the domain"
+        )
+
+    # Assign role
+    user_role = UserRole(user_id=user_id, domain_id=domain_id, role_id=role.role_id)
+    db.add(user_role)
+    db.commit()
+    db.refresh(user_role)
+    return user_role
+
+
+@router.delete("/{domain_id}/users/{user_id}/roles/{role_name}")
+def revoke_role_from_user(
+    domain_id: UUID,
+    user_id: UUID,
+    role_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Check permissions
+    if not has_permission(current_user, domain_id, ["owner", "admin"], db):
+        raise HTTPException(
+            status_code=403, detail="Insufficient permissions to revoke roles"
+        )
+
+    # Get the role object
+    role = db.query(Role).filter(Role.role_name == role_name).first()
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
+
+    # Find the user role association
+    user_role = (
+        db.query(UserRole)
+        .filter(
+            UserRole.user_id == user_id,
+            UserRole.domain_id == domain_id,
+            UserRole.role_id == role.role_id,
+        )
+        .first()
+    )
+    if not user_role:
+        raise HTTPException(
+            status_code=404, detail="User does not have this role in the domain"
+        )
+
+    # Revoke the role
+    db.delete(user_role)
+    db.commit()
+    return {"detail": "Role revoked successfully"}
+
+
+@router.get("/{domain_id}/users", response_model=List[UserRoleResponse])
+def list_users_in_domain(
+    domain_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Check permissions
+    if not has_permission(current_user, domain_id, ["owner", "admin", "member"], db):
+        raise HTTPException(
+            status_code=403, detail="Insufficient permissions to view users"
+        )
+
+    # Get user roles with role names and additional user information
+    user_roles = (
+        db.query(
+            UserRole.user_id, UserRole.domain_id, Role.role_name, User.email, User.name
+        )
+        .join(Role, UserRole.role_id == Role.role_id)
+        .join(
+            User, User.user_id == UserRole.user_id
+        )  # Correct join between UserRole and User on user_id
+        .filter(UserRole.domain_id == domain_id)
+        .all()
+    )
+
+    # Convert query results to list of dicts
+    result = [
+        {
+            "user_id": ur.user_id,
+            "domain_id": ur.domain_id,
+            "role_name": ur.role_name,
+            "email": ur.email,
+            "name": ur.name,
+        }
+        for ur in user_roles
+    ]
+
+    return result
