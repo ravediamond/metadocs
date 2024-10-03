@@ -74,7 +74,8 @@ class DomainCreate(DomainBase):
 
 class Domain(DomainBase):
     domain_id: UUID
-    version: int
+    domain_name: str
+    description: Optional[str]
     created_at: datetime
 
     class Config:

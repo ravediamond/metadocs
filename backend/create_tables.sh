@@ -36,20 +36,26 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- Create Domains table with version column and composite primary key
+  -- Create Domains table
   CREATE TABLE IF NOT EXISTS domains (
-    domain_id UUID NOT NULL,
-    version INT NOT NULL DEFAULT 1,
+    domain_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_name VARCHAR(255) NOT NULL,
     owner_user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  -- Create DomainVersions table
+  CREATE TABLE IF NOT EXISTS domain_versions (
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
+    version INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (domain_id, version)
   );
 
-  -- Create Concepts table with domain_version column and composite primary key
+  -- Create Concepts table
   CREATE TABLE IF NOT EXISTS concepts (
-    concept_id UUID NOT NULL,
+    concept_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID NOT NULL,
     domain_version INT NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -58,13 +64,12 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     embedding VECTOR(1536),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (concept_id, domain_version),
-    FOREIGN KEY (domain_id, domain_version) REFERENCES domains(domain_id, version) ON DELETE CASCADE
+    FOREIGN KEY (domain_id, domain_version) REFERENCES domain_versions(domain_id, version) ON DELETE CASCADE
   );
 
-  -- Create Sources table with domain_version column and composite primary key
+  -- Create Sources table
   CREATE TABLE IF NOT EXISTS sources (
-    source_id UUID NOT NULL,
+    source_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID NOT NULL,
     domain_version INT NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -72,26 +77,24 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     location TEXT NOT NULL,
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (source_id, domain_version),
-    FOREIGN KEY (domain_id, domain_version) REFERENCES domains(domain_id, version) ON DELETE CASCADE
+    FOREIGN KEY (domain_id, domain_version) REFERENCES domain_versions(domain_id, version) ON DELETE CASCADE
   );
 
-  -- Create Methodologies table with domain_version column and composite primary key
+  -- Create Methodologies table
   CREATE TABLE IF NOT EXISTS methodologies (
-    methodology_id UUID NOT NULL,
+    methodology_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID NOT NULL,
     domain_version INT NOT NULL,
     name VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     steps TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (methodology_id, domain_version),
-    FOREIGN KEY (domain_id, domain_version) REFERENCES domains(domain_id, version) ON DELETE CASCADE
+    FOREIGN KEY (domain_id, domain_version) REFERENCES domain_versions(domain_id, version) ON DELETE CASCADE
   );
 
-  -- Create Relationships table with domain_version column and composite primary key
+  -- Create Relationships table
   CREATE TABLE IF NOT EXISTS relationships (
-    relationship_id UUID NOT NULL,
+    relationship_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID NOT NULL,
     domain_version INT NOT NULL,
     entity_id_1 UUID NOT NULL,
@@ -100,8 +103,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     entity_type_2 VARCHAR(50) NOT NULL,
     relationship_type VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (relationship_id, domain_version),
-    FOREIGN KEY (domain_id, domain_version) REFERENCES domains(domain_id, version) ON DELETE CASCADE
+    FOREIGN KEY (domain_id, domain_version) REFERENCES domain_versions(domain_id, version) ON DELETE CASCADE
   );
 
   -- Create User Config table
@@ -155,22 +157,42 @@ echo "Tables created successfully."
 
 echo "Inserting initial data into tables..."
 
-# Insert initial data for users
+# Insert initial data for users, domains, etc.
 psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
   -- Insert data into Users table
   INSERT INTO users (user_id, email, hashed_password, name)
   VALUES
     ('b11f11d1-1c1c-41f1-bf2d-4bfbf1c1d1d1', 'user1@example.com', '$2b$12$ctUeogp4nb3cbMERRe1qVeRfgh3aIxP7clgEPgu1A.JrUOv6apnT2', 'User One'),
-    ('b22f22d2-2c2c-42f2-bf3d-4cfcf2c2e2e2', 'user2@example.com', '$2b$12$RaerUrFIbqkUomI.4YWnROJ419pK2h8Fbs/4bIBlaviSzKoXwutJK', 'User Two');
-EOSQL
+    ('b22f22d2-2c2c-42f2-bf3d-4cfcf2c2e2e2', 'user2@example.com', '$2b$12$RaerUrFIbqkUomI.4YWnROJ419pK2h8Fbs/4bIBlaviSzKoXwutJK', 'User Two')
+  ON CONFLICT (user_id) DO NOTHING;
 
-# Insert initial data for domains, concepts, sources, methodologies, and relationships
-psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   -- Insert data into Domains table
-  INSERT INTO domains (domain_id, version, domain_name, owner_user_id, description, created_at)
+  INSERT INTO domains (domain_id, domain_name, owner_user_id, description, created_at)
   VALUES
-    ('d11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 1, 'Sales', 'b11f11d1-1c1c-41f1-bf2d-4bfbf1c1d1d1', 'This is a Sales example domain', CURRENT_TIMESTAMP),
-    ('d22d22d2-2a2a-42a2-bf2a-4cfcf2b2d2d2', 1, 'IT', 'b22f22d2-2c2c-42f2-bf3d-4cfcf2c2e2e2', 'This is an IT domain', CURRENT_TIMESTAMP);
+    ('d11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 'Sales', 'b11f11d1-1c1c-41f1-bf2d-4bfbf1c1d1d1', 'This is a Sales example domain', CURRENT_TIMESTAMP),
+    ('d22d22d2-2a2a-42a2-bf2a-4cfcf2b2d2d2', 'IT', 'b22f22d2-2c2c-42f2-bf3d-4cfcf2c2e2e2', 'This is an IT domain', CURRENT_TIMESTAMP)
+  ON CONFLICT (domain_id) DO NOTHING;
+
+  -- Insert data into DomainVersions table
+  INSERT INTO domain_versions (domain_id, version, created_at)
+  VALUES
+    ('d11d11d1-1a1a-41a1-bf1a-4bfbf1b1d1d1', 1, CURRENT_TIMESTAMP),
+    ('d22d22d2-2a2a-42a2-bf2a-4cfcf2b2d2d2', 1, CURRENT_TIMESTAMP)
+  ON CONFLICT (domain_id, version) DO NOTHING;
+
+  -- Insert default roles into the Roles table
+  INSERT INTO roles (role_name, description)
+  VALUES
+    ('owner', 'Full access to the domain, including managing roles'),
+    ('admin', 'Administrative access to the domain'),
+    ('member', 'Can contribute to the domain'),
+    ('viewer', 'Can view domain content')
+  ON CONFLICT (role_name) DO NOTHING;
+
+  -- Assign 'admin' role to each domain owner for their own domain
+  INSERT INTO user_roles (user_id, domain_id, role_id)
+  SELECT owner_user_id, domain_id, (SELECT role_id FROM roles WHERE role_name = 'admin')
+  FROM domains;
 
   -- Insert concepts for Sales domain
   INSERT INTO concepts (concept_id, domain_id, domain_version, name, description, type, embedding, created_at, updated_at)
@@ -269,16 +291,6 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       'source',
       'depends_on', 
       CURRENT_TIMESTAMP);
-
-  INSERT INTO roles (role_name, description)
-  VALUES
-    ('owner', 'Full access to the domain, including managing roles'),
-    ('admin', 'Administrative access to the domain'),
-    ('member', 'Can contribute to the domain'),
-    ('viewer', 'Can view domain content')
-  ON CONFLICT (role_name) DO NOTHING;
-
-
 EOSQL
 
 echo "Data inserted successfully."

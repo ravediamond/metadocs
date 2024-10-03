@@ -8,18 +8,21 @@ from sqlalchemy import func
 
 from ..core.database import get_db
 from ..core.security import get_current_user
-from ..core.permissions import has_permission
 from ..models.models import (
     Domain,
+    DomainVersion,
     User,
     Concept,
     Source,
     Methodology,
     Relationship,
     DomainConfig,
+    Role,
+    UserRole,
 )
 from ..models.schemas import (
     Domain as DomainSchema,
+    DomainCreate,
     DomainDataSchema,
     Concept as ConceptSchema,
     Source as SourceSchema,
@@ -30,59 +33,23 @@ from ..models.schemas import (
     MethodologyCreate as MethodologyCreateSchema,
     RelationshipCreate as RelationshipCreateSchema,
     DomainConfig as DomainConfigSchema,
-    DomainDataSchema,
     DomainSaveSchema,
-    Role,
-    UserRole,
-    DomainCreate,
 )
+from ..core.permissions import has_permission
 
 router = APIRouter()
 
 
-# Get all domains related to the current authenticated user
-@router.get("/", response_model=List[DomainSchema])
-def get_domains(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
-):
-    # Subquery to get the latest version for each domain
-    subquery = (
-        db.query(Domain.domain_id, func.max(Domain.version).label("latest_version"))
-        .filter(Domain.owner_user_id == current_user.user_id)
-        .group_by(Domain.domain_id)
-        .subquery()
-    )
-
-    # Query to get the domains with the latest version
-    domains = (
-        db.query(Domain)
-        .join(
-            subquery,
-            (Domain.domain_id == subquery.c.domain_id)
-            & (Domain.version == subquery.c.latest_version),
-        )
-        .all()
-    )
-
-    if not domains:
-        raise HTTPException(
-            status_code=404, detail="No domains found for the current user"
-        )
-
-    return domains
-
-
+# Create a new domain and assign 'owner' role to the creator
 @router.post("/", response_model=DomainSchema)
 def create_domain(
     domain_create: DomainCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Create the domain
     domain_id = uuid.uuid4()
     new_domain = Domain(
         domain_id=domain_id,
-        version=1,
         domain_name=domain_create.domain_name,
         owner_user_id=current_user.user_id,
         description=domain_create.description,
@@ -92,13 +59,24 @@ def create_domain(
     db.commit()
     db.refresh(new_domain)
 
+    # Create the initial domain version
+    new_domain_version = DomainVersion(
+        domain_id=domain_id,
+        version=1,
+        created_at=func.now(),
+    )
+    db.add(new_domain_version)
+    db.commit()
+
     # Assign 'owner' role to the creator
     owner_role = db.query(Role).filter(Role.role_name == "owner").first()
     if not owner_role:
         raise HTTPException(status_code=500, detail="Owner role not found")
 
     user_role = UserRole(
-        user_id=current_user.user_id, domain_id=domain_id, role_id=owner_role.role_id
+        user_id=current_user.user_id,
+        domain_id=domain_id,
+        role_id=owner_role.role_id,
     )
     db.add(user_role)
     db.commit()
@@ -106,7 +84,54 @@ def create_domain(
     return new_domain
 
 
-# Get all concepts, sources, methodologies, and relationships related to a domain for the current user
+# Get all domains the current user has access to
+@router.get("/", response_model=List[DomainSchema])
+def get_domains(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Subquery to get the latest version number for each domain
+    latest_versions_subq = (
+        db.query(
+            DomainVersion.domain_id,
+            func.max(DomainVersion.version).label("latest_version"),
+        )
+        .group_by(DomainVersion.domain_id)
+        .subquery()
+    )
+
+    # Query domains and include latest version number
+    domains = (
+        db.query(Domain, latest_versions_subq.c.latest_version.label("version"))
+        .join(UserRole, UserRole.domain_id == Domain.domain_id)
+        .join(
+            latest_versions_subq, Domain.domain_id == latest_versions_subq.c.domain_id
+        )
+        .filter(UserRole.user_id == current_user.user_id)
+        .all()
+    )
+
+    if not domains:
+        raise HTTPException(
+            status_code=404, detail="No domains found for the current user"
+        )
+
+    # Prepare the response
+    result = []
+    for domain, version in domains:
+        domain_data = {
+            "domain_id": domain.domain_id,
+            "domain_name": domain.domain_name,
+            "description": domain.description,
+            "created_at": domain.created_at,
+            "version": version,
+        }
+        result.append(domain_data)
+
+    return result
+
+
+# Get domain details if the user has access
 @router.get("/{domain_id}/details", response_model=DomainDataSchema)
 def get_domain_details(
     domain_id: UUID,
@@ -114,15 +139,6 @@ def get_domain_details(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Query for the domain and check if the user has access to it
-    domain = (
-        db.query(Domain)
-        .filter(
-            Domain.domain_id == domain_id, Domain.owner_user_id == current_user.user_id
-        )
-        .order_by(Domain.version.desc())
-        .first()
-    )
     if not has_permission(
         current_user, domain_id, ["owner", "admin", "member", "viewer"], db
     ):
@@ -130,34 +146,51 @@ def get_domain_details(
             status_code=403, detail="Access to this domain is forbidden"
         )
 
-    # If no version is specified, use the current domain version
-    if version is None:
-        version = domain.version
+    domain = db.query(Domain).filter(Domain.domain_id == domain_id).first()
 
-    # Query the concepts, sources, methodologies, and relationships based on the domain version
+    if not domain:
+        raise HTTPException(status_code=404, detail="Domain not found")
+
+    if version is None:
+        latest_version = (
+            db.query(func.max(DomainVersion.version))
+            .filter(DomainVersion.domain_id == domain_id)
+            .scalar()
+        )
+        if latest_version is None:
+            raise HTTPException(
+                status_code=404, detail="No versions found for this domain"
+            )
+        version = latest_version
+
+    domain_version = (
+        db.query(DomainVersion)
+        .filter(
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version == version,
+        )
+        .first()
+    )
+
+    if not domain_version:
+        raise HTTPException(status_code=404, detail="Domain version not found")
+
     concepts = (
         db.query(Concept)
-        .filter(
-            Concept.domain_id == domain_id,
-            Concept.domain_version == version,
-        )
+        .filter(Concept.domain_id == domain_id, Concept.domain_version == version)
         .all()
     )
 
     sources = (
         db.query(Source)
-        .filter(
-            Source.domain_id == domain_id,
-            Source.domain_version == version,
-        )
+        .filter(Source.domain_id == domain_id, Source.domain_version == version)
         .all()
     )
 
     methodologies = (
         db.query(Methodology)
         .filter(
-            Methodology.domain_id == domain_id,
-            Methodology.domain_version == version,
+            Methodology.domain_id == domain_id, Methodology.domain_version == version
         )
         .all()
     )
@@ -165,19 +198,17 @@ def get_domain_details(
     relationships = (
         db.query(Relationship)
         .filter(
-            Relationship.domain_id == domain_id,
-            Relationship.domain_version == version,
+            Relationship.domain_id == domain_id, Relationship.domain_version == version
         )
         .all()
     )
 
-    # Return the domain's metadata and related entities
     return DomainDataSchema(
         domain_id=domain.domain_id,
         domain_name=domain.domain_name,
         description=domain.description,
         version=version,
-        created_at=domain.created_at,
+        created_at=domain_version.created_at,
         concepts=concepts,
         sources=sources,
         methodologies=methodologies,
@@ -185,7 +216,7 @@ def get_domain_details(
     )
 
 
-# Save the domain with new version
+# Save the domain with a new version
 @router.post("/{domain_id}/save", response_model=DomainSchema)
 def save_domain(
     domain_id: UUID,
@@ -193,150 +224,77 @@ def save_domain(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Check if domain exists and belongs to the user
-    latest_domain = (
-        db.query(Domain)
-        .filter(
-            Domain.domain_id == domain_id, Domain.owner_user_id == current_user.user_id
-        )
-        .order_by(Domain.version.desc())
-        .first()
-    )
-    if not latest_domain:
+    if not has_permission(current_user, domain_id, ["owner", "admin"], db):
         raise HTTPException(
-            status_code=403, detail="Access to this domain is forbidden"
+            status_code=403, detail="Insufficient permissions to save domain"
         )
 
-    # Create a new domain version
-    new_version = latest_domain.version + 1
-    new_domain = Domain(
+    domain = db.query(Domain).filter(Domain.domain_id == domain_id).first()
+    if not domain:
+        raise HTTPException(status_code=404, detail="Domain not found")
+
+    latest_version_number = (
+        db.query(func.max(DomainVersion.version))
+        .filter(DomainVersion.domain_id == domain_id)
+        .scalar()
+    )
+    if latest_version_number is None:
+        raise HTTPException(status_code=404, detail="No versions found for this domain")
+
+    new_version_number = latest_version_number + 1
+
+    # Create new domain version
+    new_domain_version = DomainVersion(
         domain_id=domain_id,
-        version=new_version,
-        domain_name=latest_domain.domain_name,
-        owner_user_id=current_user.user_id,
-        description=latest_domain.description,
+        version=new_version_number,
         created_at=func.now(),
     )
-    db.add(new_domain)
+    db.add(new_domain_version)
     db.commit()
 
     # Copy existing entities to the new version
-    # Concepts
-    existing_concepts = (
-        db.query(Concept)
-        .filter(
-            Concept.domain_id == domain_id,
-            Concept.domain_version == latest_domain.version,
+    for model in [Concept, Source, Methodology, Relationship]:
+        existing_entities = (
+            db.query(model)
+            .filter(
+                model.domain_id == domain_id,
+                model.domain_version == latest_version_number,
+            )
+            .all()
         )
-        .all()
-    )
-    for concept in existing_concepts:
-        new_concept = Concept(
-            concept_id=concept.concept_id,
-            domain_id=concept.domain_id,
-            domain_version=new_version,
-            name=concept.name,
-            description=concept.description,
-            type=concept.type,
-            embedding=concept.embedding,
-            created_at=concept.created_at,
-            updated_at=concept.updated_at,
-        )
-        db.add(new_concept)
-
-    # Sources
-    existing_sources = (
-        db.query(Source)
-        .filter(
-            Source.domain_id == domain_id,
-            Source.domain_version == latest_domain.version,
-        )
-        .all()
-    )
-    for source in existing_sources:
-        new_source = Source(
-            source_id=source.source_id,
-            domain_id=source.domain_id,
-            domain_version=new_version,
-            name=source.name,
-            description=source.description,
-            source_type=source.source_type,
-            location=source.location,
-            created_at=source.created_at,
-        )
-        db.add(new_source)
-
-    # Methodologies
-    existing_methodologies = (
-        db.query(Methodology)
-        .filter(
-            Methodology.domain_id == domain_id,
-            Methodology.domain_version == latest_domain.version,
-        )
-        .all()
-    )
-    for methodology in existing_methodologies:
-        new_methodology = Methodology(
-            methodology_id=methodology.methodology_id,
-            domain_id=methodology.domain_id,
-            domain_version=new_version,
-            name=methodology.name,
-            description=methodology.description,
-            steps=methodology.steps,
-            created_at=methodology.created_at,
-        )
-        db.add(new_methodology)
-
-    # Relationships
-    existing_relationships = (
-        db.query(Relationship)
-        .filter(
-            Relationship.domain_id == domain_id,
-            Relationship.domain_version == latest_domain.version,
-        )
-        .all()
-    )
-    for relationship in existing_relationships:
-        new_relationship = Relationship(
-            relationship_id=relationship.relationship_id,
-            domain_id=relationship.domain_id,
-            domain_version=new_version,
-            entity_id_1=relationship.entity_id_1,
-            entity_type_1=relationship.entity_type_1,
-            entity_id_2=relationship.entity_id_2,
-            entity_type_2=relationship.entity_type_2,
-            relationship_type=relationship.relationship_type,
-            created_at=relationship.created_at,
-        )
-        db.add(new_relationship)
-
+        for entity in existing_entities:
+            new_entity_data = {
+                column.name: getattr(entity, column.name)
+                for column in model.__table__.columns
+                if column.name not in ["created_at", "updated_at"]
+            }
+            new_entity_data["domain_version"] = new_version_number
+            new_entity = model(**new_entity_data)
+            db.add(new_entity)
     db.commit()
 
     # Apply updates from domain_data
-    # Concepts
+    # Update or add new concepts
     for concept_data in domain_data.concepts:
         concept = (
             db.query(Concept)
             .filter(
                 Concept.concept_id == concept_data.concept_id,
                 Concept.domain_id == domain_id,
-                Concept.domain_version == new_version,
+                Concept.domain_version == new_version_number,
             )
             .first()
         )
-
         if concept:
-            # Update existing concept
             concept.name = concept_data.name
             concept.description = concept_data.description
             concept.type = concept_data.type
             concept.updated_at = func.now()
         else:
-            # Add new concept
             new_concept = Concept(
                 concept_id=concept_data.concept_id or uuid.uuid4(),
                 domain_id=domain_id,
-                domain_version=new_version,
+                domain_version=new_version_number,
                 name=concept_data.name,
                 description=concept_data.description,
                 type=concept_data.type,
@@ -350,23 +308,20 @@ def save_domain(
             .filter(
                 Source.source_id == source_data.source_id,
                 Source.domain_id == domain_id,
-                Source.domain_version == new_version,
+                Source.domain_version == new_version_number,
             )
             .first()
         )
-
         if source:
-            # Update existing source
             source.name = source_data.name
             source.description = source_data.description
             source.source_type = source_data.source_type
             source.location = source_data.location
         else:
-            # Add new source
             new_source = Source(
                 source_id=source_data.source_id or uuid.uuid4(),
                 domain_id=domain_id,
-                domain_version=new_version,
+                domain_version=new_version_number,
                 name=source_data.name,
                 description=source_data.description,
                 source_type=source_data.source_type,
@@ -381,22 +336,19 @@ def save_domain(
             .filter(
                 Methodology.methodology_id == methodology_data.methodology_id,
                 Methodology.domain_id == domain_id,
-                Methodology.domain_version == new_version,
+                Methodology.domain_version == new_version_number,
             )
             .first()
         )
-
         if methodology:
-            # Update existing methodology
             methodology.name = methodology_data.name
             methodology.description = methodology_data.description
             methodology.steps = methodology_data.steps
         else:
-            # Add new methodology
             new_methodology = Methodology(
                 methodology_id=methodology_data.methodology_id or uuid.uuid4(),
                 domain_id=domain_id,
-                domain_version=new_version,
+                domain_version=new_version_number,
                 name=methodology_data.name,
                 description=methodology_data.description,
                 steps=methodology_data.steps,
@@ -410,20 +362,17 @@ def save_domain(
             .filter(
                 Relationship.relationship_id == relationship_data.relationship_id,
                 Relationship.domain_id == domain_id,
-                Relationship.domain_version == new_version,
+                Relationship.domain_version == new_version_number,
             )
             .first()
         )
-
         if relationship:
-            # Update existing relationship
             relationship.relationship_type = relationship_data.relationship_type
         else:
-            # Add new relationship
             new_relationship = Relationship(
                 relationship_id=relationship_data.relationship_id or uuid.uuid4(),
                 domain_id=domain_id,
-                domain_version=new_version,
+                domain_version=new_version_number,
                 entity_id_1=relationship_data.entity_id_1,
                 entity_type_1=relationship_data.entity_type_1,
                 entity_id_2=relationship_data.entity_id_2,
@@ -433,12 +382,12 @@ def save_domain(
             db.add(new_relationship)
 
     db.commit()
-    db.refresh(new_domain)
+    db.refresh(new_domain_version)
 
-    return new_domain
+    return domain
 
 
-# Adjust get functions to include version filtering
+# Get concepts for a domain if the user has access
 @router.get("/{domain_id}/concepts", response_model=List[ConceptSchema])
 def get_concepts_for_domain(
     domain_id: UUID,
@@ -446,14 +395,6 @@ def get_concepts_for_domain(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    domain = (
-        db.query(Domain)
-        .filter(
-            Domain.domain_id == domain_id,
-            Domain.owner_user_id == current_user.user_id,
-        )
-        .first()
-    )
     if not has_permission(
         current_user, domain_id, ["owner", "admin", "member", "viewer"], db
     ):
@@ -462,21 +403,27 @@ def get_concepts_for_domain(
         )
 
     if version is None:
-        version = domain.version
+        latest_version = (
+            db.query(func.max(DomainVersion.version))
+            .filter(DomainVersion.domain_id == domain_id)
+            .scalar()
+        )
+        if latest_version is None:
+            raise HTTPException(
+                status_code=404, detail="No versions found for this domain"
+            )
+        version = latest_version
 
     concepts = (
         db.query(Concept)
-        .filter(
-            Concept.domain_id == domain_id,
-            Concept.domain_version == version,
-        )
+        .filter(Concept.domain_id == domain_id, Concept.domain_version == version)
         .all()
     )
 
     return concepts
 
 
-# Similar adjustments for sources
+# Get sources for a domain if the user has access
 @router.get("/{domain_id}/sources", response_model=List[SourceSchema])
 def get_sources_for_domain(
     domain_id: UUID,
@@ -484,14 +431,6 @@ def get_sources_for_domain(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    domain = (
-        db.query(Domain)
-        .filter(
-            Domain.domain_id == domain_id,
-            Domain.owner_user_id == current_user.user_id,
-        )
-        .first()
-    )
     if not has_permission(
         current_user, domain_id, ["owner", "admin", "member", "viewer"], db
     ):
@@ -500,21 +439,27 @@ def get_sources_for_domain(
         )
 
     if version is None:
-        version = domain.version
+        latest_version = (
+            db.query(func.max(DomainVersion.version))
+            .filter(DomainVersion.domain_id == domain_id)
+            .scalar()
+        )
+        if latest_version is None:
+            raise HTTPException(
+                status_code=404, detail="No versions found for this domain"
+            )
+        version = latest_version
 
     sources = (
         db.query(Source)
-        .filter(
-            Source.domain_id == domain_id,
-            Source.domain_version == version,
-        )
+        .filter(Source.domain_id == domain_id, Source.domain_version == version)
         .all()
     )
 
     return sources
 
 
-# Similar adjustments for methodologies
+# Get methodologies for a domain if the user has access
 @router.get("/{domain_id}/methodologies", response_model=List[MethodologySchema])
 def get_methodologies_for_domain(
     domain_id: UUID,
@@ -522,14 +467,6 @@ def get_methodologies_for_domain(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    domain = (
-        db.query(Domain)
-        .filter(
-            Domain.domain_id == domain_id,
-            Domain.owner_user_id == current_user.user_id,
-        )
-        .first()
-    )
     if not has_permission(
         current_user, domain_id, ["owner", "admin", "member", "viewer"], db
     ):
@@ -538,13 +475,21 @@ def get_methodologies_for_domain(
         )
 
     if version is None:
-        version = domain.version
+        latest_version = (
+            db.query(func.max(DomainVersion.version))
+            .filter(DomainVersion.domain_id == domain_id)
+            .scalar()
+        )
+        if latest_version is None:
+            raise HTTPException(
+                status_code=404, detail="No versions found for this domain"
+            )
+        version = latest_version
 
     methodologies = (
         db.query(Methodology)
         .filter(
-            Methodology.domain_id == domain_id,
-            Methodology.domain_version == version,
+            Methodology.domain_id == domain_id, Methodology.domain_version == version
         )
         .all()
     )
@@ -552,7 +497,7 @@ def get_methodologies_for_domain(
     return methodologies
 
 
-# Similar adjustments for relationships
+# Get relationships for a domain if the user has access
 @router.get("/{domain_id}/relationships", response_model=List[RelationshipSchema])
 def get_relationships_for_domain(
     domain_id: UUID,
@@ -560,14 +505,6 @@ def get_relationships_for_domain(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    domain = (
-        db.query(Domain)
-        .filter(
-            Domain.domain_id == domain_id,
-            Domain.owner_user_id == current_user.user_id,
-        )
-        .first()
-    )
     if not has_permission(
         current_user, domain_id, ["owner", "admin", "member", "viewer"], db
     ):
@@ -576,13 +513,21 @@ def get_relationships_for_domain(
         )
 
     if version is None:
-        version = domain.version
+        latest_version = (
+            db.query(func.max(DomainVersion.version))
+            .filter(DomainVersion.domain_id == domain_id)
+            .scalar()
+        )
+        if latest_version is None:
+            raise HTTPException(
+                status_code=404, detail="No versions found for this domain"
+            )
+        version = latest_version
 
     relationships = (
         db.query(Relationship)
         .filter(
-            Relationship.domain_id == domain_id,
-            Relationship.domain_version == version,
+            Relationship.domain_id == domain_id, Relationship.domain_version == version
         )
         .all()
     )
@@ -590,25 +535,44 @@ def get_relationships_for_domain(
     return relationships
 
 
-# Get domain configuration
+# Update the position of an entity if the user has permission
+@router.put("/entities/{entity_type}/{entity_id}/position")
+def update_entity_position(
+    entity_type: str,
+    entity_id: UUID,
+    position_data: dict,  # Assume position data is passed in request body
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    entity = get_entity_by_id_and_type(db, entity_id, entity_type)
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+
+    if not has_permission(
+        current_user, entity.domain_id, ["owner", "admin", "member"], db
+    ):
+        raise HTTPException(
+            status_code=403, detail="Insufficient permissions to update entity"
+        )
+
+    # Update the entity's position here (assuming position fields exist)
+    # entity.position_x = position_data.get('x')
+    # entity.position_y = position_data.get('y')
+
+    db.commit()
+    return {"detail": "Position updated"}
+
+
+# Get domain configuration if the user has permission
 @router.get("/{domain_id}/config", response_model=List[DomainConfigSchema])
 def get_domain_config(
     domain_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    domain = (
-        db.query(Domain)
-        .filter(
-            Domain.domain_id == domain_id, Domain.owner_user_id == current_user.user_id
-        )
-        .first()
-    )
-    if not has_permission(
-        current_user, domain_id, ["owner", "admin", "member", "viewer"], db
-    ):
+    if not has_permission(current_user, domain_id, ["owner", "admin"], db):
         raise HTTPException(
-            status_code=403, detail="Access to this domain is forbidden"
+            status_code=403, detail="Insufficient permissions to access config"
         )
 
     config = db.query(DomainConfig).filter(DomainConfig.domain_id == domain_id).all()
@@ -616,10 +580,11 @@ def get_domain_config(
         raise HTTPException(
             status_code=404, detail="No configuration found for this domain"
         )
+
     return config
 
 
-# Update domain configuration
+# Update domain configuration if the user has permission
 @router.put("/{domain_id}/config", response_model=DomainConfigSchema)
 def update_domain_config(
     domain_id: UUID,
@@ -628,18 +593,9 @@ def update_domain_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    domain = (
-        db.query(Domain)
-        .filter(
-            Domain.domain_id == domain_id, Domain.owner_user_id == current_user.user_id
-        )
-        .first()
-    )
-    if not has_permission(
-        current_user, domain_id, ["owner", "admin", "member", "viewer"], db
-    ):
+    if not has_permission(current_user, domain_id, ["owner", "admin"], db):
         raise HTTPException(
-            status_code=403, detail="Access to this domain is forbidden"
+            status_code=403, detail="Insufficient permissions to update config"
         )
 
     domain_config = (
@@ -660,43 +616,21 @@ def update_domain_config(
 
 # Utility function to get entity by ID and type
 def get_entity_by_id_and_type(db: Session, entity_id: UUID, entity_type: str):
-    if entity_type == "concept":
-        max_version = (
-            db.query(func.max(Concept.domain_version))
-            .filter(Concept.concept_id == entity_id)
-            .scalar()
-        )
-        return (
-            db.query(Concept)
-            .filter(
-                Concept.concept_id == entity_id, Concept.domain_version == max_version
-            )
-            .first()
-        )
-    elif entity_type == "methodology":
-        max_version = (
-            db.query(func.max(Methodology.domain_version))
-            .filter(Methodology.methodology_id == entity_id)
-            .scalar()
-        )
-        return (
-            db.query(Methodology)
-            .filter(
-                Methodology.methodology_id == entity_id,
-                Methodology.domain_version == max_version,
-            )
-            .first()
-        )
-    elif entity_type == "source":
-        max_version = (
-            db.query(func.max(Source.domain_version))
-            .filter(Source.source_id == entity_id)
-            .scalar()
-        )
-        return (
-            db.query(Source)
-            .filter(Source.source_id == entity_id, Source.domain_version == max_version)
-            .first()
-        )
-    else:
+    model = {"concept": Concept, "methodology": Methodology, "source": Source}.get(
+        entity_type
+    )
+    if not model:
         return None
+    max_version = (
+        db.query(func.max(model.domain_version))
+        .filter(getattr(model, f"{entity_type}_id") == entity_id)
+        .scalar()
+    )
+    return (
+        db.query(model)
+        .filter(
+            getattr(model, f"{entity_type}_id") == entity_id,
+            model.domain_version == max_version,
+        )
+        .first()
+    )
