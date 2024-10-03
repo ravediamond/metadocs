@@ -643,18 +643,16 @@ def get_entity_by_id_and_type(db: Session, entity_id: UUID, entity_type: str):
     )
 
 
-@router.post(
-    "/domains/{domain_id}/users/{user_id}/roles", response_model=UserRoleSchema
-)
-def assign_role_to_user(
+@router.post("/{domain_id}/users/{user_id}/roles", response_model=UserRoleSchema)
+def assign_or_update_role_to_user(
     domain_id: UUID,
     user_id: UUID,
-    user_role_create: UserRoleCreate,
+    user_role_create: UserRoleCreate,  # Expect role_name in the request body
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     # Check if current_user has 'owner' role in the domain
-    if not has_permission(current_user, domain_id, ["owner"], db):
+    if not has_permission(current_user, domain_id, ["owner", "admin"], db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     # Check if user exists
@@ -667,32 +665,47 @@ def assign_role_to_user(
     if not domain:
         raise HTTPException(status_code=404, detail="Domain not found")
 
-    # Check if role exists
-    role = db.query(Role).filter(Role.role_id == user_role_create.role_id).first()
+    # Check if role exists by role_name and get the role_id
+    role = db.query(Role).filter(Role.role_name == user_role_create.role_name).first()
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
 
-    # Check if the user already has the role in the domain
+    # Check if the user already has a role in the domain
     existing_user_role = (
         db.query(UserRole)
         .filter(
             UserRole.user_id == user_id,
             UserRole.domain_id == domain_id,
-            UserRole.role_id == role.role_id,
         )
         .first()
     )
-    if existing_user_role:
-        raise HTTPException(
-            status_code=400, detail="User already has this role in the domain"
-        )
 
-    # Assign role
-    user_role = UserRole(user_id=user_id, domain_id=domain_id, role_id=role.role_id)
-    db.add(user_role)
-    db.commit()
-    db.refresh(user_role)
-    return user_role
+    if existing_user_role:
+        # If the user already has a role, update it
+        existing_user_role.role_id = role.role_id
+        db.commit()
+        db.refresh(existing_user_role)
+        return {
+            "user_id": existing_user_role.user_id,
+            "domain_id": existing_user_role.domain_id,
+            "role_id": existing_user_role.role_id,
+            "role_name": role.role_name,
+        }
+    else:
+        # If no role exists, assign a new role
+        new_user_role = UserRole(
+            user_id=user_id, domain_id=domain_id, role_id=role.role_id
+        )
+        db.add(new_user_role)
+        db.commit()
+        db.refresh(new_user_role)
+
+        return {
+            "user_id": new_user_role.user_id,
+            "domain_id": new_user_role.domain_id,
+            "role_id": new_user_role.role_id,
+            "role_name": role.role_name,
+        }
 
 
 @router.delete("/{domain_id}/users/{user_id}/roles/{role_name}")
@@ -731,7 +744,7 @@ def revoke_role_from_user(
 
     # Revoke the role
     db.delete(user_role)
-    db.commit()
+    db.cuser_roleommit()
     return {"detail": "Role revoked successfully"}
 
 

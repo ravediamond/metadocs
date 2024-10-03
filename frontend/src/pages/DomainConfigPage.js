@@ -61,7 +61,6 @@ const DomainConfigPage = () => {
       const data = await response.json();
       if (response.ok) {
         setUsers(data);
-        console.log(data);
       } else {
         console.error('Failed to fetch users');
       }

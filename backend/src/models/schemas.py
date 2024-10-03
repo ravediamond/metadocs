@@ -231,12 +231,12 @@ class UserRoleBase(BaseModel):
     role_id: UUID
 
 
-class UserRoleCreate(UserRoleBase):
-    pass
+class UserRoleCreate(BaseModel):
+    role_name: str
 
 
 class UserRole(UserRoleBase):
-    role_name: str  # Add role_name for better readability
+    role_name: str
 
     class Config:
         from_attributes = True
