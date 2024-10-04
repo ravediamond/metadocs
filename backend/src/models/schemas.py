@@ -81,7 +81,7 @@ class UserConfigSchema(BaseModel):
 class DomainBase(BaseModel):
     domain_name: str
     description: Optional[str]
-    tenant_id: UUID  # Add tenant_id here
+    tenant_id: UUID
 
 
 class DomainCreate(DomainBase):
@@ -90,8 +90,6 @@ class DomainCreate(DomainBase):
 
 class Domain(DomainBase):
     domain_id: UUID
-    domain_name: str
-    description: Optional[str]
     created_at: datetime
 
     class Config:
@@ -221,7 +219,7 @@ class DomainDataSchema(BaseModel):
     domain_id: UUID
     domain_name: str
     description: Optional[str]
-    tenant_id: UUID  # Add tenant_id here
+    tenant_id: UUID
     version: int
     created_at: datetime
     concepts: List[Concept]

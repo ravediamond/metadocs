@@ -129,6 +129,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   CREATE TABLE IF NOT EXISTS user_config (
     config_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     config_key VARCHAR(255) NOT NULL,
     config_value TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -138,6 +139,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   CREATE TABLE IF NOT EXISTS domain_config (
     config_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
+    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     config_key VARCHAR(255) NOT NULL,
     config_value TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -152,6 +154,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     api_key_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     api_key VARCHAR(64) UNIQUE NOT NULL,
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     revoked TIMESTAMP
   );
@@ -170,6 +173,8 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
     role_id UUID REFERENCES roles(role_id) ON DELETE CASCADE,
+    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, domain_id)
   );
 
@@ -324,21 +329,21 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
   ON CONFLICT (relationship_id) DO NOTHING;
 
   -- Insert data into User Config table
-  INSERT INTO user_config (config_id, user_id, config_key, config_value, created_at)
+  INSERT INTO user_config (config_id, user_id, tenant_id, config_key, config_value, created_at)
   VALUES
-    (gen_random_uuid(), (SELECT user_id FROM users WHERE email = 'user1@example.com'), 'theme', 'dark', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT user_id FROM users WHERE email = 'user1@example.com'), 'notifications', 'enabled', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT user_id FROM users WHERE email = 'user2@example.com'), 'theme', 'light', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT user_id FROM users WHERE email = 'user2@example.com'), 'notifications', 'disabled', CURRENT_TIMESTAMP)
+    (gen_random_uuid(), (SELECT user_id FROM users WHERE email = 'user1@example.com'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'theme', 'dark', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), (SELECT user_id FROM users WHERE email = 'user1@example.com'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'notifications', 'enabled', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), (SELECT user_id FROM users WHERE email = 'user2@example.com'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'theme', 'light', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), (SELECT user_id FROM users WHERE email = 'user2@example.com'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'notifications', 'disabled', CURRENT_TIMESTAMP)
   ON CONFLICT (config_id) DO NOTHING;
 
   -- Insert data into Domain Config table
-  INSERT INTO domain_config (config_id, domain_id, config_key, config_value, created_at)
+  INSERT INTO domain_config (config_id, domain_id, tenant_id, config_key, config_value, created_at)
   VALUES
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), 'default_language', 'en', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), 'time_zone', 'UTC', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'IT'), 'default_language', 'es', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'IT'), 'time_zone', 'CET', CURRENT_TIMESTAMP)
+    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'default_language', 'en', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'time_zone', 'UTC', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'IT'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'default_language', 'es', CURRENT_TIMESTAMP),
+    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'IT'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'time_zone', 'CET', CURRENT_TIMESTAMP)
   ON CONFLICT (config_id) DO NOTHING;
 
   COMMIT;

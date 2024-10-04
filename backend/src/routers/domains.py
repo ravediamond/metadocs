@@ -25,10 +25,6 @@ from ..models.schemas import (
     Domain as DomainSchema,
     DomainCreate,
     DomainDataSchema,
-    Concept,
-    Source,
-    Methodology,
-    Relationship,
     DomainSaveSchema,
     UserRoleCreate,
     UserRoleResponse,
@@ -164,6 +160,7 @@ def get_domains(
             "domain_id": domain.domain_id,
             "domain_name": domain.domain_name,
             "description": domain.description,
+            "tenant_id": domain.tenant_id,
             "created_at": domain.created_at,
             "version": version,
         }
