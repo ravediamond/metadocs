@@ -6,7 +6,7 @@ import uuid
 
 from ..core.database import get_db
 from ..core.security import get_current_user
-from ..models.models import Role, User
+from ..models.models import Role, User, Tenant
 from ..models.schemas import Role as RoleSchema, RoleCreate, RoleUpdate
 from ..core.permissions import is_admin_user
 
@@ -19,13 +19,12 @@ def get_roles(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Check if the current user has admin privileges
     if not is_admin_user(current_user, db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to view roles"
         )
 
-    roles = db.query(Role).all()
+    roles = db.query(Role).filter(Role.tenant_id == current_user.tenant_id).all()
     return roles
 
 
@@ -36,14 +35,19 @@ def create_role(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Only admins can create roles
     if not is_admin_user(current_user, db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to create roles"
         )
 
-    # Check if role with the same name already exists
-    existing_role = db.query(Role).filter(Role.role_name == role_data.role_name).first()
+    existing_role = (
+        db.query(Role)
+        .filter(
+            Role.role_name == role_data.role_name,
+            Role.tenant_id == current_user.tenant_id,
+        )
+        .first()
+    )
     if existing_role:
         raise HTTPException(
             status_code=400, detail="Role with this name already exists"
@@ -53,6 +57,7 @@ def create_role(
         role_id=uuid.uuid4(),
         role_name=role_data.role_name,
         description=role_data.description,
+        tenant_id=current_user.tenant_id,
     )
     db.add(new_role)
     db.commit()
@@ -67,13 +72,16 @@ def get_role(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Check if the current user has admin privileges
     if not is_admin_user(current_user, db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to view roles"
         )
 
-    role = db.query(Role).filter(Role.role_id == role_id).first()
+    role = (
+        db.query(Role)
+        .filter(Role.role_id == role_id, Role.tenant_id == current_user.tenant_id)
+        .first()
+    )
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
     return role
@@ -87,17 +95,19 @@ def update_role(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Only admins can update roles
     if not is_admin_user(current_user, db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to update roles"
         )
 
-    role = db.query(Role).filter(Role.role_id == role_id).first()
+    role = (
+        db.query(Role)
+        .filter(Role.role_id == role_id, Role.tenant_id == current_user.tenant_id)
+        .first()
+    )
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
 
-    # Update the role fields
     if role_data.role_name:
         role.role_name = role_data.role_name
     if role_data.description:
@@ -115,13 +125,16 @@ def delete_role(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Only admins can delete roles
     if not is_admin_user(current_user, db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to delete roles"
         )
 
-    role = db.query(Role).filter(Role.role_id == role_id).first()
+    role = (
+        db.query(Role)
+        .filter(Role.role_id == role_id, Role.tenant_id == current_user.tenant_id)
+        .first()
+    )
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
 

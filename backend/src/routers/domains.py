@@ -19,10 +19,7 @@ from ..models.models import (
     DomainConfig,
     Role,
     UserRole,
-    Role,
-    UserRole,
-    User,
-    Domain,
+    Tenant,
 )
 from ..models.schemas import (
     Domain as DomainSchema,
@@ -55,12 +52,16 @@ def create_domain(
     current_user: User = Depends(get_current_user),
 ):
     domain_id = uuid.uuid4()
+    tenant_id = current_user.tenant_id
+
+    # Create new domain
     new_domain = Domain(
         domain_id=domain_id,
         domain_name=domain_create.domain_name,
         owner_user_id=current_user.user_id,
         description=domain_create.description,
         created_at=func.now(),
+        tenant_id=tenant_id,
     )
     db.add(new_domain)
     db.commit()
@@ -71,12 +72,17 @@ def create_domain(
         domain_id=domain_id,
         version=1,
         created_at=func.now(),
+        tenant_id=tenant_id,
     )
     db.add(new_domain_version)
     db.commit()
 
     # Assign 'owner' role to the creator
-    owner_role = db.query(Role).filter(Role.role_name == "owner").first()
+    owner_role = (
+        db.query(Role)
+        .filter(Role.role_name == "owner", Role.tenant_id == tenant_id)
+        .first()
+    )
     if not owner_role:
         raise HTTPException(status_code=500, detail="Owner role not found")
 
@@ -84,6 +90,7 @@ def create_domain(
         user_id=current_user.user_id,
         domain_id=domain_id,
         role_id=owner_role.role_id,
+        tenant_id=tenant_id,
     )
     db.add(user_role)
     db.commit()
@@ -97,6 +104,8 @@ def get_domains(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     # Subquery to get the latest version number for each domain
     latest_versions_subq = (
         db.query(
@@ -114,7 +123,7 @@ def get_domains(
         .join(
             latest_versions_subq, Domain.domain_id == latest_versions_subq.c.domain_id
         )
-        .filter(UserRole.user_id == current_user.user_id)
+        .filter(UserRole.user_id == current_user.user_id, Domain.tenant_id == tenant_id)
         .all()
     )
 
@@ -146,6 +155,8 @@ def get_domain_details(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     if not has_permission(
         current_user, domain_id, ["owner", "admin", "member", "viewer"], db
     ):
@@ -153,7 +164,11 @@ def get_domain_details(
             status_code=403, detail="Access to this domain is forbidden"
         )
 
-    domain = db.query(Domain).filter(Domain.domain_id == domain_id).first()
+    domain = (
+        db.query(Domain)
+        .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)
+        .first()
+    )
 
     if not domain:
         raise HTTPException(status_code=404, detail="Domain not found")
@@ -161,7 +176,10 @@ def get_domain_details(
     if version is None:
         latest_version = (
             db.query(func.max(DomainVersion.version))
-            .filter(DomainVersion.domain_id == domain_id)
+            .filter(
+                DomainVersion.domain_id == domain_id,
+                DomainVersion.tenant_id == tenant_id,
+            )
             .scalar()
         )
         if latest_version is None:
@@ -175,6 +193,7 @@ def get_domain_details(
         .filter(
             DomainVersion.domain_id == domain_id,
             DomainVersion.version == version,
+            DomainVersion.tenant_id == tenant_id,
         )
         .first()
     )
@@ -184,20 +203,30 @@ def get_domain_details(
 
     concepts = (
         db.query(Concept)
-        .filter(Concept.domain_id == domain_id, Concept.domain_version == version)
+        .filter(
+            Concept.domain_id == domain_id,
+            Concept.domain_version == version,
+            Concept.tenant_id == tenant_id,
+        )
         .all()
     )
 
     sources = (
         db.query(Source)
-        .filter(Source.domain_id == domain_id, Source.domain_version == version)
+        .filter(
+            Source.domain_id == domain_id,
+            Source.domain_version == version,
+            Source.tenant_id == tenant_id,
+        )
         .all()
     )
 
     methodologies = (
         db.query(Methodology)
         .filter(
-            Methodology.domain_id == domain_id, Methodology.domain_version == version
+            Methodology.domain_id == domain_id,
+            Methodology.domain_version == version,
+            Methodology.tenant_id == tenant_id,
         )
         .all()
     )
@@ -205,7 +234,9 @@ def get_domain_details(
     relationships = (
         db.query(Relationship)
         .filter(
-            Relationship.domain_id == domain_id, Relationship.domain_version == version
+            Relationship.domain_id == domain_id,
+            Relationship.domain_version == version,
+            Relationship.tenant_id == tenant_id,
         )
         .all()
     )
@@ -231,18 +262,26 @@ def save_domain(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     if not has_permission(current_user, domain_id, ["owner", "admin"], db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to save domain"
         )
 
-    domain = db.query(Domain).filter(Domain.domain_id == domain_id).first()
+    domain = (
+        db.query(Domain)
+        .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)
+        .first()
+    )
     if not domain:
         raise HTTPException(status_code=404, detail="Domain not found")
 
     latest_version_number = (
         db.query(func.max(DomainVersion.version))
-        .filter(DomainVersion.domain_id == domain_id)
+        .filter(
+            DomainVersion.domain_id == domain_id, DomainVersion.tenant_id == tenant_id
+        )
         .scalar()
     )
     if latest_version_number is None:
@@ -255,6 +294,7 @@ def save_domain(
         domain_id=domain_id,
         version=new_version_number,
         created_at=func.now(),
+        tenant_id=tenant_id,
     )
     db.add(new_domain_version)
     db.commit()
@@ -266,6 +306,7 @@ def save_domain(
             .filter(
                 model.domain_id == domain_id,
                 model.domain_version == latest_version_number,
+                model.tenant_id == tenant_id,
             )
             .all()
         )
@@ -276,6 +317,7 @@ def save_domain(
                 if column.name not in ["created_at", "updated_at"]
             }
             new_entity_data["domain_version"] = new_version_number
+            new_entity_data["tenant_id"] = tenant_id
             new_entity = model(**new_entity_data)
             db.add(new_entity)
     db.commit()
@@ -289,6 +331,7 @@ def save_domain(
                 Concept.concept_id == concept_data.concept_id,
                 Concept.domain_id == domain_id,
                 Concept.domain_version == new_version_number,
+                Concept.tenant_id == tenant_id,
             )
             .first()
         )
@@ -302,6 +345,7 @@ def save_domain(
                 concept_id=concept_data.concept_id or uuid.uuid4(),
                 domain_id=domain_id,
                 domain_version=new_version_number,
+                tenant_id=tenant_id,
                 name=concept_data.name,
                 description=concept_data.description,
                 type=concept_data.type,
@@ -316,6 +360,7 @@ def save_domain(
                 Source.source_id == source_data.source_id,
                 Source.domain_id == domain_id,
                 Source.domain_version == new_version_number,
+                Source.tenant_id == tenant_id,
             )
             .first()
         )
@@ -329,6 +374,7 @@ def save_domain(
                 source_id=source_data.source_id or uuid.uuid4(),
                 domain_id=domain_id,
                 domain_version=new_version_number,
+                tenant_id=tenant_id,
                 name=source_data.name,
                 description=source_data.description,
                 source_type=source_data.source_type,
@@ -344,6 +390,7 @@ def save_domain(
                 Methodology.methodology_id == methodology_data.methodology_id,
                 Methodology.domain_id == domain_id,
                 Methodology.domain_version == new_version_number,
+                Methodology.tenant_id == tenant_id,
             )
             .first()
         )
@@ -356,6 +403,7 @@ def save_domain(
                 methodology_id=methodology_data.methodology_id or uuid.uuid4(),
                 domain_id=domain_id,
                 domain_version=new_version_number,
+                tenant_id=tenant_id,
                 name=methodology_data.name,
                 description=methodology_data.description,
                 steps=methodology_data.steps,
@@ -370,6 +418,7 @@ def save_domain(
                 Relationship.relationship_id == relationship_data.relationship_id,
                 Relationship.domain_id == domain_id,
                 Relationship.domain_version == new_version_number,
+                Relationship.tenant_id == tenant_id,
             )
             .first()
         )
@@ -380,6 +429,7 @@ def save_domain(
                 relationship_id=relationship_data.relationship_id or uuid.uuid4(),
                 domain_id=domain_id,
                 domain_version=new_version_number,
+                tenant_id=tenant_id,
                 entity_id_1=relationship_data.entity_id_1,
                 entity_type_1=relationship_data.entity_type_1,
                 entity_id_2=relationship_data.entity_id_2,
@@ -402,6 +452,8 @@ def get_concepts_for_domain(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     if not has_permission(
         current_user, domain_id, ["owner", "admin", "member", "viewer"], db
     ):
@@ -412,7 +464,10 @@ def get_concepts_for_domain(
     if version is None:
         latest_version = (
             db.query(func.max(DomainVersion.version))
-            .filter(DomainVersion.domain_id == domain_id)
+            .filter(
+                DomainVersion.domain_id == domain_id,
+                DomainVersion.tenant_id == tenant_id,
+            )
             .scalar()
         )
         if latest_version is None:
@@ -423,7 +478,11 @@ def get_concepts_for_domain(
 
     concepts = (
         db.query(Concept)
-        .filter(Concept.domain_id == domain_id, Concept.domain_version == version)
+        .filter(
+            Concept.domain_id == domain_id,
+            Concept.domain_version == version,
+            Concept.tenant_id == tenant_id,
+        )
         .all()
     )
 
@@ -438,6 +497,8 @@ def get_sources_for_domain(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     if not has_permission(
         current_user, domain_id, ["owner", "admin", "member", "viewer"], db
     ):
@@ -448,7 +509,10 @@ def get_sources_for_domain(
     if version is None:
         latest_version = (
             db.query(func.max(DomainVersion.version))
-            .filter(DomainVersion.domain_id == domain_id)
+            .filter(
+                DomainVersion.domain_id == domain_id,
+                DomainVersion.tenant_id == tenant_id,
+            )
             .scalar()
         )
         if latest_version is None:
@@ -459,7 +523,11 @@ def get_sources_for_domain(
 
     sources = (
         db.query(Source)
-        .filter(Source.domain_id == domain_id, Source.domain_version == version)
+        .filter(
+            Source.domain_id == domain_id,
+            Source.domain_version == version,
+            Source.tenant_id == tenant_id,
+        )
         .all()
     )
 
@@ -474,6 +542,8 @@ def get_methodologies_for_domain(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     if not has_permission(
         current_user, domain_id, ["owner", "admin", "member", "viewer"], db
     ):
@@ -484,7 +554,10 @@ def get_methodologies_for_domain(
     if version is None:
         latest_version = (
             db.query(func.max(DomainVersion.version))
-            .filter(DomainVersion.domain_id == domain_id)
+            .filter(
+                DomainVersion.domain_id == domain_id,
+                DomainVersion.tenant_id == tenant_id,
+            )
             .scalar()
         )
         if latest_version is None:
@@ -496,7 +569,9 @@ def get_methodologies_for_domain(
     methodologies = (
         db.query(Methodology)
         .filter(
-            Methodology.domain_id == domain_id, Methodology.domain_version == version
+            Methodology.domain_id == domain_id,
+            Methodology.domain_version == version,
+            Methodology.tenant_id == tenant_id,
         )
         .all()
     )
@@ -512,6 +587,8 @@ def get_relationships_for_domain(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     if not has_permission(
         current_user, domain_id, ["owner", "admin", "member", "viewer"], db
     ):
@@ -522,7 +599,10 @@ def get_relationships_for_domain(
     if version is None:
         latest_version = (
             db.query(func.max(DomainVersion.version))
-            .filter(DomainVersion.domain_id == domain_id)
+            .filter(
+                DomainVersion.domain_id == domain_id,
+                DomainVersion.tenant_id == tenant_id,
+            )
             .scalar()
         )
         if latest_version is None:
@@ -534,7 +614,9 @@ def get_relationships_for_domain(
     relationships = (
         db.query(Relationship)
         .filter(
-            Relationship.domain_id == domain_id, Relationship.domain_version == version
+            Relationship.domain_id == domain_id,
+            Relationship.domain_version == version,
+            Relationship.tenant_id == tenant_id,
         )
         .all()
     )
@@ -551,7 +633,8 @@ def update_entity_position(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    entity = get_entity_by_id_and_type(db, entity_id, entity_type)
+    tenant_id = current_user.tenant_id
+    entity = get_entity_by_id_and_type(db, entity_id, entity_type, tenant_id)
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
 
@@ -577,12 +660,20 @@ def get_domain_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     if not has_permission(current_user, domain_id, ["owner", "admin"], db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to access config"
         )
 
-    config = db.query(DomainConfig).filter(DomainConfig.domain_id == domain_id).all()
+    config = (
+        db.query(DomainConfig)
+        .filter(
+            DomainConfig.domain_id == domain_id, DomainConfig.tenant_id == tenant_id
+        )
+        .all()
+    )
     if not config:
         raise HTTPException(
             status_code=404, detail="No configuration found for this domain"
@@ -600,6 +691,8 @@ def update_domain_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     if not has_permission(current_user, domain_id, ["owner", "admin"], db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to update config"
@@ -608,7 +701,9 @@ def update_domain_config(
     domain_config = (
         db.query(DomainConfig)
         .filter(
-            DomainConfig.domain_id == domain_id, DomainConfig.config_key == config_key
+            DomainConfig.domain_id == domain_id,
+            DomainConfig.config_key == config_key,
+            DomainConfig.tenant_id == tenant_id,
         )
         .first()
     )
@@ -622,7 +717,9 @@ def update_domain_config(
 
 
 # Utility function to get entity by ID and type
-def get_entity_by_id_and_type(db: Session, entity_id: UUID, entity_type: str):
+def get_entity_by_id_and_type(
+    db: Session, entity_id: UUID, entity_type: str, tenant_id: UUID
+):
     model = {"concept": Concept, "methodology": Methodology, "source": Source}.get(
         entity_type
     )
@@ -630,7 +727,10 @@ def get_entity_by_id_and_type(db: Session, entity_id: UUID, entity_type: str):
         return None
     max_version = (
         db.query(func.max(model.domain_version))
-        .filter(getattr(model, f"{entity_type}_id") == entity_id)
+        .filter(
+            getattr(model, f"{entity_type}_id") == entity_id,
+            model.tenant_id == tenant_id,
+        )
         .scalar()
     )
     return (
@@ -638,6 +738,7 @@ def get_entity_by_id_and_type(db: Session, entity_id: UUID, entity_type: str):
         .filter(
             getattr(model, f"{entity_type}_id") == entity_id,
             model.domain_version == max_version,
+            model.tenant_id == tenant_id,
         )
         .first()
     )
@@ -651,22 +752,38 @@ def assign_or_update_role_to_user(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Check if current_user has 'owner' role in the domain
+    tenant_id = current_user.tenant_id
+
+    # Check if current_user has 'owner' or 'admin' role in the domain
     if not has_permission(current_user, domain_id, ["owner", "admin"], db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     # Check if user exists
-    user = db.query(User).filter(User.user_id == user_id).first()
+    user = (
+        db.query(User)
+        .filter(User.user_id == user_id, User.tenant_id == tenant_id)
+        .first()
+    )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     # Check if domain exists
-    domain = db.query(Domain).filter(Domain.domain_id == domain_id).first()
+    domain = (
+        db.query(Domain)
+        .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)
+        .first()
+    )
     if not domain:
         raise HTTPException(status_code=404, detail="Domain not found")
 
     # Check if role exists by role_name and get the role_id
-    role = db.query(Role).filter(Role.role_name == user_role_create.role_name).first()
+    role = (
+        db.query(Role)
+        .filter(
+            Role.role_name == user_role_create.role_name, Role.tenant_id == tenant_id
+        )
+        .first()
+    )
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
 
@@ -676,6 +793,7 @@ def assign_or_update_role_to_user(
         .filter(
             UserRole.user_id == user_id,
             UserRole.domain_id == domain_id,
+            UserRole.tenant_id == tenant_id,
         )
         .first()
     )
@@ -694,7 +812,10 @@ def assign_or_update_role_to_user(
     else:
         # If no role exists, assign a new role
         new_user_role = UserRole(
-            user_id=user_id, domain_id=domain_id, role_id=role.role_id
+            user_id=user_id,
+            domain_id=domain_id,
+            role_id=role.role_id,
+            tenant_id=tenant_id,
         )
         db.add(new_user_role)
         db.commit()
@@ -716,6 +837,8 @@ def revoke_role_from_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     # Check permissions
     if not has_permission(current_user, domain_id, ["owner", "admin"], db):
         raise HTTPException(
@@ -723,7 +846,11 @@ def revoke_role_from_user(
         )
 
     # Get the role object
-    role = db.query(Role).filter(Role.role_name == role_name).first()
+    role = (
+        db.query(Role)
+        .filter(Role.role_name == role_name, Role.tenant_id == tenant_id)
+        .first()
+    )
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
 
@@ -734,6 +861,7 @@ def revoke_role_from_user(
             UserRole.user_id == user_id,
             UserRole.domain_id == domain_id,
             UserRole.role_id == role.role_id,
+            UserRole.tenant_id == tenant_id,
         )
         .first()
     )
@@ -744,7 +872,7 @@ def revoke_role_from_user(
 
     # Revoke the role
     db.delete(user_role)
-    db.cuser_roleommit()
+    db.commit()
     return {"detail": "Role revoked successfully"}
 
 
@@ -754,6 +882,8 @@ def list_users_in_domain(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
     # Check permissions
     if not has_permission(current_user, domain_id, ["owner", "admin", "member"], db):
         raise HTTPException(
@@ -766,10 +896,8 @@ def list_users_in_domain(
             UserRole.user_id, UserRole.domain_id, Role.role_name, User.email, User.name
         )
         .join(Role, UserRole.role_id == Role.role_id)
-        .join(
-            User, User.user_id == UserRole.user_id
-        )  # Correct join between UserRole and User on user_id
-        .filter(UserRole.domain_id == domain_id)
+        .join(User, User.user_id == UserRole.user_id)
+        .filter(UserRole.domain_id == domain_id, UserRole.tenant_id == tenant_id)
         .all()
     )
 

@@ -6,7 +6,7 @@ from sqlalchemy.sql import func
 
 from ..core.database import get_db
 from ..core.security import get_current_user
-from ..models.models import Domain, User, UserConfig, APIKey
+from ..models.models import Domain, User, UserConfig, APIKey, UserRole, Role
 from ..models.schemas import (
     Domain as DomainSchema,
     UserResponse,
@@ -14,11 +14,9 @@ from ..models.schemas import (
     APIKeyResponse,
     APIKeyCreateResponse,
     Role as RoleSchema,
-    RoleCreate,
     UserRoleCreate,
     UserRole as UserRoleSchema,
-    Role,
-    UserRole,
+    UserRoleResponse,
 )
 
 router = APIRouter()
@@ -30,17 +28,44 @@ def get_current_user(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/users/{user_id}/domains", response_model=List[DomainSchema])
-def get_domains_for_user(user_id: UUID, db: Session = Depends(get_db)):
-    domains = db.query(Domain).filter(Domain.owner_user_id == user_id).all()
+def get_domains_for_user(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    domains = (
+        db.query(Domain)
+        .filter(
+            Domain.owner_user_id == user_id, Domain.tenant_id == current_user.tenant_id
+        )
+        .all()
+    )
     if not domains:
         raise HTTPException(status_code=404, detail="No domains found for this user")
     return domains
 
 
-# New: Get user configuration
+# Get user configuration
 @router.get("/users/{user_id}/config", response_model=List[UserConfigSchema])
-def get_user_config(user_id: UUID, db: Session = Depends(get_db)):
-    config = db.query(UserConfig).filter(UserConfig.user_id == user_id).all()
+def get_user_config(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    config = (
+        db.query(UserConfig)
+        .filter(
+            UserConfig.user_id == user_id,
+            UserConfig.tenant_id == current_user.tenant_id,
+        )
+        .all()
+    )
     if not config:
         raise HTTPException(
             status_code=404, detail="No configuration found for this user"
@@ -48,14 +73,25 @@ def get_user_config(user_id: UUID, db: Session = Depends(get_db)):
     return config
 
 
-# New: Update user configuration
+# Update user configuration
 @router.put("/users/{user_id}/config", response_model=UserConfigSchema)
 def update_user_config(
-    user_id: UUID, config_key: str, config_value: str, db: Session = Depends(get_db)
+    user_id: UUID,
+    config_key: str,
+    config_value: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    if current_user.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
     user_config = (
         db.query(UserConfig)
-        .filter(UserConfig.user_id == user_id, UserConfig.config_key == config_key)
+        .filter(
+            UserConfig.user_id == user_id,
+            UserConfig.config_key == config_key,
+            UserConfig.tenant_id == current_user.tenant_id,
+        )
         .first()
     )
 
@@ -72,7 +108,14 @@ def update_user_config(
 def get_api_keys(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    api_keys = db.query(APIKey).filter(APIKey.user_id == current_user.user_id).all()
+    api_keys = (
+        db.query(APIKey)
+        .filter(
+            APIKey.user_id == current_user.user_id,
+            APIKey.tenant_id == current_user.tenant_id,
+        )
+        .all()
+    )
     return api_keys
 
 
@@ -81,7 +124,7 @@ def get_api_keys(
 def create_api_key(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    api_key = APIKey(user_id=current_user.user_id)
+    api_key = APIKey(user_id=current_user.user_id, tenant_id=current_user.tenant_id)
     db.add(api_key)
     db.commit()
     db.refresh(api_key)
@@ -97,7 +140,11 @@ def revoke_api_key(
 ):
     api_key = (
         db.query(APIKey)
-        .filter(APIKey.api_key_id == api_key_id, APIKey.user_id == current_user.user_id)
+        .filter(
+            APIKey.api_key_id == api_key_id,
+            APIKey.user_id == current_user.user_id,
+            APIKey.tenant_id == current_user.tenant_id,
+        )
         .first()
     )
     if not api_key:
@@ -108,6 +155,7 @@ def revoke_api_key(
     return {"message": "API key revoked"}
 
 
+# Get user roles
 @router.get("/users/{user_id}/roles", response_model=List[RoleSchema])
 def get_user_roles(
     user_id: UUID,
@@ -117,8 +165,17 @@ def get_user_roles(
     if current_user.user_id != user_id:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    user_roles = db.query(UserRole).filter(UserRole.user_id == user_id).all()
+    user_roles = (
+        db.query(UserRole)
+        .filter(
+            UserRole.user_id == user_id, UserRole.tenant_id == current_user.tenant_id
+        )
+        .all()
+    )
     roles = [
-        db.query(Role).filter(Role.role_id == ur.role_id).first() for ur in user_roles
+        db.query(Role)
+        .filter(Role.role_id == ur.role_id, Role.tenant_id == current_user.tenant_id)
+        .first()
+        for ur in user_roles
     ]
     return roles

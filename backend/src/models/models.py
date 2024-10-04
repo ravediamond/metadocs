@@ -32,15 +32,41 @@ def gen_random_uuid():
     return str(uuid.uuid4())
 
 
+# Tenant Model
+class Tenant(Base):
+    __tablename__ = "tenants"
+
+    tenant_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
+    )
+    tenant_name = Column(String(255), nullable=False)
+    created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationships
+    users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
+    domains = relationship(
+        "Domain", back_populates="tenant", cascade="all, delete-orphan"
+    )
+    roles = relationship("Role", back_populates="tenant", cascade="all, delete-orphan")
+
+
 # User Model
 class User(Base):
     __tablename__ = "users"
 
     user_id = Column(UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid)
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     email = Column(String(255), unique=True, nullable=False)
     hashed_password = Column(Text, nullable=False)
     name = Column(String(255), nullable=False)
     created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationship to tenant
+    tenant = relationship("Tenant", back_populates="users")
 
     # Relationship to domains
     domains = relationship("Domain", back_populates="owner")
@@ -72,11 +98,17 @@ class APIKey(Base):
         ForeignKey("users.user_id", ondelete="CASCADE"),
         nullable=False,
     )
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     created_at = Column(TIMESTAMP, default=func.now())
     revoked = Column(TIMESTAMP, nullable=True)
 
-    # Relationship with User
+    # Relationship with User and Tenant
     user = relationship("User", back_populates="api_keys")
+    tenant = relationship("Tenant")
 
 
 # Domain Model
@@ -86,6 +118,11 @@ class Domain(Base):
     domain_id = Column(
         UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
     )
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     domain_name = Column(String(255), nullable=False)
     owner_user_id = Column(
         UUIDType(as_uuid=True),
@@ -94,6 +131,9 @@ class Domain(Base):
     )
     description = Column(Text)
     created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationship to tenant
+    tenant = relationship("Tenant", back_populates="domains")
 
     # Relationships
     versions = relationship(
@@ -118,11 +158,17 @@ class DomainVersion(Base):
         ForeignKey("domains.domain_id", ondelete="CASCADE"),
         primary_key=True,
     )
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     version = Column(Integer, primary_key=True)
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationships
     domain = relationship("Domain", back_populates="versions")
+    tenant = relationship("Tenant")
 
     concepts = relationship(
         "Concept",
@@ -171,6 +217,11 @@ class Concept(Base):
         UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
     )
     domain_id = Column(UUIDType(as_uuid=True), nullable=False)
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     domain_version = Column(Integer, nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text)
@@ -202,6 +253,9 @@ class Concept(Base):
         ),
     )
 
+    # Relationship with Tenant
+    tenant = relationship("Tenant")
+
 
 # Source Model
 class Source(Base):
@@ -211,6 +265,11 @@ class Source(Base):
         UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
     )
     domain_id = Column(UUIDType(as_uuid=True), nullable=False)
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     domain_version = Column(Integer, nullable=False)
     name = Column(String(255), nullable=False)
     source_type = Column(String(50))  # 'table', 'api', etc.
@@ -239,6 +298,9 @@ class Source(Base):
         ),
     )
 
+    # Relationship with Tenant
+    tenant = relationship("Tenant")
+
 
 # Methodology Model
 class Methodology(Base):
@@ -248,6 +310,11 @@ class Methodology(Base):
         UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
     )
     domain_id = Column(UUIDType(as_uuid=True), nullable=False)
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     domain_version = Column(Integer, nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
@@ -278,6 +345,9 @@ class Methodology(Base):
         ),
     )
 
+    # Relationship with Tenant
+    tenant = relationship("Tenant")
+
 
 # Relationship Model
 class Relationship(Base):
@@ -287,6 +357,11 @@ class Relationship(Base):
         UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
     )
     domain_id = Column(UUIDType(as_uuid=True), nullable=False)
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     domain_version = Column(Integer, nullable=False)
     entity_id_1 = Column(UUIDType(as_uuid=True), nullable=False)
     entity_type_1 = Column(
@@ -323,6 +398,9 @@ class Relationship(Base):
         ),
     )
 
+    # Relationship with Tenant
+    tenant = relationship("Tenant")
+
 
 # DomainConfig Model
 class DomainConfig(Base):
@@ -336,12 +414,18 @@ class DomainConfig(Base):
         ForeignKey("domains.domain_id", ondelete="CASCADE"),
         nullable=False,
     )
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     config_key = Column(String(255), nullable=False)
     config_value = Column(Text, nullable=False)
     created_at = Column(TIMESTAMP, default=func.now())
 
-    # Relationship with Domain
+    # Relationship with Domain and Tenant
     domain = relationship("Domain", back_populates="configurations")
+    tenant = relationship("Tenant")
 
 
 # UserConfig Model
@@ -356,12 +440,18 @@ class UserConfig(Base):
         ForeignKey("users.user_id", ondelete="CASCADE"),
         nullable=False,
     )
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     config_key = Column(String(255), nullable=False)
     config_value = Column(Text, nullable=False)
     created_at = Column(TIMESTAMP, default=func.now())
 
-    # Relationship with User
+    # Relationship with User and Tenant
     user = relationship("User", back_populates="configurations")
+    tenant = relationship("Tenant")
 
 
 # Role Model
@@ -369,10 +459,16 @@ class Role(Base):
     __tablename__ = "roles"
 
     role_id = Column(UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid)
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     role_name = Column(String(50), unique=True, nullable=False)
     description = Column(Text)
 
-    # Relationship to UserRole
+    # Relationship to Tenant and UserRole
+    tenant = relationship("Tenant", back_populates="roles")
     user_roles = relationship("UserRole", back_populates="role")
 
 
@@ -390,6 +486,11 @@ class UserRole(Base):
         ForeignKey("domains.domain_id", ondelete="CASCADE"),
         primary_key=True,
     )
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     role_id = Column(
         UUIDType(as_uuid=True),
         ForeignKey("roles.role_id", ondelete="CASCADE"),
@@ -400,3 +501,4 @@ class UserRole(Base):
     user = relationship("User", back_populates="user_roles")
     domain = relationship("Domain", back_populates="user_roles")
     role = relationship("Role", back_populates="user_roles")
+    tenant = relationship("Tenant")
