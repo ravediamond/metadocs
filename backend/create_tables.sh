@@ -265,6 +265,20 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
     ((SELECT user_id FROM users WHERE email = 'user2@example.com'), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT role_id FROM roles WHERE role_name = 'Viewer' AND tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One') LIMIT 1))
   ON CONFLICT (user_id, domain_id) DO NOTHING;
 
+-- Insert the main "Sales" concept into the concepts table
+INSERT INTO concepts (concept_id, domain_id, tenant_id, domain_version, name, description, type, embedding, created_at, updated_at)
+VALUES 
+  (gen_random_uuid(), 
+   (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), 
+   (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 
+   1, 
+   'Sales', 
+   'Main concept for the Sales domain', 
+   'core', 
+   NULL, 
+   CURRENT_TIMESTAMP, 
+   CURRENT_TIMESTAMP);
+
   -- Insert concepts for Sales domain
   INSERT INTO concepts (concept_id, domain_id, tenant_id, domain_version, name, description, type, embedding, created_at, updated_at)
   VALUES
@@ -274,6 +288,30 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
     (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Sales Forecast', 'Predicted future sales based on current trends', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Customer Retention', 'The rate at which customers return to make purchases', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   ON CONFLICT (concept_id) DO NOTHING;
+
+
+-- Connect all other concepts in the Sales domain to the "Sales" concept
+-- Assume the newly inserted "Sales" concept has been created and its ID will be referenced
+WITH main_sales_concept AS (
+  SELECT concept_id FROM concepts 
+  WHERE name = 'Sales' 
+    AND domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales')
+)
+INSERT INTO relationships (relationship_id, domain_id, tenant_id, domain_version, entity_id_1, entity_type_1, entity_id_2, entity_type_2, relationship_type, created_at)
+SELECT 
+  gen_random_uuid(), 
+  domain_id, 
+  tenant_id, 
+  domain_version, 
+  concept_id, 
+  'concept', 
+  (SELECT concept_id FROM main_sales_concept), 
+  'concept', 
+  'is_part_of', 
+  CURRENT_TIMESTAMP
+FROM concepts
+WHERE domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales')
+  AND name != 'Sales';  -- Ensure we are not linking the "Sales" concept to itself
 
   -- Insert sources for Sales domain
   INSERT INTO sources (source_id, domain_id, tenant_id, domain_version, name, source_type, location, description, created_at)
