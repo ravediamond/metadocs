@@ -16,7 +16,7 @@ import PropTypes from 'prop-types';
 import AuthContext from '../context/AuthContext';
 
 const DashboardPage = () => {
-  const { user, token } = useContext(AuthContext);
+  const { user, token, currentTenant } = useContext(AuthContext);
   const [domains, setDomains] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -24,11 +24,16 @@ const DashboardPage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (!currentTenant) {
+      // If no tenant is selected, redirect to tenant selection page
+      navigate('/select-tenant');
+      return;
+    }
     const fetchDomains = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains`, {
+        const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -49,7 +54,7 @@ const DashboardPage = () => {
     if (token) {
       fetchDomains();
     }
-  }, [token]);
+  }, [token, currentTenant, navigate]);
 
   return (
     <Box bg="gray.50" minH="100vh" py={10}>

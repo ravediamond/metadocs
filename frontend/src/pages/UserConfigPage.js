@@ -3,7 +3,7 @@ import { Box, Heading, Container, Text, Button, Flex, VStack, Input, useToast } 
 import AuthContext from '../context/AuthContext';
 
 const UserConfigPage = () => {
-  const { token } = useContext(AuthContext);
+  const { token, currentTenant } = useContext(AuthContext);
   const [apiKeys, setApiKeys] = useState([]);
   const [newKey, setNewKey] = useState(null);
   const [showNewKey, setShowNewKey] = useState(false); // Control visibility of new API key
@@ -12,7 +12,7 @@ const UserConfigPage = () => {
   useEffect(() => {
     // Fetch API keys
     const fetchAPIKeys = async () => {
-      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/users/me/api-keys`, {
+      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/users/tenants/${currentTenant}/me/api-keys`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -27,7 +27,7 @@ const UserConfigPage = () => {
   }, [token]);
 
   const generateAPIKey = async () => {
-    const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/users/me/api-keys`, {
+    const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/users/tenants/${currentTenant}/me/api-keys`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -50,7 +50,7 @@ const UserConfigPage = () => {
   };
 
   const revokeAPIKey = async (api_key_id) => {
-    await fetch(`${process.env.REACT_APP_BACKEND_URL}/users/me/api-keys/${api_key_id}`, {
+    await fetch(`${process.env.REACT_APP_BACKEND_URL}/users/tenants/${currentTenant}/me/api-keys/${api_key_id}`, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${token}`,

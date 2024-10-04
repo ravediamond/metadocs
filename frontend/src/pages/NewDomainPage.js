@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
 
 const NewDomainPage = () => {
-  const { token } = useContext(AuthContext);
+  const { token, currentTenant } = useContext(AuthContext);
   const [domainName, setDomainName] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,7 +39,7 @@ const NewDomainPage = () => {
     setLoading(true);
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains`, {
+      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -9,7 +9,7 @@ import NewDomainPage from './pages/NewDomainPage';
 import DomainPage from './pages/DomainPage';
 import DomainConfigPage from './pages/DomainConfigPage';  // Import DomainConfigPage
 import UserConfigPage from './pages/UserConfigPage';  // Import UserConfigPage
-
+import TenantSelectionPage from './pages/TenantSelectionPage';
 import { AuthProvider } from './context/AuthContext';
 
 const ProtectedRoute = ({ children }) => {
@@ -29,6 +29,7 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/select-tenant" element={<TenantSelectionPage />} />
         <Route path="/signup" element={<SignUpPage />} />
         <Route
           path="/dashboard"

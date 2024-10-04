@@ -47,7 +47,7 @@ const DomainPage = () => {
   const [sources, setSources] = useState([]);
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedEdge, setSelectedEdge] = useState(null);
-  const { token } = useContext(AuthContext);
+  const { token, currentTenant } = useContext(AuthContext);
   const navigate = useNavigate();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const { isOpen: isRelOpen, onOpen: onRelOpen, onClose: onRelClose } = useDisclosure();
@@ -133,7 +133,7 @@ const DomainPage = () => {
     if (!token) return;
 
     try {
-      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/details`, {
+      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/details`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -151,8 +151,12 @@ const DomainPage = () => {
   };
 
   useEffect(() => {
+    if (!currentTenant) {
+      navigate('/select-tenant');
+      return;
+    }
     if (domain_id) fetchData();
-  }, [domain_id, token]);
+  }, [domain_id, token, currentTenant, navigate]);
 
   const onConnect = (params) => {
     const newEdge = addEdge(params, edges);
@@ -263,7 +267,7 @@ const DomainPage = () => {
     }
 
     try {
-      await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/${endpoint}/${nodeId}`, {
+      await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/${endpoint}/${nodeId}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -289,7 +293,7 @@ const DomainPage = () => {
     setIsModified(true);
 
     try {
-      await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/relationships/${edgeId}`, {
+      await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/relationships/${edgeId}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -399,7 +403,7 @@ const DomainPage = () => {
       console.log('Data being sent to backend:', JSON.stringify(domainData, null, 2));
 
       // Send POST request to /domains/{domain_id}/save
-      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/${domain_id}/save`, {
+      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/save`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
