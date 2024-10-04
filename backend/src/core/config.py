@@ -1,3 +1,6 @@
 import os
 
-TENANT_MODE = os.getenv("TENANT_MODE", "open-source")  # Default to open-source
+# Configuration flag
+SYSTEM_MODE = os.getenv(
+    "SYSTEM_MODE", "open_source"
+)  # Options: 'open_source', 'saas', 'commercial'

@@ -43,11 +43,40 @@ class Tenant(Base):
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationships
-    users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
+    user_tenants = relationship(
+        "UserTenant", back_populates="tenant", cascade="all, delete-orphan"
+    )
     domains = relationship(
         "Domain", back_populates="tenant", cascade="all, delete-orphan"
     )
     roles = relationship("Role", back_populates="tenant", cascade="all, delete-orphan")
+
+
+# UserTenant Association Model
+class UserTenant(Base):
+    __tablename__ = "user_tenants"
+
+    user_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("users.user_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    role_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("roles.role_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationships
+    user = relationship("User", back_populates="user_tenants")
+    tenant = relationship("Tenant", back_populates="user_tenants")
+    role = relationship("Role")
 
 
 # User Model
@@ -55,34 +84,25 @@ class User(Base):
     __tablename__ = "users"
 
     user_id = Column(UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid)
-    tenant_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
-        nullable=False,
-    )
     email = Column(String(255), unique=True, nullable=False)
     hashed_password = Column(Text, nullable=False)
     name = Column(String(255), nullable=False)
     created_at = Column(TIMESTAMP, default=func.now())
 
-    # Relationship to tenant
-    tenant = relationship("Tenant", back_populates="users")
-
-    # Relationship to domains
+    # Relationships
+    user_tenants = relationship(
+        "UserTenant", back_populates="user", cascade="all, delete-orphan"
+    )
+    user_roles = relationship(
+        "UserRole", back_populates="user", cascade="all, delete-orphan"
+    )
     domains = relationship("Domain", back_populates="owner")
-
-    # Relationship to user configurations
     configurations = relationship(
         "UserConfig", back_populates="user", cascade="all, delete-orphan"
     )
-
-    # Relationship to API keys
     api_keys = relationship(
         "APIKey", back_populates="user", cascade="all, delete-orphan"
     )
-
-    # Relationship to UserRole
-    user_roles = relationship("UserRole", back_populates="user")
 
 
 # APIKey Model
@@ -486,19 +506,14 @@ class UserRole(Base):
         ForeignKey("domains.domain_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    tenant_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
-        nullable=False,
-    )
     role_id = Column(
         UUIDType(as_uuid=True),
         ForeignKey("roles.role_id", ondelete="CASCADE"),
-        primary_key=True,
+        nullable=False,
     )
+    created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationships
     user = relationship("User", back_populates="user_roles")
     domain = relationship("Domain", back_populates="user_roles")
-    role = relationship("Role", back_populates="user_roles")
-    tenant = relationship("Tenant")
+    role = relationship("Role")

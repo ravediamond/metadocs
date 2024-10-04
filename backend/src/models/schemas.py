@@ -21,7 +21,6 @@ class TenantResponse(TenantBase):
 class UserBase(BaseModel):
     email: EmailStr
     name: str
-    tenant_id: UUID  # Add tenant_id here
 
 
 class UserCreate(UserBase):
@@ -93,6 +92,19 @@ class Domain(DomainBase):
     domain_id: UUID
     domain_name: str
     description: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Domain Config Schema
+class DomainConfigSchema(BaseModel):
+    config_id: UUID
+    domain_id: UUID
+    tenant_id: UUID
+    config_key: str
+    config_value: str
     created_at: datetime
 
     class Config:
