@@ -234,7 +234,16 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
     (gen_random_uuid(), 'user2@example.com', '$2b$12$RaerUrFIbqkUomI.4YWnROJ419pK2h8Fbs/4bIBlaviSzKoXwutJK', 'User Two')
   ON CONFLICT (user_id) DO NOTHING;
 
--- Associate users with the tenant and assign roles
+  -- Insert default roles into the Roles table
+  INSERT INTO roles (role_id, tenant_id, role_name, description)
+  VALUES
+    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'owner', 'Full access to the domain, including managing roles'),
+    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'admin', 'Administrative access to the domain'),
+    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'member', 'Can contribute to the domain'),
+    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'viewer', 'Can view domain content')
+  ON CONFLICT (tenant_id, role_name) DO NOTHING;
+
+  -- Associate users with the tenant and assign roles
   INSERT INTO user_tenants (user_id, tenant_id, role_id)
   VALUES
     ((SELECT user_id FROM users WHERE email = 'user1@example.com'), 
@@ -259,15 +268,6 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
     ((SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, CURRENT_TIMESTAMP),
     ((SELECT domain_id FROM domains WHERE domain_name = 'IT'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, CURRENT_TIMESTAMP)
   ON CONFLICT (domain_id, version) DO NOTHING;
-
-  -- Insert default roles into the Roles table
-  INSERT INTO roles (role_id, tenant_id, role_name, description)
-  VALUES
-    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'owner', 'Full access to the domain, including managing roles'),
-    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'admin', 'Administrative access to the domain'),
-    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'member', 'Can contribute to the domain'),
-    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'viewer', 'Can view domain content')
-  ON CONFLICT (tenant_id, role_name) DO NOTHING;
 
   -- Assign 'owner' role to each domain owner for their own domain
   INSERT INTO user_roles (user_id, domain_id, role_id)

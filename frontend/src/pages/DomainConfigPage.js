@@ -92,7 +92,6 @@ const DomainConfigPage = () => {
   };
 
   useEffect(() => {
-    console.log(currentUserRole);
     if (domain_id && token) {
       fetchConfig();
       fetchUsers();

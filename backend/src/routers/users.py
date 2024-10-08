@@ -262,7 +262,6 @@ def revoke_api_key(
     return {"message": "API key revoked"}
 
 
-# Get user roles within a tenant
 @router.get(
     "/tenants/{tenant_id}/users/{user_id}/roles", response_model=List[RoleSchema]
 )
@@ -272,6 +271,8 @@ def get_user_roles(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    print(f"Fetching roles for user {user_id} in tenant {tenant_id}")
+
     # Verify current user has access to the tenant
     current_user_tenant = (
         db.query(UserTenant)
@@ -282,15 +283,17 @@ def get_user_roles(
         .first()
     )
     if not current_user_tenant:
+        print("Current user has no access to this tenant.")
         raise HTTPException(status_code=403, detail="Access denied to this tenant")
 
     # Only the user or an admin can view roles
     if current_user.user_id != user_id and not is_admin_user(
         current_user, tenant_id, db
     ):
+        print("User lacks sufficient permissions.")
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    # Get the user's role in the tenant
+    # Get the user's tenant membership record
     user_tenant = (
         db.query(UserTenant)
         .filter(
@@ -300,8 +303,12 @@ def get_user_roles(
         .first()
     )
     if not user_tenant:
+        print(f"User {user_id} not found in tenant {tenant_id}")
         raise HTTPException(status_code=404, detail="User not found in this tenant")
 
+    print(f"UserTenant record: {user_tenant}")
+
+    # Fetch the user's role in the tenant
     role = (
         db.query(Role)
         .filter(
@@ -310,8 +317,12 @@ def get_user_roles(
         )
         .first()
     )
+
     if not role:
+        print(f"Role with ID {user_tenant.role_id} not found in tenant {tenant_id}")
         raise HTTPException(status_code=404, detail="Role not found")
+
+    print(f"Returning role: {role}")
 
     return [role]
 

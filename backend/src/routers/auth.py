@@ -93,7 +93,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             db.refresh(new_tenant)
 
             # Create and assign owner role
-            owner_role = Role(role_name="Owner", tenant_id=new_tenant.tenant_id)
+            owner_role = Role(role_name="owner", tenant_id=new_tenant.tenant_id)
             db.add(owner_role)
             db.commit()
             db.refresh(owner_role)
