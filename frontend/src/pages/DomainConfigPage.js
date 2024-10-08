@@ -17,7 +17,7 @@ import AuthContext from '../context/AuthContext';
 
 const DomainConfigPage = () => {
   const { domain_id } = useParams();
-  const { token, currentTenant } = useContext(AuthContext);
+  const { token, currentTenant, currentUserRole } = useContext(AuthContext); // Assuming role is part of AuthContext
   const [config, setConfig] = useState([]);
   const [newConfig, setNewConfig] = useState({});
   const [users, setUsers] = useState([]);
@@ -73,7 +73,7 @@ const DomainConfigPage = () => {
   const fetchRoles = async () => {
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/roles`,
+        `${process.env.REACT_APP_BACKEND_URL}/roles/tenants/${currentTenant}/roles`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -92,6 +92,7 @@ const DomainConfigPage = () => {
   };
 
   useEffect(() => {
+    console.log(currentUserRole);
     if (domain_id && token) {
       fetchConfig();
       fetchUsers();
@@ -269,71 +270,75 @@ const DomainConfigPage = () => {
           </Button>
         </Flex>
 
-        {/* User Role Management */}
-        <Heading
-          fontSize={{ base: '2xl', md: '3xl' }}
-          fontWeight="bold"
-          color="gray.800"
-          mt={12}
-          mb={8}
-        >
-          Manage User Roles
-        </Heading>
+        {/* Conditional Role Assignment Rendering */}
+        {["admin", "owner"].includes(currentUserRole) && (
+          <>
+            <Heading
+              fontSize={{ base: '2xl', md: '3xl' }}
+              fontWeight="bold"
+              color="gray.800"
+              mt={12}
+              mb={8}
+            >
+              Manage User Roles
+            </Heading>
 
-        {users.length > 0 ? (
-          <Stack spacing={6}>
-            {users.map((user) => (
-              <Box
-                key={user.user_id}
-                p={6}
-                border="1px solid"
-                borderColor="gray.200"
-                borderRadius="lg"
-                bg="white"
-                shadow="sm"
-                _hover={{ shadow: 'md' }}
-              >
-                <Text fontSize="lg" mb={2} fontWeight="semibold" color="blue.600">
-                  {user.name} ({user.email})
-                </Text>
-                <Text fontSize="md" color="gray.600" mb={4}>
-                  Current Role: {user.role_name || 'No role assigned'}
-                </Text>
-                <Select
-                  placeholder="Assign a new role"
-                  value={selectedRoles[user.user_id] || ''}
-                  onChange={(e) => handleRoleChange(user.user_id, e.target.value)}
-                >
-                  {roles.map((role) => (
-                    <option key={role.role_id} value={role.role_name}>
-                      {role.role_name}
-                    </option>
-                  ))}
-                </Select>
-                <Flex mt={4}>
-                  <Button
-                    colorScheme="blue"
-                    onClick={() => assignRole(user.user_id)}
-                    mr={4}
+            {users.length > 0 ? (
+              <Stack spacing={6}>
+                {users.map((user) => (
+                  <Box
+                    key={user.user_id}
+                    p={6}
+                    border="1px solid"
+                    borderColor="gray.200"
+                    borderRadius="lg"
+                    bg="white"
+                    shadow="sm"
+                    _hover={{ shadow: 'md' }}
                   >
-                    Assign Role
-                  </Button>
-                  {user.role_name && (
-                    <Button
-                      colorScheme="red"
-                      onClick={() => revokeRole(user.user_id, user.role_name)}
+                    <Text fontSize="lg" mb={2} fontWeight="semibold" color="blue.600">
+                      {user.name} ({user.email})
+                    </Text>
+                    <Text fontSize="md" color="gray.600" mb={4}>
+                      Current Role: {user.role_name || 'No role assigned'}
+                    </Text>
+                    <Select
+                      placeholder="Assign a new role"
+                      value={selectedRoles[user.user_id] || ''}
+                      onChange={(e) => handleRoleChange(user.user_id, e.target.value)}
                     >
-                      Revoke Role
-                    </Button>
-                  )}
-                </Flex>
-              </Box>
-            ))}
-          </Stack>
-        ) : (
-          <Text fontSize="lg" color="gray.600" textAlign="center">
-            No users found for this domain.
-          </Text>
+                      {roles.map((role) => (
+                        <option key={role.role_id} value={role.role_name}>
+                          {role.role_name}
+                        </option>
+                      ))}
+                    </Select>
+                    <Flex mt={4}>
+                      <Button
+                        colorScheme="blue"
+                        onClick={() => assignRole(user.user_id)}
+                        mr={4}
+                      >
+                        Assign Role
+                      </Button>
+                      {user.role_name && (
+                        <Button
+                          colorScheme="red"
+                          onClick={() => revokeRole(user.user_id, user.role_name)}
+                        >
+                          Revoke Role
+                        </Button>
+                      )}
+                    </Flex>
+                  </Box>
+                ))}
+              </Stack>
+            ) : (
+              <Text fontSize="lg" color="gray.600" textAlign="center">
+                No users found for this domain.
+              </Text>
+            )}
+          </>
         )}
       </Container>
     </Box>

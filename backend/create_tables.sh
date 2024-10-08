@@ -239,11 +239,11 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
   VALUES
     ((SELECT user_id FROM users WHERE email = 'user1@example.com'), 
     (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 
-    (SELECT role_id FROM roles WHERE role_name = 'Owner' AND tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'))),
+    (SELECT role_id FROM roles WHERE role_name = 'owner' AND tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'))),
 
     ((SELECT user_id FROM users WHERE email = 'user2@example.com'), 
     (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
-    (SELECT role_id FROM roles WHERE role_name = 'Member' AND tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One')))
+    (SELECT role_id FROM roles WHERE role_name = 'member' AND tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One')))
   ON CONFLICT (user_id, tenant_id) DO NOTHING;
 
   -- Insert data into Domains table
@@ -263,28 +263,28 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
   -- Insert default roles into the Roles table
   INSERT INTO roles (role_id, tenant_id, role_name, description)
   VALUES
-    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'Owner', 'Full access to the domain, including managing roles'),
-    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'Admin', 'Administrative access to the domain'),
-    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'Member', 'Can contribute to the domain'),
-    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'Viewer', 'Can view domain content')
+    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'owner', 'Full access to the domain, including managing roles'),
+    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'admin', 'Administrative access to the domain'),
+    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'member', 'Can contribute to the domain'),
+    (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'viewer', 'Can view domain content')
   ON CONFLICT (tenant_id, role_name) DO NOTHING;
 
-  -- Assign 'Owner' role to each domain owner for their own domain
+  -- Assign 'owner' role to each domain owner for their own domain
   INSERT INTO user_roles (user_id, domain_id, role_id)
-  SELECT owner_user_id, domain_id, (SELECT role_id FROM roles WHERE role_name = 'Owner' AND tenant_id = domains.tenant_id LIMIT 1)
+  SELECT owner_user_id, domain_id, (SELECT role_id FROM roles WHERE role_name = 'owner' AND tenant_id = domains.tenant_id LIMIT 1)
   FROM domains
   ON CONFLICT (user_id, domain_id) DO NOTHING;
 
-  -- Assign 'Member' role to user1 for the IT domain
+  -- Assign 'member' role to user1 for the IT domain
   INSERT INTO user_roles (user_id, domain_id, role_id)
   VALUES
-    ((SELECT user_id FROM users WHERE email = 'user1@example.com'), (SELECT domain_id FROM domains WHERE domain_name = 'IT'), (SELECT role_id FROM roles WHERE role_name = 'Member' AND tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One') LIMIT 1))
+    ((SELECT user_id FROM users WHERE email = 'user1@example.com'), (SELECT domain_id FROM domains WHERE domain_name = 'IT'), (SELECT role_id FROM roles WHERE role_name = 'member' AND tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One') LIMIT 1))
   ON CONFLICT (user_id, domain_id) DO NOTHING;
 
   -- Assign 'Viewer' role to user2 for the Sales domain
   INSERT INTO user_roles (user_id, domain_id, role_id)
   VALUES
-    ((SELECT user_id FROM users WHERE email = 'user2@example.com'), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT role_id FROM roles WHERE role_name = 'Viewer' AND tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One') LIMIT 1))
+    ((SELECT user_id FROM users WHERE email = 'user2@example.com'), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT role_id FROM roles WHERE role_name = 'viewer' AND tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One') LIMIT 1))
   ON CONFLICT (user_id, domain_id) DO NOTHING;
 
 -- Insert the main "Sales" concept into the concepts table
