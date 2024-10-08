@@ -517,3 +517,37 @@ class UserRole(Base):
     user = relationship("User", back_populates="user_roles")
     domain = relationship("Domain", back_populates="user_roles")
     role = relationship("Role")
+
+
+# Invitation Model
+class Invitation(Base):
+    __tablename__ = "invitations"
+
+    invitation_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
+    )
+    inviter_user_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("users.user_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    invitee_email = Column(String(255), nullable=False)
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    domain_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("domains.domain_id", ondelete="CASCADE"),
+        nullable=True,  # Optional field
+    )
+    status = Column(String(50), default="pending")
+    created_at = Column(TIMESTAMP, default=func.now())
+    expires_at = Column(TIMESTAMP, nullable=True)
+    accepted_at = Column(TIMESTAMP, nullable=True)
+
+    # Relationships
+    inviter = relationship("User", foreign_keys=[inviter_user_id])
+    tenant = relationship("Tenant")
+    domain = relationship("Domain", foreign_keys=[domain_id])

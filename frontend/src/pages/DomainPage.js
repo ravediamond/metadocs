@@ -1,5 +1,3 @@
-// DomainPage.jsx
-
 import React, { useEffect, useState, useContext } from 'react';
 import {
   Box, Heading, Container, Text, Flex, Button, Select, Modal, ModalOverlay, ModalContent, ModalHeader,

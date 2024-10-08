@@ -28,13 +28,13 @@ def has_permission(
 
 
 def is_admin_user(current_user: User, tenant_id: UUID, db: Session) -> bool:
-    # Check if the user has the 'admin' role for the specified tenant
+    # Check if the user has either the 'admin' or 'owner' role for the specified tenant
     user_role = (
         db.query(UserRole)
         .join(Role, UserRole.role_id == Role.role_id)
         .filter(
             UserRole.user_id == current_user.user_id,
-            Role.role_name == "admin",
+            Role.role_name.in_(["admin", "owner"]),  # Check for both admin and owner
             Role.tenant_id == tenant_id,  # Ensure it's for the current tenant
         )
         .first()

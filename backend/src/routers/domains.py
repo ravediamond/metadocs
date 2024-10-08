@@ -36,7 +36,7 @@ from ..core.utils import generate_uuid
 router = APIRouter()
 
 
-# Create a new domain and assign 'Owner' role to the creator
+# Create a new domain and assign 'owner' role to the creator
 @router.post("/tenants/{tenant_id}/domains", response_model=DomainSchema)
 def create_domain(
     tenant_id: UUID,
@@ -81,17 +81,17 @@ def create_domain(
     db.add(new_domain_version)
     db.commit()
 
-    # Assign 'Owner' role to the creator in the domain
+    # Assign 'owner' role to the creator in the domain
     owner_role = (
         db.query(Role)
-        .filter(Role.role_name == "Owner", Role.tenant_id == tenant_id)
+        .filter(Role.role_name == "owner", Role.tenant_id == tenant_id)
         .first()
     )
     if not owner_role:
-        # Create the 'Owner' role if it doesn't exist
+        # Create the 'owner' role if it doesn't exist
         owner_role = Role(
             role_id=uuid.uuid4(),
-            role_name="Owner",
+            role_name="owner",
             description="Domain owner with full permissions",
             tenant_id=tenant_id,
         )
@@ -185,7 +185,7 @@ def get_domain_details(
         current_user,
         tenant_id,
         domain_id,
-        ["Owner", "Admin", "Member", "Viewer"],
+        ["owner", "admin", "member", "viewer"],
         db,
     ):
         raise HTTPException(
@@ -295,7 +295,7 @@ def save_domain(
     current_user: User = Depends(get_current_user),
 ):
     # Verify user has permission to save the domain
-    if not has_permission(current_user, tenant_id, domain_id, ["Owner", "Admin"], db):
+    if not has_permission(current_user, tenant_id, domain_id, ["owner", "admin"], db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to save domain"
         )
@@ -519,8 +519,8 @@ def assign_or_update_role_to_user(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Verify current user has 'Owner' or 'Admin' role in the domain
-    if not has_permission(current_user, tenant_id, domain_id, ["Owner", "Admin"], db):
+    # Verify current user has 'owner' or 'admin' role in the domain
+    if not has_permission(current_user, tenant_id, domain_id, ["owner", "admin"], db):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     # Check if user exists and belongs to the tenant
@@ -588,8 +588,8 @@ def revoke_role_from_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Verify current user has 'Owner' or 'Admin' role in the domain
-    if not has_permission(current_user, tenant_id, domain_id, ["Owner", "Admin"], db):
+    # Verify current user has 'owner' or 'admin' role in the domain
+    if not has_permission(current_user, tenant_id, domain_id, ["owner", "admin"], db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to revoke roles"
         )
@@ -637,7 +637,7 @@ def list_users_in_domain(
 ):
     # Verify user has permission to view users in the domain
     if not has_permission(
-        current_user, tenant_id, domain_id, ["Owner", "Admin", "Member"], db
+        current_user, tenant_id, domain_id, ["owner", "admin", "Member"], db
     ):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to view users"
@@ -683,7 +683,7 @@ def get_domain_config(
     current_user: User = Depends(get_current_user),
 ):
     # Verify user has permission to access domain config
-    if not has_permission(current_user, tenant_id, domain_id, ["Owner", "Admin"], db):
+    if not has_permission(current_user, tenant_id, domain_id, ["owner", "admin"], db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to access config"
         )
@@ -714,7 +714,7 @@ def update_domain_config(
     current_user: User = Depends(get_current_user),
 ):
     # Verify user has permission to update domain config
-    if not has_permission(current_user, tenant_id, domain_id, ["Owner", "Admin"], db):
+    if not has_permission(current_user, tenant_id, domain_id, ["owner", "admin"], db):
         raise HTTPException(
             status_code=403, detail="Insufficient permissions to update config"
         )

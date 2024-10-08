@@ -4,6 +4,7 @@ from uuid import UUID
 from typing import List
 import uuid
 from sqlalchemy.sql import func
+from datetime import datetime
 
 from ..core.database import get_db
 from ..core.security import get_current_user
@@ -16,6 +17,7 @@ from ..models.models import (
     Role,
     UserTenant,
     Tenant,
+    Invitation,
 )
 from ..models.schemas import (
     Domain as DomainSchema,
@@ -27,6 +29,8 @@ from ..models.schemas import (
     UserRoleCreate,
     UserRole as UserRoleSchema,
     UserRoleResponse,
+    InvitationResponse,
+    InvitationCreate,
 )
 from ..core.permissions import is_admin_user
 from ..core.utils import generate_api_key
@@ -258,7 +262,6 @@ def revoke_api_key(
     return {"message": "API key revoked"}
 
 
-# Get user roles within a tenant
 @router.get(
     "/tenants/{tenant_id}/users/{user_id}/roles", response_model=List[RoleSchema]
 )
@@ -268,6 +271,8 @@ def get_user_roles(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    print(f"Fetching roles for user {user_id} in tenant {tenant_id}")
+
     # Verify current user has access to the tenant
     current_user_tenant = (
         db.query(UserTenant)
@@ -278,15 +283,17 @@ def get_user_roles(
         .first()
     )
     if not current_user_tenant:
+        print("Current user has no access to this tenant.")
         raise HTTPException(status_code=403, detail="Access denied to this tenant")
 
     # Only the user or an admin can view roles
     if current_user.user_id != user_id and not is_admin_user(
         current_user, tenant_id, db
     ):
+        print("User lacks sufficient permissions.")
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    # Get the user's role in the tenant
+    # Get the user's tenant membership record
     user_tenant = (
         db.query(UserTenant)
         .filter(
@@ -296,8 +303,12 @@ def get_user_roles(
         .first()
     )
     if not user_tenant:
+        print(f"User {user_id} not found in tenant {tenant_id}")
         raise HTTPException(status_code=404, detail="User not found in this tenant")
 
+    print(f"UserTenant record: {user_tenant}")
+
+    # Fetch the user's role in the tenant
     role = (
         db.query(Role)
         .filter(
@@ -306,8 +317,12 @@ def get_user_roles(
         )
         .first()
     )
+
     if not role:
+        print(f"Role with ID {user_tenant.role_id} not found in tenant {tenant_id}")
         raise HTTPException(status_code=404, detail="Role not found")
+
+    print(f"Returning role: {role}")
 
     return [role]
 
@@ -364,3 +379,136 @@ def remove_user_from_tenant(
     db.delete(user_tenant)
     db.commit()
     return {"detail": "User removed from tenant successfully"}
+
+
+# Create a new invitation
+@router.post("/tenants/{tenant_id}/invite", response_model=InvitationResponse)
+def invite_user(
+    tenant_id: UUID,
+    invitation: InvitationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Verify current user has access to the tenant
+    user_tenant = (
+        db.query(UserTenant)
+        .filter(
+            UserTenant.user_id == current_user.user_id,
+            UserTenant.tenant_id == tenant_id,
+        )
+        .first()
+    )
+    if not user_tenant:
+        raise HTTPException(status_code=403, detail="Access denied to this tenant")
+
+    # Check if the invitee already exists in the tenant
+    invitee_exists = (
+        db.query(User).filter(User.email == invitation.invitee_email).first()
+    )
+    if invitee_exists:
+        raise HTTPException(status_code=400, detail="User already exists")
+
+    # Create the invitation
+    new_invitation = Invitation(
+        inviter_user_id=current_user.user_id,
+        invitee_email=invitation.invitee_email,
+        tenant_id=tenant_id,
+        domain_id=invitation.domain_id,
+        expires_at=invitation.expires_at,
+    )
+    db.add(new_invitation)
+    db.commit()
+    db.refresh(new_invitation)
+
+    # Here you could trigger an email sending process to the invitee
+    return new_invitation
+
+
+# Get all invitations for a tenant
+@router.get("/tenants/{tenant_id}/invitations", response_model=List[InvitationResponse])
+def list_invitations(
+    tenant_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Verify current user has access to the tenant
+    user_tenant = (
+        db.query(UserTenant)
+        .filter(
+            UserTenant.user_id == current_user.user_id,
+            UserTenant.tenant_id == tenant_id,
+        )
+        .first()
+    )
+    if not user_tenant:
+        raise HTTPException(status_code=403, detail="Access denied to this tenant")
+
+    invitations = db.query(Invitation).filter(Invitation.tenant_id == tenant_id).all()
+    return invitations
+
+
+@router.post("/invitations/{invitation_id}/accept")
+def accept_invitation(
+    invitation_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    invitation = (
+        db.query(Invitation).filter(Invitation.invitation_id == invitation_id).first()
+    )
+
+    if not invitation:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    if invitation.invitee_email != current_user.email:
+        raise HTTPException(
+            status_code=403, detail="You are not authorized to accept this invitation"
+        )
+
+    # Check if role_id is provided by the invitation, otherwise use a default role
+    default_role = (
+        db.query(Role)
+        .filter(Role.tenant_id == invitation.tenant_id, Role.role_name == "User")
+        .first()
+    )
+    if not default_role:
+        raise HTTPException(status_code=400, detail="Default role for tenant not found")
+
+    # Assign invitee to the tenant with the specified role or default role
+    user_tenant = UserTenant(
+        user_id=current_user.user_id,
+        tenant_id=invitation.tenant_id,
+        role_id=default_role.role_id,  # Use default role or from invitation
+    )
+    db.add(user_tenant)
+
+    # Mark invitation as accepted
+    invitation.status = "accepted"
+    invitation.accepted_at = func.now()
+    db.commit()
+
+    return {"message": "Invitation accepted and user added to the tenant"}
+
+
+# Reject an invitation
+@router.post("/invitations/{invitation_id}/reject")
+def reject_invitation(
+    invitation_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    invitation = (
+        db.query(Invitation).filter(Invitation.invitation_id == invitation_id).first()
+    )
+    if not invitation:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    if invitation.invitee_email != current_user.email:
+        raise HTTPException(
+            status_code=403, detail="You are not authorized to reject this invitation"
+        )
+
+    # Update the invitation status
+    invitation.status = "rejected"
+    db.commit()
+    return {"message": "Invitation rejected"}
