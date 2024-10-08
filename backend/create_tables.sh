@@ -186,6 +186,28 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- Optionally add this for consistency with other tables
     PRIMARY KEY (user_id, tenant_id)
   );
+
+  -- Create Invitations table
+  CREATE TABLE IF NOT EXISTS invitations (
+      invitation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      inviter_user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+      invitee_email VARCHAR(255) NOT NULL,
+      tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+      domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,  -- Optional: NULL if not domain-specific
+      status VARCHAR(50) DEFAULT 'pending',  -- Invitation status ('pending', 'accepted', 'rejected', etc.)
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      expires_at TIMESTAMP,  -- Optional: Invitation expiration time
+      accepted_at TIMESTAMP  -- Optional: Time when the invitation was accepted
+  );
+
+  -- Index on invitee_email for faster lookups by email
+  CREATE INDEX IF NOT EXISTS invitee_email_index ON invitations (invitee_email);
+
+  -- Index on tenant_id for faster tenant-specific queries
+  CREATE INDEX IF NOT EXISTS tenant_id_index ON invitations (tenant_id);
+
+  -- Optional: Index on domain_id if domain-specific invitations are frequent
+  CREATE INDEX IF NOT EXISTS domain_id_index ON invitations (domain_id);
 EOSQL
 
 echo "Tables created successfully."

@@ -1,11 +1,13 @@
 import React, { useState, useContext } from 'react';
 import { Box, Input, Button, Heading, Text, Stack, FormControl } from '@chakra-ui/react';
 import AuthContext from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const { handleLogin } = useContext(AuthContext);
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -67,7 +69,7 @@ const LoginPage = () => {
         </form>
 
         <Text mt={4} color="gray.600">
-          Don't have an account? <Button variant="link" colorScheme="blue">Sign Up</Button>
+          Don't have an account? <Button variant="link" colorScheme="blue" onClick={() => navigate(`/signup`)}>Sign Up</Button>
         </Text>
       </Box>
     </Box>

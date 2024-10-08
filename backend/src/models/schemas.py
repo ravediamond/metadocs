@@ -286,3 +286,26 @@ class UserRoleResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Invitation Schemas
+class InvitationBase(BaseModel):
+    invitee_email: str
+    tenant_id: UUID
+    domain_id: Optional[UUID] = None
+    status: Optional[str] = "pending"
+    expires_at: Optional[datetime] = None
+
+
+class InvitationCreate(InvitationBase):
+    pass
+
+
+class InvitationResponse(InvitationBase):
+    invitation_id: UUID
+    inviter_user_id: UUID
+    created_at: datetime
+    accepted_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
