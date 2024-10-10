@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 
 # Import your routers
-from src.routers import auth, domains, users, roles
+from src.routers import auth, domains, users, roles, config
 from src.middleware.api_key_middleware import APIKeyMiddleware
 from src.core.database import (
     get_db,
@@ -45,7 +45,8 @@ app.add_middleware(APIKeyMiddleware, db_session=get_db())
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(domains.router, prefix="/domains", tags=["Domains"])
-app.include_router(roles.router, prefix="/roles", tags=["roles"])
+app.include_router(roles.router, prefix="/roles", tags=["Roles"])
+app.include_router(config.router, prefix="/config", tags=["Config"])
 
 # AWS Lambda handler for serverless deployment
 handler = Mangum(app)

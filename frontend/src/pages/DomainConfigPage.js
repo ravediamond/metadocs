@@ -29,7 +29,7 @@ const DomainConfigPage = () => {
   const fetchConfig = async () => {
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/config`,
+        `${process.env.REACT_APP_BACKEND_URL}/config/tenants/${currentTenant}/domains/${domain_id}/config`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -51,7 +51,7 @@ const DomainConfigPage = () => {
   const fetchUsers = async () => {
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/users`,
+        `${process.env.REACT_APP_BACKEND_URL}/users/tenants/${currentTenant}/domains/${domain_id}/users`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -108,7 +108,7 @@ const DomainConfigPage = () => {
     for (const key in newConfig) {
       try {
         const response = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/config`,
+          `${process.env.REACT_APP_BACKEND_URL}/config/tenants/${currentTenant}/domains/${domain_id}/config`,
           {
             method: 'PUT',
             headers: {
@@ -150,7 +150,7 @@ const DomainConfigPage = () => {
 
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/users/${userId}/roles`,
+        `${process.env.REACT_APP_BACKEND_URL}/roles/tenants/${currentTenant}/domains/${domain_id}/users/${userId}/roles`,
         {
           method: 'POST',
           headers: {
@@ -178,7 +178,7 @@ const DomainConfigPage = () => {
   const revokeRole = async (userId, roleName) => {
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/users/${userId}/roles/${roleName}`,
+        `${process.env.REACT_APP_BACKEND_URL}/roles/tenants/${currentTenant}/domains/${domain_id}/users/${userId}/roles/${roleName}`,
         {
           method: 'DELETE',
           headers: {

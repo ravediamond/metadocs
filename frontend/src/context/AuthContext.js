@@ -59,7 +59,7 @@ export const AuthProvider = ({ children }) => {
   const fetchUserRole = async (tenantId, userId) => {
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/users/tenants/${tenantId}/users/${userId}/roles`,
+        `${process.env.REACT_APP_BACKEND_URL}/roles/tenants/${tenantId}/users/${userId}/roles`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
