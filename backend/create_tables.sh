@@ -68,58 +68,29 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     PRIMARY KEY (domain_id, version)
   );
 
-  -- Create Concepts table with tenant_id
-  CREATE TABLE IF NOT EXISTS concepts (
-    concept_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Create Entity table (replaces Concept, Source, and Methodology)
+  CREATE TABLE IF NOT EXISTS entities (
+    entity_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID NOT NULL REFERENCES domains(domain_id) ON DELETE CASCADE,
     tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     domain_version INT NOT NULL,
     name VARCHAR(255) NOT NULL,
     description TEXT,
-    type VARCHAR(50),
+    entity_type VARCHAR(50) NOT NULL,  -- e.g., 'concept', 'source', 'methodology'
     embedding VECTOR(1536),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (domain_id, domain_version) REFERENCES domain_versions(domain_id, version) ON DELETE CASCADE
   );
 
-  -- Create Sources table with tenant_id
-  CREATE TABLE IF NOT EXISTS sources (
-    source_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Create RelationshipEdge table (replaces Relationship)
+  CREATE TABLE IF NOT EXISTS relationship_edges (
+    edge_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID NOT NULL REFERENCES domains(domain_id) ON DELETE CASCADE,
     tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     domain_version INT NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    source_type VARCHAR(50),
-    location TEXT NOT NULL,
-    description TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (domain_id, domain_version) REFERENCES domain_versions(domain_id, version) ON DELETE CASCADE
-  );
-
-  -- Create Methodologies table with tenant_id
-  CREATE TABLE IF NOT EXISTS methodologies (
-    methodology_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    domain_id UUID NOT NULL REFERENCES domains(domain_id) ON DELETE CASCADE,
-    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-    domain_version INT NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    description TEXT NOT NULL,
-    steps TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (domain_id, domain_version) REFERENCES domain_versions(domain_id, version) ON DELETE CASCADE
-  );
-
-  -- Create Relationships table with tenant_id
-  CREATE TABLE IF NOT EXISTS relationships (
-    relationship_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    domain_id UUID NOT NULL REFERENCES domains(domain_id) ON DELETE CASCADE,
-    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-    domain_version INT NOT NULL,
-    entity_id_1 UUID NOT NULL,
-    entity_type_1 VARCHAR(50) NOT NULL,
-    entity_id_2 UUID NOT NULL,
-    entity_type_2 VARCHAR(50) NOT NULL,
+    from_entity_id UUID NOT NULL REFERENCES entities(entity_id) ON DELETE CASCADE,
+    to_entity_id UUID NOT NULL REFERENCES entities(entity_id) ON DELETE CASCADE,
     relationship_type VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (domain_id, domain_version) REFERENCES domain_versions(domain_id, version) ON DELETE CASCADE
@@ -182,22 +153,22 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   CREATE TABLE IF NOT EXISTS user_tenants (
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-    role_id UUID REFERENCES roles(role_id) ON DELETE CASCADE,  -- Add this line for role_id
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- Optionally add this for consistency with other tables
+    role_id UUID REFERENCES roles(role_id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, tenant_id)
   );
 
   -- Create Invitations table
   CREATE TABLE IF NOT EXISTS invitations (
-      invitation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      inviter_user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
-      invitee_email VARCHAR(255) NOT NULL,
-      tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-      domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,  -- Optional: NULL if not domain-specific
-      status VARCHAR(50) DEFAULT 'pending',  -- Invitation status ('pending', 'accepted', 'rejected', etc.)
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      expires_at TIMESTAMP,  -- Optional: Invitation expiration time
-      accepted_at TIMESTAMP  -- Optional: Time when the invitation was accepted
+    invitation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    inviter_user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    invitee_email VARCHAR(255) NOT NULL,
+    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
+    status VARCHAR(50) DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP,
+    accepted_at TIMESTAMP
   );
 
   -- Index on invitee_email for faster lookups by email
@@ -287,108 +258,51 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
     ((SELECT user_id FROM users WHERE email = 'user2@example.com'), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT role_id FROM roles WHERE role_name = 'viewer' AND tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One') LIMIT 1))
   ON CONFLICT (user_id, domain_id) DO NOTHING;
 
--- Insert the main "Sales" concept into the concepts table
-INSERT INTO concepts (concept_id, domain_id, tenant_id, domain_version, name, description, type, embedding, created_at, updated_at)
-VALUES 
-  (gen_random_uuid(), 
-   (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), 
-   (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 
-   1, 
-   'Sales', 
-   'Main concept for the Sales domain', 
-   'core', 
-   NULL, 
-   CURRENT_TIMESTAMP, 
-   CURRENT_TIMESTAMP);
+  -- Insert the main "Sales" entity into the entities table (replaces concept)
+  INSERT INTO entities (entity_id, domain_id, tenant_id, domain_version, name, description, entity_type, embedding, created_at, updated_at)
+  VALUES 
+    (gen_random_uuid(), 
+     (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), 
+     (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 
+     1, 
+     'Sales', 
+     'Main entity for the Sales domain', 
+     'core', 
+     NULL, 
+     CURRENT_TIMESTAMP, 
+     CURRENT_TIMESTAMP);
 
-  -- Insert concepts for Sales domain
-  INSERT INTO concepts (concept_id, domain_id, tenant_id, domain_version, name, description, type, embedding, created_at, updated_at)
+  -- Insert additional entities for Sales domain
+  INSERT INTO entities (entity_id, domain_id, tenant_id, domain_version, name, description, entity_type, embedding, created_at, updated_at)
   VALUES
     (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Total Sales', 'Total sales for a specific period', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Monthly Sales', 'Sales data for each month', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Quarterly Sales', 'Sales data for each quarter', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Sales Forecast', 'Predicted future sales based on current trends', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
     (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Customer Retention', 'The rate at which customers return to make purchases', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-  ON CONFLICT (concept_id) DO NOTHING;
+  ON CONFLICT (entity_id) DO NOTHING;
 
-
--- Connect all other concepts in the Sales domain to the "Sales" concept
--- Assume the newly inserted "Sales" concept has been created and its ID will be referenced
-WITH main_sales_concept AS (
-  SELECT concept_id FROM concepts 
+-- Connect all other entities in the Sales domain to the "Sales" entity using relationship_edges
+WITH main_sales_entity AS (
+  SELECT entity_id FROM entities 
   WHERE name = 'Sales' 
     AND domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales')
 )
-INSERT INTO relationships (relationship_id, domain_id, tenant_id, domain_version, entity_id_1, entity_type_1, entity_id_2, entity_type_2, relationship_type, created_at)
+INSERT INTO relationship_edges (edge_id, domain_id, tenant_id, domain_version, from_entity_id, to_entity_id, relationship_type, created_at)
 SELECT 
   gen_random_uuid(), 
   domain_id, 
   tenant_id, 
   domain_version, 
-  concept_id, 
-  'concept', 
-  (SELECT concept_id FROM main_sales_concept), 
-  'concept', 
+  entity_id, 
+  (SELECT entity_id FROM main_sales_entity), 
   'is_part_of', 
   CURRENT_TIMESTAMP
-FROM concepts
+FROM entities
 WHERE domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales')
-  AND name != 'Sales';  -- Ensure we are not linking the "Sales" concept to itself
+  AND name != 'Sales';  -- Ensure we are not linking the "Sales" entity to itself
 
-  -- Insert sources for Sales domain
-  INSERT INTO sources (source_id, domain_id, tenant_id, domain_version, name, source_type, location, description, created_at)
-  VALUES
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Sales Data Table', 'table', 'db.sales_data', 'Table containing raw sales data', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Customer Data API', 'api', 'https://api.company.com/customers', 'API endpoint for customer information', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Sales Forecasting API', 'api', 'https://api.company.com/forecast', 'API for sales forecasting data', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Customer Feedback Data', 'table', 'db.customer_feedback', 'Table containing customer feedback', CURRENT_TIMESTAMP)
-  ON CONFLICT (source_id) DO NOTHING;
-
-  -- Insert methodologies for Sales domain
-  INSERT INTO methodologies (methodology_id, domain_id, tenant_id, domain_version, name, description, steps, created_at)
-  VALUES
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Calculate Total Sales', 'Methodology to calculate total sales', '1. Fetch raw sales data from db.sales_data; 2. Group by product_id; 3. Sum total sales amount.', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Analyze Monthly Sales', 'Methodology to analyze monthly sales trends', '1. Fetch monthly sales data; 2. Analyze by month.', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Sales Forecasting', 'Methodology to forecast future sales', '1. Fetch current sales data; 2. Use predictive analytics models from Sales Forecasting API.', CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Customer Retention Analysis', 'Methodology to calculate and improve customer retention', '1. Fetch customer feedback and sales data; 2. Identify repeat customers.', CURRENT_TIMESTAMP)
-  ON CONFLICT (methodology_id) DO NOTHING;
-
-  -- Insert relationships for the Sales domain
-  INSERT INTO relationships (relationship_id, domain_id, tenant_id, domain_version, entity_id_1, entity_type_1, entity_id_2, entity_type_2, relationship_type, created_at)
-  VALUES
-    (gen_random_uuid(),
-      (SELECT domain_id FROM domains WHERE domain_name = 'Sales'),
-      (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
-      1,
-      (SELECT concept_id FROM concepts WHERE name = 'Total Sales' AND domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales') LIMIT 1),
-      'concept',
-      (SELECT methodology_id FROM methodologies WHERE name = 'Calculate Total Sales' AND domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales') LIMIT 1),
-      'methodology',
-      'uses',
-      CURRENT_TIMESTAMP),
-    (gen_random_uuid(),
-      (SELECT domain_id FROM domains WHERE domain_name = 'Sales'),
-      (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
-      1,
-      (SELECT concept_id FROM concepts WHERE name = 'Monthly Sales' AND domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales') LIMIT 1),
-      'concept',
-      (SELECT methodology_id FROM methodologies WHERE name = 'Analyze Monthly Sales' AND domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales') LIMIT 1),
-      'methodology',
-      'uses',
-      CURRENT_TIMESTAMP),
-    (gen_random_uuid(),
-      (SELECT domain_id FROM domains WHERE domain_name = 'Sales'),
-      (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
-      1,
-      (SELECT concept_id FROM concepts WHERE name = 'Total Sales' AND domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales') LIMIT 1),
-      'concept',
-      (SELECT source_id FROM sources WHERE name = 'Sales Data Table' AND domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales') LIMIT 1),
-      'source',
-      'depends_on',
-      CURRENT_TIMESTAMP)
-  ON CONFLICT (relationship_id) DO NOTHING;
-
-  -- Insert data into User Config table
+  -- Insert user configuration settings for each user
   INSERT INTO user_config (config_id, user_id, tenant_id, config_key, config_value, created_at)
   VALUES
     (gen_random_uuid(), (SELECT user_id FROM users WHERE email = 'user1@example.com'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'theme', 'dark', CURRENT_TIMESTAMP),
@@ -397,7 +311,7 @@ WHERE domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales')
     (gen_random_uuid(), (SELECT user_id FROM users WHERE email = 'user2@example.com'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'notifications', 'disabled', CURRENT_TIMESTAMP)
   ON CONFLICT (config_id) DO NOTHING;
 
-  -- Insert data into Domain Config table
+  -- Insert domain configuration settings for each domain
   INSERT INTO domain_config (config_id, domain_id, tenant_id, config_key, config_value, created_at)
   VALUES
     (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'default_language', 'en', CURRENT_TIMESTAMP),

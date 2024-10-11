@@ -2,9 +2,10 @@ from uuid import UUID
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.sql import text
 
 from ..core.database import get_db
 from ..core.security import get_current_user
@@ -12,10 +13,8 @@ from ..models.models import (
     Domain,
     DomainVersion,
     User,
-    Concept,
-    Source,
-    Methodology,
-    Relationship,
+    Entity,
+    RelationshipEdge,
     Role,
     UserRole,
     UserTenant,
@@ -27,9 +26,15 @@ from ..models.schemas import (
     DomainSaveSchema,
 )
 from ..core.permissions import has_permission
-from ..core.utils import generate_uuid
 
 router = APIRouter()
+
+
+# Function to create graph in Apache AGE
+def create_graph_in_age(session: Session, domain_id: UUID, version: int):
+    graph_name = f"graph_{domain_id}_{version}"
+    create_graph_query = text(f"SELECT create_graph(:graph_name);")
+    session.execute(create_graph_query, {"graph_name": graph_name})
 
 
 # Create a new domain and assign 'owner' role to the creator
@@ -76,6 +81,9 @@ def create_domain(
     )
     db.add(new_domain_version)
     db.commit()
+
+    # Create the graph in Apache AGE for this domain version
+    create_graph_in_age(db, domain_id, 1)
 
     # Assign 'owner' role to the creator in the domain
     owner_role = (
@@ -165,7 +173,7 @@ def get_domains(
     return result
 
 
-# Get domain details if the user has access
+# Get domain details with entities and relationships (graph details)
 @router.get(
     "/tenants/{tenant_id}/domains/{domain_id}/details", response_model=DomainDataSchema
 )
@@ -225,42 +233,22 @@ def get_domain_details(
     if not domain_version:
         raise HTTPException(status_code=404, detail="Domain version not found")
 
-    concepts = (
-        db.query(Concept)
+    entities = (
+        db.query(Entity)
         .filter(
-            Concept.domain_id == domain_id,
-            Concept.domain_version == version,
-            Concept.tenant_id == tenant_id,
-        )
-        .all()
-    )
-
-    sources = (
-        db.query(Source)
-        .filter(
-            Source.domain_id == domain_id,
-            Source.domain_version == version,
-            Source.tenant_id == tenant_id,
-        )
-        .all()
-    )
-
-    methodologies = (
-        db.query(Methodology)
-        .filter(
-            Methodology.domain_id == domain_id,
-            Methodology.domain_version == version,
-            Methodology.tenant_id == tenant_id,
+            Entity.domain_id == domain_id,
+            Entity.domain_version == version,
+            Entity.tenant_id == tenant_id,
         )
         .all()
     )
 
     relationships = (
-        db.query(Relationship)
+        db.query(RelationshipEdge)
         .filter(
-            Relationship.domain_id == domain_id,
-            Relationship.domain_version == version,
-            Relationship.tenant_id == tenant_id,
+            RelationshipEdge.domain_id == domain_id,
+            RelationshipEdge.domain_version == version,
+            RelationshipEdge.tenant_id == tenant_id,
         )
         .all()
     )
@@ -272,14 +260,12 @@ def get_domain_details(
         tenant_id=tenant_id,
         version=version,
         created_at=domain_version.created_at,
-        concepts=concepts,
-        sources=sources,
-        methodologies=methodologies,
-        relationships=relationships,
+        concepts=entities,  # Entities now represent the concepts
+        relationships=relationships,  # Relationship edges now represent relationships
     )
 
 
-# Save the domain with a new version
+# Save the domain with a new version (graph saving)
 @router.post(
     "/tenants/{tenant_id}/domains/{domain_id}/save", response_model=DomainSchema
 )
@@ -326,9 +312,12 @@ def save_domain(
     db.add(new_domain_version)
     db.commit()
 
-    # Copy existing entities to the new version
-    for model in [Concept, Source, Methodology, Relationship]:
-        existing_entities = (
+    # Create a new graph for this domain version
+    create_graph_in_age(db, domain_id, new_version_number)
+
+    # Copy existing entities and relationships to the new version
+    for model in [Entity, RelationshipEdge]:
+        existing_items = (
             db.query(model)
             .filter(
                 model.domain_id == domain_id,
@@ -337,130 +326,70 @@ def save_domain(
             )
             .all()
         )
-        for entity in existing_entities:
-            new_entity_data = {
-                column.name: getattr(entity, column.name)
+        for item in existing_items:
+            new_item_data = {
+                column.name: getattr(item, column.name)
                 for column in model.__table__.columns
                 if column.name not in ["created_at", "updated_at"]
             }
-            new_entity_data["domain_version"] = new_version_number
-            new_entity_data["tenant_id"] = tenant_id
-            new_entity = model(**new_entity_data)
-            db.add(new_entity)
+            new_item_data["domain_version"] = new_version_number
+            new_item = model(**new_item_data)
+            db.add(new_item)
     db.commit()
 
     # Apply updates from domain_data
-    # Update or add new concepts
-    for concept_data in domain_data.concepts:
-        concept = (
-            db.query(Concept)
+    # Entities
+    for (
+        entity_data
+    ) in domain_data.concepts:  # Assuming the front-end still sends 'concepts' data
+        entity = (
+            db.query(Entity)
             .filter(
-                Concept.concept_id == concept_data.concept_id,
-                Concept.domain_id == domain_id,
-                Concept.domain_version == new_version_number,
-                Concept.tenant_id == tenant_id,
+                Entity.entity_id == entity_data.concept_id,
+                Entity.domain_id == domain_id,
+                Entity.domain_version == new_version_number,
+                Entity.tenant_id == tenant_id,
             )
             .first()
         )
-        if concept:
-            concept.name = concept_data.name
-            concept.description = concept_data.description
-            concept.type = concept_data.type
-            concept.updated_at = func.now()
+        if entity:
+            entity.name = entity_data.name
+            entity.description = entity_data.description
+            entity.entity_type = entity_data.type
         else:
-            new_concept = Concept(
-                concept_id=concept_data.concept_id or uuid.uuid4(),
+            new_entity = Entity(
+                entity_id=entity_data.concept_id or uuid.uuid4(),
                 domain_id=domain_id,
                 domain_version=new_version_number,
                 tenant_id=tenant_id,
-                name=concept_data.name,
-                description=concept_data.description,
-                type=concept_data.type,
+                name=entity_data.name,
+                description=entity_data.description,
+                entity_type=entity_data.type,
             )
-            db.add(new_concept)
+            db.add(new_entity)
 
-    # Sources
-    for source_data in domain_data.sources:
-        source = (
-            db.query(Source)
-            .filter(
-                Source.source_id == source_data.source_id,
-                Source.domain_id == domain_id,
-                Source.domain_version == new_version_number,
-                Source.tenant_id == tenant_id,
-            )
-            .first()
-        )
-        if source:
-            source.name = source_data.name
-            source.description = source_data.description
-            source.source_type = source_data.source_type
-            source.location = source_data.location
-        else:
-            new_source = Source(
-                source_id=source_data.source_id or uuid.uuid4(),
-                domain_id=domain_id,
-                domain_version=new_version_number,
-                tenant_id=tenant_id,
-                name=source_data.name,
-                description=source_data.description,
-                source_type=source_data.source_type,
-                location=source_data.location,
-            )
-            db.add(new_source)
-
-    # Methodologies
-    for methodology_data in domain_data.methodologies:
-        methodology = (
-            db.query(Methodology)
-            .filter(
-                Methodology.methodology_id == methodology_data.methodology_id,
-                Methodology.domain_id == domain_id,
-                Methodology.domain_version == new_version_number,
-                Methodology.tenant_id == tenant_id,
-            )
-            .first()
-        )
-        if methodology:
-            methodology.name = methodology_data.name
-            methodology.description = methodology_data.description
-            methodology.steps = methodology_data.steps
-        else:
-            new_methodology = Methodology(
-                methodology_id=methodology_data.methodology_id or uuid.uuid4(),
-                domain_id=domain_id,
-                domain_version=new_version_number,
-                tenant_id=tenant_id,
-                name=methodology_data.name,
-                description=methodology_data.description,
-                steps=methodology_data.steps,
-            )
-            db.add(new_methodology)
-
-    # Relationships
+    # Relationships (edges)
     for relationship_data in domain_data.relationships:
         relationship = (
-            db.query(Relationship)
+            db.query(RelationshipEdge)
             .filter(
-                Relationship.relationship_id == relationship_data.relationship_id,
-                Relationship.domain_id == domain_id,
-                Relationship.domain_version == new_version_number,
-                Relationship.tenant_id == tenant_id,
+                RelationshipEdge.edge_id == relationship_data.relationship_id,
+                RelationshipEdge.domain_id == domain_id,
+                RelationshipEdge.domain_version == new_version_number,
+                RelationshipEdge.tenant_id == tenant_id,
             )
             .first()
         )
         if relationship:
             relationship.relationship_type = relationship_data.relationship_type
         else:
-            new_relationship = Relationship(
-                relationship_id=relationship_data.relationship_id or uuid.uuid4(),
+            new_relationship = RelationshipEdge(
+                edge_id=relationship_data.relationship_id or uuid.uuid4(),
                 domain_id=domain_id,
                 domain_version=new_version_number,
                 tenant_id=tenant_id,
-                entity_id_1=relationship_data.entity_id_1,
-                entity_type_1=relationship_data.entity_type_1,
-                entity_id_2=relationship_data.entity_id_2,
-                entity_type_2=relationship_data.entity_type_2,
+                from_entity_id=relationship_data.entity_id_1,
+                to_entity_id=relationship_data.entity_id_2,
                 relationship_type=relationship_data.relationship_type,
             )
             db.add(new_relationship)

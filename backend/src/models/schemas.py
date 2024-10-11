@@ -50,7 +50,7 @@ class Token(BaseModel):
 class APIKeyBase(BaseModel):
     api_key_id: UUID
     api_key: str
-    tenant_id: UUID  # Add tenant_id here
+    tenant_id: UUID
     created_at: datetime
     revoked: Optional[datetime]
 
@@ -68,7 +68,7 @@ class APIKeyCreateResponse(BaseModel):
 class UserConfigSchema(BaseModel):
     config_id: UUID
     user_id: UUID
-    tenant_id: UUID  # Add tenant_id here
+    tenant_id: UUID
     config_key: str
     config_value: str
     created_at: datetime
@@ -109,20 +109,20 @@ class DomainConfigSchema(BaseModel):
         from_attributes = True
 
 
-# Concept Schemas
-class ConceptBase(BaseModel):
+# Entity Schemas (replacing Concept, Source, and Methodology)
+class EntityBase(BaseModel):
     name: str
     description: Optional[str]
-    type: Optional[str]
+    entity_type: str  # e.g., 'concept', 'source', 'methodology'
     tenant_id: UUID  # Add tenant_id here
 
 
-class ConceptCreate(ConceptBase):
-    concept_id: Optional[UUID]
+class EntityCreate(EntityBase):
+    entity_id: Optional[UUID]
 
 
-class Concept(ConceptBase):
-    concept_id: UUID
+class Entity(EntityBase):
+    entity_id: UUID
     domain_id: UUID
     domain_version: int
     created_at: datetime
@@ -132,67 +132,20 @@ class Concept(ConceptBase):
         from_attributes = True
 
 
-# Source Schemas
-class SourceBase(BaseModel):
-    name: str
-    description: Optional[str]
-    source_type: Optional[str]
-    location: Optional[str]
-    tenant_id: UUID  # Add tenant_id here
-
-
-class SourceCreate(SourceBase):
-    source_id: Optional[UUID]
-
-
-class Source(SourceBase):
-    source_id: UUID
-    domain_id: UUID
-    domain_version: int
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# Methodology Schemas
-class MethodologyBase(BaseModel):
-    name: str
-    description: Optional[str]
-    steps: Optional[str]
-    tenant_id: UUID  # Add tenant_id here
-
-
-class MethodologyCreate(MethodologyBase):
-    methodology_id: Optional[UUID]
-
-
-class Methodology(MethodologyBase):
-    methodology_id: UUID
-    domain_id: UUID
-    domain_version: int
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# Relationship Schemas
-class RelationshipBase(BaseModel):
-    entity_id_1: UUID
-    entity_type_1: str
-    entity_id_2: UUID
-    entity_type_2: str
+# RelationshipEdge Schemas (replacing the old Relationship model)
+class RelationshipEdgeBase(BaseModel):
+    from_entity_id: UUID
+    to_entity_id: UUID
     relationship_type: Optional[str]
     tenant_id: UUID  # Add tenant_id here
 
 
-class RelationshipCreate(RelationshipBase):
-    relationship_id: Optional[UUID]
+class RelationshipEdgeCreate(RelationshipEdgeBase):
+    edge_id: Optional[UUID]
 
 
-class Relationship(RelationshipBase):
-    relationship_id: UUID
+class RelationshipEdge(RelationshipEdgeBase):
+    edge_id: UUID
     domain_id: UUID
     domain_version: int
     created_at: datetime
@@ -201,20 +154,7 @@ class Relationship(RelationshipBase):
         from_attributes = True
 
 
-# Domain Config Schema
-class DomainConfig(BaseModel):
-    config_id: UUID
-    domain_id: UUID
-    tenant_id: UUID  # Add tenant_id here
-    config_key: str
-    config_value: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# Updated Domain Data Schema to include domain-level info
+# Domain Data Schema with entities and relationships
 class DomainDataSchema(BaseModel):
     domain_id: UUID
     domain_name: str
@@ -222,17 +162,17 @@ class DomainDataSchema(BaseModel):
     tenant_id: UUID
     version: int
     created_at: datetime
-    concepts: List[Concept]
-    sources: List[Source]
-    methodologies: List[Methodology]
-    relationships: List[Relationship]
+    concepts: List[Entity]  # Representing entities (e.g., concepts)
+    relationships: List[RelationshipEdge]  # Representing relationships
+
+    class Config:
+        from_attributes = True
 
 
+# Schema for saving the domain with new version (updating entities and relationships)
 class DomainSaveSchema(BaseModel):
-    concepts: List[Concept]
-    sources: List[Source]
-    methodologies: List[Methodology]
-    relationships: List[Relationship]
+    concepts: List[Entity]
+    relationships: List[RelationshipEdge]
 
 
 # Role Schemas

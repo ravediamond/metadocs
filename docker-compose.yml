@@ -19,7 +19,6 @@ services:
       - "8000:8000"
     depends_on:
       - postgres
-    # Add network settings to ensure connection to postgres
     networks:
       - backend-network
 
@@ -39,7 +38,9 @@ services:
       - backend-network
 
   postgres:
-    image: pgvector/pgvector:0.7.4-pg16
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
     environment:
       POSTGRES_DB: db
       POSTGRES_USER: admin
