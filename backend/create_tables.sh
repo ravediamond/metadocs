@@ -20,6 +20,8 @@ until psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c '\q'; do
   sleep 2
 done
 
+sleep 5  # Sleep for 5 seconds to ensure PostgreSQL has completed all tasks
+
 echo "PostgreSQL is ready. Creating tables..."
 
 # Create tables and enable extensions
@@ -30,8 +32,16 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   -- Enable the pgcrypto extension for gen_random_uuid()
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-  -- Enable the pgvector extension for vector-based similarity search
+  -- Enable Apache AGE extension for graph database functionality
+  CREATE EXTENSION IF NOT EXISTS age;
+
+  -- Enable the pgvector extension for vector similarity search
   CREATE EXTENSION IF NOT EXISTS vector;
+
+  -- Load the AGE library
+  LOAD 'age';
+
+  -- SET search_path = ag_catalog, public;
 
   -- Create Tenants table
   CREATE TABLE IF NOT EXISTS tenants (
@@ -64,36 +74,9 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
     tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     version INT NOT NULL,
+    graph_name VARCHAR(255) UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (domain_id, version)
-  );
-
-  -- Create Entity table (replaces Concept, Source, and Methodology)
-  CREATE TABLE IF NOT EXISTS entities (
-    entity_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    domain_id UUID NOT NULL REFERENCES domains(domain_id) ON DELETE CASCADE,
-    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-    domain_version INT NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    entity_type VARCHAR(50) NOT NULL,  -- e.g., 'concept', 'source', 'methodology'
-    embedding VECTOR(1536),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (domain_id, domain_version) REFERENCES domain_versions(domain_id, version) ON DELETE CASCADE
-  );
-
-  -- Create RelationshipEdge table (replaces Relationship)
-  CREATE TABLE IF NOT EXISTS relationship_edges (
-    edge_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    domain_id UUID NOT NULL REFERENCES domains(domain_id) ON DELETE CASCADE,
-    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-    domain_version INT NOT NULL,
-    from_entity_id UUID NOT NULL REFERENCES entities(entity_id) ON DELETE CASCADE,
-    to_entity_id UUID NOT NULL REFERENCES entities(entity_id) ON DELETE CASCADE,
-    relationship_type VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (domain_id, domain_version) REFERENCES domain_versions(domain_id, version) ON DELETE CASCADE
   );
 
   -- Create User Config table
@@ -115,10 +98,6 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     config_value TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
-
-  -- Indexes
-  CREATE INDEX IF NOT EXISTS email_index ON users (email);
-  CREATE INDEX IF NOT EXISTS owner_user_id_index ON domains (owner_user_id);
 
   -- Create API Keys table
   CREATE TABLE IF NOT EXISTS api_keys (
@@ -171,6 +150,39 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     accepted_at TIMESTAMP
   );
 
+  -- Create Entities table
+  CREATE TABLE IF NOT EXISTS entities (
+    entity_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    entity_type VARCHAR(50) NOT NULL,  -- e.g., 'concept', 'source', 'methodology'
+    vector VECTOR(1536),  -- Ensure pgvector extension is enabled
+    meta_data JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE
+  );
+
+  -- Create Relationships table
+  CREATE TABLE IF NOT EXISTS relationships (
+    edge_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    relationship_type VARCHAR(50) NOT NULL,
+    description TEXT,
+    vector VECTOR(1536),
+    meta_data JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
+    source_entity_id UUID NOT NULL,  -- Removed foreign key constraint
+    target_entity_id UUID NOT NULL   -- Removed foreign key constraint
+  );
+
+  -- Indexes
+  CREATE INDEX IF NOT EXISTS email_index ON users (email);
+  CREATE INDEX IF NOT EXISTS owner_user_id_index ON domains (owner_user_id);
+
   -- Index on invitee_email for faster lookups by email
   CREATE INDEX IF NOT EXISTS invitee_email_index ON invitations (invitee_email);
 
@@ -181,14 +193,21 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   CREATE INDEX IF NOT EXISTS domain_id_index ON invitations (domain_id);
 EOSQL
 
-echo "Tables created successfully."
+if [ $? -eq 0 ]; then
+  echo "Tables created successfully."
+else
+  echo "Failed to create tables. Exiting..."
+  exit 1
+fi
 
-echo "Inserting initial data into tables..."
+echo "Inserting initial data into tables and creating graphs for domains..."
 
-# Insert initial data for tenants, users, domains, etc.
+# Insert initial data for tenants, users, domains, and create graphs for domains
 psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
   -- Enable error stopping
   \set ON_ERROR_STOP on
+
+  -- SET search_path = ag_catalog, public;
 
   BEGIN;
 
@@ -233,12 +252,19 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
     (gen_random_uuid(), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'IT', (SELECT user_id FROM users WHERE email = 'user2@example.com'), 'This is an IT domain', CURRENT_TIMESTAMP)
   ON CONFLICT (domain_id) DO NOTHING;
 
-  -- Insert data into DomainVersions table
-  INSERT INTO domain_versions (domain_id, tenant_id, version, created_at)
+  -- Insert data into DomainVersions table and create corresponding graphs for Apache AGE
+  INSERT INTO domain_versions (domain_id, tenant_id, version, graph_name, created_at)
   VALUES
-    ((SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, CURRENT_TIMESTAMP),
-    ((SELECT domain_id FROM domains WHERE domain_name = 'IT'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, CURRENT_TIMESTAMP)
+    ((SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Sales_v1', CURRENT_TIMESTAMP),
+    ((SELECT domain_id FROM domains WHERE domain_name = 'IT'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'IT_v1', CURRENT_TIMESTAMP)
   ON CONFLICT (domain_id, version) DO NOTHING;
+
+  -- Create graphs in Apache AGE for each domain version
+  SELECT * FROM ag_catalog.create_graph('Sales_v1');
+  SELECT * FROM ag_catalog.create_graph('IT_v1');
+
+  -- SELECT * FROM create_graph('Sales_v1');
+  -- SELECT * FROM create_graph('IT_v1');
 
   -- Assign 'owner' role to each domain owner for their own domain
   INSERT INTO user_roles (user_id, domain_id, role_id)
@@ -258,50 +284,6 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
     ((SELECT user_id FROM users WHERE email = 'user2@example.com'), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT role_id FROM roles WHERE role_name = 'viewer' AND tenant_id = (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One') LIMIT 1))
   ON CONFLICT (user_id, domain_id) DO NOTHING;
 
-  -- Insert the main "Sales" entity into the entities table (replaces concept)
-  INSERT INTO entities (entity_id, domain_id, tenant_id, domain_version, name, description, entity_type, embedding, created_at, updated_at)
-  VALUES 
-    (gen_random_uuid(), 
-     (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), 
-     (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 
-     1, 
-     'Sales', 
-     'Main entity for the Sales domain', 
-     'core', 
-     NULL, 
-     CURRENT_TIMESTAMP, 
-     CURRENT_TIMESTAMP);
-
-  -- Insert additional entities for Sales domain
-  INSERT INTO entities (entity_id, domain_id, tenant_id, domain_version, name, description, entity_type, embedding, created_at, updated_at)
-  VALUES
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Total Sales', 'Total sales for a specific period', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Monthly Sales', 'Sales data for each month', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Quarterly Sales', 'Sales data for each quarter', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Sales Forecast', 'Predicted future sales based on current trends', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-    (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'Sales'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 1, 'Customer Retention', 'The rate at which customers return to make purchases', 'definition', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-  ON CONFLICT (entity_id) DO NOTHING;
-
--- Connect all other entities in the Sales domain to the "Sales" entity using relationship_edges
-WITH main_sales_entity AS (
-  SELECT entity_id FROM entities 
-  WHERE name = 'Sales' 
-    AND domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales')
-)
-INSERT INTO relationship_edges (edge_id, domain_id, tenant_id, domain_version, from_entity_id, to_entity_id, relationship_type, created_at)
-SELECT 
-  gen_random_uuid(), 
-  domain_id, 
-  tenant_id, 
-  domain_version, 
-  entity_id, 
-  (SELECT entity_id FROM main_sales_entity), 
-  'is_part_of', 
-  CURRENT_TIMESTAMP
-FROM entities
-WHERE domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales')
-  AND name != 'Sales';  -- Ensure we are not linking the "Sales" entity to itself
-
   -- Insert user configuration settings for each user
   INSERT INTO user_config (config_id, user_id, tenant_id, config_key, config_value, created_at)
   VALUES
@@ -320,7 +302,91 @@ WHERE domain_id = (SELECT domain_id FROM domains WHERE domain_name = 'Sales')
     (gen_random_uuid(), (SELECT domain_id FROM domains WHERE domain_name = 'IT'), (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'), 'time_zone', 'CET', CURRENT_TIMESTAMP)
   ON CONFLICT (config_id) DO NOTHING;
 
+  -- Insert entities into the entities table
+  INSERT INTO entities (entity_id, name, description, entity_type, vector, meta_data, tenant_id, domain_id)
+  VALUES
+      (gen_random_uuid(), 'Sales', 'Main entity for the Sales domain', 'core', NULL, '{"source": "CRM"}', 
+        (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
+        (SELECT domain_id FROM domains WHERE domain_name = 'Sales')),
+      (gen_random_uuid(), 'Total Sales', 'Total sales for a specific period', 'definition', NULL, '{"unit": "USD"}', 
+        (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
+        (SELECT domain_id FROM domains WHERE domain_name = 'Sales')),
+      (gen_random_uuid(), 'Monthly Sales', 'Sales data for each month', 'definition', NULL, '{"frequency": "monthly"}', 
+        (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
+        (SELECT domain_id FROM domains WHERE domain_name = 'Sales')),
+      (gen_random_uuid(), 'Quarterly Sales', 'Sales data for each quarter', 'definition', NULL, '{"frequency": "quarterly"}', 
+        (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
+        (SELECT domain_id FROM domains WHERE domain_name = 'Sales')),
+      (gen_random_uuid(), 'Sales Forecast', 'Predicted future sales based on current trends', 'definition', NULL, '{"methodology": "statistical analysis"}', 
+        (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
+        (SELECT domain_id FROM domains WHERE domain_name = 'Sales')),
+      (gen_random_uuid(), 'Customer Retention', 'The rate at which customers return to make purchases', 'definition', NULL, '{"metric": "retention rate"}', 
+        (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
+        (SELECT domain_id FROM domains WHERE domain_name = 'Sales'))
+  ON CONFLICT (entity_id) DO NOTHING;
+
+  -- Insert relationships into the relationships table
+  INSERT INTO relationships (edge_id, relationship_type, description, vector, meta_data, tenant_id, domain_id, source_entity_id, target_entity_id)
+  VALUES
+      (gen_random_uuid(), 'is_part_of', 'Total sales is part of Sales', NULL, '{"importance": "high"}', 
+        (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
+        (SELECT domain_id FROM domains WHERE domain_name = 'Sales'),
+        (SELECT entity_id FROM entities WHERE name = 'Sales'), (SELECT entity_id FROM entities WHERE name = 'Total Sales')),
+      (gen_random_uuid(), 'is_part_of', 'Monthly sales is part of Sales', NULL, '{"importance": "medium"}', 
+        (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
+        (SELECT domain_id FROM domains WHERE domain_name = 'Sales'),
+        (SELECT entity_id FROM entities WHERE name = 'Sales'), (SELECT entity_id FROM entities WHERE name = 'Monthly Sales')),
+      (gen_random_uuid(), 'is_part_of', 'Quarterly sales is part of Sales', NULL, '{"importance": "medium"}', 
+        (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
+        (SELECT domain_id FROM domains WHERE domain_name = 'Sales'),
+        (SELECT entity_id FROM entities WHERE name = 'Sales'), (SELECT entity_id FROM entities WHERE name = 'Quarterly Sales')),
+      (gen_random_uuid(), 'is_part_of', 'Sales forecast is part of Sales', NULL, '{"importance": "low"}', 
+        (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
+        (SELECT domain_id FROM domains WHERE domain_name = 'Sales'),
+        (SELECT entity_id FROM entities WHERE name = 'Sales'), (SELECT entity_id FROM entities WHERE name = 'Sales Forecast')),
+      (gen_random_uuid(), 'is_part_of', 'Customer retention is part of Sales', NULL, '{"importance": "medium"}', 
+        (SELECT tenant_id FROM tenants WHERE tenant_name = 'Tenant One'),
+        (SELECT domain_id FROM domains WHERE domain_name = 'Sales'),
+        (SELECT entity_id FROM entities WHERE name = 'Sales'), (SELECT entity_id FROM entities WHERE name = 'Customer Retention'))
+  ON CONFLICT (edge_id) DO NOTHING;
+
   COMMIT;
 EOSQL
 
-echo "Data inserted successfully."
+
+echo "Inserting data into Apache AGE graphs..."
+
+psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
+  -- Enable error stopping
+  \set ON_ERROR_STOP on
+
+  -- Set search path for AGE graphs
+  SET search_path = ag_catalog, public;
+
+  -- Insert data into the Sales graph (Sales_v1)
+  SELECT * FROM cypher('Sales_v1', $$
+
+    CREATE 
+      (s:Entity {name: 'Sales', description: 'Main entity for the Sales domain', entity_type: 'core'}),
+      (ts:Entity {name: 'Total Sales', description: 'Total sales for a specific period', entity_type: 'definition'}),
+      (ms:Entity {name: 'Monthly Sales', description: 'Sales data for each month', entity_type: 'definition'}),
+      (qs:Entity {name: 'Quarterly Sales', description: 'Sales data for each quarter', entity_type: 'definition'}),
+      (sf:Entity {name: 'Sales Forecast', description: 'Predicted future sales', entity_type: 'definition'}),
+      (cr:Entity {name: 'Customer Retention', description: 'Rate of customer return', entity_type: 'definition'}),
+      (ts)-[:IS_PART_OF]->(s),
+      (ms)-[:IS_PART_OF]->(s),
+      (qs)-[:IS_PART_OF]->(s),
+      (sf)-[:IS_PART_OF]->(s),
+      (cr)-[:IS_PART_OF]->(s)
+
+  $$) AS t(c agtype);
+
+EOSQL
+
+if [ $? -eq 0 ]; then
+  echo "Graph data inserted successfully."
+else
+  echo "Failed to insert graph data. Exiting..."
+  exit 1
+fi
+

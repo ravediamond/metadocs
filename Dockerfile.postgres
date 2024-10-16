@@ -1,6 +1,6 @@
 FROM postgres:16
 
-# Install required dependencies including git, flex, make, gcc, and curl
+# Install required dependencies
 RUN apt-get update && apt-get install -y \
     git \
     flex \
@@ -23,8 +23,9 @@ RUN git clone https://github.com/apache/age.git /tmp/apache-age \
     && make PG_CONFIG=/usr/lib/postgresql/16/bin/pg_config install \
     && rm -rf /tmp/apache-age
 
-# Add Apache AGE to PostgreSQL configuration
-RUN echo "shared_preload_libraries = 'age'" >> /usr/share/postgresql/postgresql.conf.sample
+# Create an initialization script to set shared_preload_libraries
+COPY set_shared_preload.sh /docker-entrypoint-initdb.d/
+RUN chmod +x /docker-entrypoint-initdb.d/set_shared_preload.sh
 
 # Clean up
 RUN apt-get clean
