@@ -131,7 +131,7 @@ const DomainPage = () => {
     if (!token) return;
 
     try {
-      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/details`, {
+      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {

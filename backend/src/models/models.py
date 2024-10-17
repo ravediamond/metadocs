@@ -48,12 +48,6 @@ class Tenant(Base):
         "Domain", back_populates="tenant", cascade="all, delete-orphan"
     )
     roles = relationship("Role", back_populates="tenant", cascade="all, delete-orphan")
-    entities = relationship(
-        "Entity", back_populates="tenant", cascade="all, delete-orphan"
-    )
-    relationship_edges = relationship(
-        "RelationshipEdge", back_populates="tenant", cascade="all, delete-orphan"
-    )
 
 
 # UserTenant Association Model
@@ -161,9 +155,6 @@ class Domain(Base):
     owner = relationship("User", back_populates="domains")
 
     # Relationships
-    entities = relationship(
-        "Entity", back_populates="domain", cascade="all, delete-orphan"
-    )
     versions = relationship(
         "DomainVersion",
         back_populates="domain",
@@ -174,7 +165,6 @@ class Domain(Base):
         "DomainConfig", back_populates="domain", cascade="all, delete-orphan"
     )
     user_roles = relationship("UserRole", back_populates="domain")
-    relationship_edges = relationship("RelationshipEdge", back_populates="domain")
 
 
 # DomainVersion Model
@@ -192,17 +182,12 @@ class DomainVersion(Base):
         nullable=False,
     )
     version = Column(Integer, primary_key=True)
+    graph_name = Column(String(255), nullable=False, unique=True)
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationships
     domain = relationship("Domain", back_populates="versions")
     tenant = relationship("Tenant")
-
-    # Relationship to entities and relationships (Graph Components)
-    entities = relationship("Entity", back_populates="domain_version_rel")
-    relationship_edges = relationship(
-        "RelationshipEdge", back_populates="domain_version_rel"
-    )
 
 
 # DomainConfig Model
@@ -334,124 +319,3 @@ class Invitation(Base):
     inviter = relationship("User", foreign_keys=[inviter_user_id])
     tenant = relationship("Tenant")
     domain = relationship("Domain", foreign_keys=[domain_id])
-
-
-# Unified Entity Model
-class Entity(Base):
-    __tablename__ = "entities"
-
-    entity_id = Column(
-        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
-    )
-    domain_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("domains.domain_id", ondelete="CASCADE"),  # ForeignKey to domains
-        nullable=False,
-    )
-    tenant_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    domain_version = Column(
-        Integer,
-        ForeignKey("domain_versions.version"),  # ForeignKey to the version column
-        nullable=False,
-    )
-    name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    entity_type = Column(
-        String(50), nullable=False
-    )  # 'concept', 'source', 'methodology'
-    vector = Column(Vector(1536), nullable=True)  # Optional embedding vector
-    meta_data = Column(JSONB, nullable=True)  # Additional metadata
-    created_at = Column(TIMESTAMP, default=func.now())
-    updated_at = Column(TIMESTAMP, default=func.now(), onupdate=func.now())
-
-    # Relationships
-    domain = relationship("Domain", back_populates="entities")  # Relationship to Domain
-    domain_version_rel = relationship(
-        "DomainVersion", back_populates="entities"
-    )  # Corrected relationship
-    tenant = relationship("Tenant", back_populates="entities")
-    outgoing_relationships = relationship(
-        "RelationshipEdge",
-        foreign_keys="RelationshipEdge.from_entity_id",
-        back_populates="from_entity",
-        cascade="all, delete-orphan",
-    )
-    incoming_relationships = relationship(
-        "RelationshipEdge",
-        foreign_keys="RelationshipEdge.to_entity_id",
-        back_populates="to_entity",
-        cascade="all, delete-orphan",
-    )
-
-
-# RelationshipEdge Model (Edge in Graph)
-class RelationshipEdge(Base):
-    __tablename__ = "relationship_edges"
-
-    edge_id = Column(UUIDType(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    domain_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("domains.domain_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    tenant_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    domain_version = Column(
-        Integer,
-        ForeignKey(
-            "domain_versions.version"
-        ),  # Link to the version column of DomainVersion
-        nullable=False,
-    )
-    from_entity_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("entities.entity_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    to_entity_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("entities.entity_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    relationship_type = Column(
-        String(50), nullable=False
-    )  # e.g., 'related_to', 'part_of'
-    vector = Column(
-        Vector(1536), nullable=True
-    )  # Optional: Vector for the relationship
-    meta_data = Column(JSONB, nullable=True)  # Renamed from 'metadata'
-    created_at = Column(TIMESTAMP, default=func.now())
-
-    __table_args__ = (
-        UniqueConstraint(
-            "from_entity_id",
-            "to_entity_id",
-            "relationship_type",
-            "domain_id",
-            name="uq_edge_relationship",
-        ),
-    )
-
-    # Relationships
-    domain = relationship("Domain", back_populates="relationship_edges")
-    domain_version_rel = relationship(
-        "DomainVersion", back_populates="relationship_edges"
-    )
-    tenant = relationship("Tenant", back_populates="relationship_edges")
-    from_entity = relationship(
-        "Entity",
-        foreign_keys=[from_entity_id],
-        back_populates="outgoing_relationships",
-    )
-    to_entity = relationship(
-        "Entity",
-        foreign_keys=[to_entity_id],
-        back_populates="incoming_relationships",
-    )
