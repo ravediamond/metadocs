@@ -275,129 +275,217 @@ fi
 
 echo "Inserting data into Apache AGE graphs with enhanced node and relationship properties..."
 
-# Insert data into Apache AGE graphs with enhanced properties
-psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
-  -- Enable error stopping
-  \set ON_ERROR_STOP on
+# Function to insert graph data with enhanced properties
+insert_graph_data() {
+  GRAPH_NAME=$1
+  shift
+  psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
+    -- Enable error stopping
+    \set ON_ERROR_STOP on
 
-  -- Set search path for AGE graphs
-  SET search_path = ag_catalog, public;
+    -- Set search path for AGE graphs
+    SET search_path = ag_catalog, public;
 
-  -- Insert entities into the Sales_v1 graph with additional fields
-  SELECT * FROM cypher('Sales_v1', $$
-    CREATE 
-      (:Entity { 
-        id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 
-        name: 'Sales',
-        type: 'Department',
-        description: 'Handles all sales operations',
-        metadata: '{"location": "Building A", "budget": 100000}',
-        vector: [0.1, 0.2, 0.3, 0.4],
-        created_at: '2024-04-17T12:00:00Z'
-      }),
-      (:Entity { 
-        id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 
-        name: 'Total Sales',
-        type: 'Metric',
-        description: 'Aggregated total sales figures',
-        metadata: '{"unit": "USD"}',
-        vector: [0.2, 0.3, 0.4, 0.5],
-        created_at: '2024-04-17T12:05:00Z'
-      }),
-      (:Entity { 
-        id: 'cccccccc-cccc-cccc-cccc-cccccccccccc', 
-        name: 'Monthly Sales',
-        type: 'Metric',
-        description: 'Monthly sales figures',
-        metadata: '{"unit": "USD"}',
-        vector: [0.3, 0.4, 0.5, 0.6],
-        created_at: '2024-04-17T12:10:00Z'
-      }),
-      (:Entity { 
-        id: 'dddddddd-dddd-dddd-dddd-dddddddddddd', 
-        name: 'Quarterly Sales',
-        type: 'Metric',
-        description: 'Quarterly sales figures',
-        metadata: '{"unit": "USD"}',
-        vector: [0.4, 0.5, 0.6, 0.7],
-        created_at: '2024-04-17T12:15:00Z'
-      }),
-      (:Entity { 
-        id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 
-        name: 'Sales Forecast',
-        type: 'Projection',
-        description: 'Forecasted sales figures for the next quarter',
-        metadata: '{"confidence_level": "high"}',
-        vector: [0.5, 0.6, 0.7, 0.8],
-        created_at: '2024-04-17T12:20:00Z'
-      }),
-      (:Entity { 
-        id: 'ffffffff-ffff-ffff-ffff-ffffffffffff', 
-        name: 'Customer Retention',
-        type: 'Metric',
-        description: 'Measures the ability to retain customers',
-        metadata: '{"target": "90%"}',
-        vector: [0.6, 0.7, 0.8, 0.9],
-        created_at: '2024-04-17T12:25:00Z'
-      })
-  $$) AS t(c agtype);
+    -- Insert entities into the ${GRAPH_NAME} graph with additional fields
+    SELECT * FROM cypher('${GRAPH_NAME}', \$CYPHER\$
+      CREATE 
+        (:Entity { 
+          id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 
+          name: 'Sales',
+          type: 'Department',
+          description: 'Handles all sales operations',
+          metadata: '{"location": "Building A", "budget": 100000}',
+          vector: [0.1, 0.2, 0.3, 0.4],
+          created_at: '2024-04-17T12:00:00Z'
+        }),
+        (:Entity { 
+          id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 
+          name: 'Total Sales',
+          type: 'Metric',
+          description: 'Aggregated total sales figures',
+          metadata: '{"unit": "USD"}',
+          vector: [0.2, 0.3, 0.4, 0.5],
+          created_at: '2024-04-17T12:05:00Z'
+        }),
+        (:Entity { 
+          id: 'cccccccc-cccc-cccc-cccc-cccccccccccc', 
+          name: 'Monthly Sales',
+          type: 'Metric',
+          description: 'Monthly sales figures',
+          metadata: '{"unit": "USD"}',
+          vector: [0.3, 0.4, 0.5, 0.6],
+          created_at: '2024-04-17T12:10:00Z'
+        }),
+        (:Entity { 
+          id: 'dddddddd-dddd-dddd-dddd-dddddddddddd', 
+          name: 'Quarterly Sales',
+          type: 'Metric',
+          description: 'Quarterly sales figures',
+          metadata: '{"unit": "USD"}',
+          vector: [0.4, 0.5, 0.6, 0.7],
+          created_at: '2024-04-17T12:15:00Z'
+        }),
+        (:Entity { 
+          id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 
+          name: 'Sales Forecast',
+          type: 'Projection',
+          description: 'Forecasted sales figures for the next quarter',
+          metadata: '{"confidence_level": "high"}',
+          vector: [0.5, 0.6, 0.7, 0.8],
+          created_at: '2024-04-17T12:20:00Z'
+        }),
+        (:Entity { 
+          id: 'ffffffff-ffff-ffff-ffff-ffffffffffff', 
+          name: 'Customer Retention',
+          type: 'Metric',
+          description: 'Measures the ability to retain customers',
+          metadata: '{"target": "90%"}',
+          vector: [0.6, 0.7, 0.8, 0.9],
+          created_at: '2024-04-17T12:25:00Z'
+        })
+    \$CYPHER\$) AS t(c agtype);
 
-  -- Insert relationships into the Sales_v1 graph with additional fields
-  SELECT * FROM cypher('Sales_v1', $$
-    MATCH 
-      (a:Entity {id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}),
-      (b:Entity {id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'}),
-      (c:Entity {id: 'cccccccc-cccc-cccc-cccc-cccccccccccc'}),
-      (d:Entity {id: 'dddddddd-dddd-dddd-dddd-dddddddddddd'}),
-      (e:Entity {id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'}),
-      (f:Entity {id: 'ffffffff-ffff-ffff-ffff-ffffffffffff'})
-    CREATE 
-      (b)-[:Relationship { 
-        name: 'Aggregates',
-        type: 'Aggregation',
-        description: 'Total Sales aggregates various sales metrics',
-        metadata: '{"frequency": "monthly"}',
-        vector: [0.1, 0.1, 0.1, 0.1],
-        created_at: '2024-04-17T12:30:00Z'
-      }]->(a),
-      (c)-[:Relationship { 
-        name: 'Tracks',
-        type: 'Tracking',
-        description: 'Monthly Sales tracks sales on a monthly basis',
-        metadata: '{"frequency": "monthly"}',
-        vector: [0.2, 0.2, 0.2, 0.2],
-        created_at: '2024-04-17T12:35:00Z'
-      }]->(a),
-      (d)-[:Relationship { 
-        name: 'Tracks',
-        type: 'Tracking',
-        description: 'Quarterly Sales tracks sales on a quarterly basis',
-        metadata: '{"frequency": "quarterly"}',
-        vector: [0.3, 0.3, 0.3, 0.3],
-        created_at: '2024-04-17T12:40:00Z'
-      }]->(a),
-      (e)-[:Relationship { 
-        name: 'Projects',
-        type: 'Projection',
-        description: 'Sales Forecast projects future sales figures',
-        metadata: '{"model": "linear regression"}',
-        vector: [0.4, 0.4, 0.4, 0.4],
-        created_at: '2024-04-17T12:45:00Z'
-      }]->(a),
-      (f)-[:Relationship { 
-        name: 'Measures',
-        type: 'Measurement',
-        description: 'Customer Retention measures the ability to retain customers',
-        metadata: '{"target": "90%"}',
-        vector: [0.5, 0.5, 0.5, 0.5],
-        created_at: '2024-04-17T12:50:00Z'
-      }]->(a)
-  $$) AS t(c agtype);
+    -- Insert relationships into the ${GRAPH_NAME} graph with additional fields
+    SELECT * FROM cypher('${GRAPH_NAME}', \$CYPHER\$
+      MATCH 
+        (a:Entity {id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}),
+        (b:Entity {id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'}),
+        (c:Entity {id: 'cccccccc-cccc-cccc-cccc-cccccccccccc'}),
+        (d:Entity {id: 'dddddddd-dddd-dddd-dddd-dddddddddddd'}),
+        (e:Entity {id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'}),
+        (f:Entity {id: 'ffffffff-ffff-ffff-ffff-ffffffffffff'})
+      CREATE 
+        (b)-[:Relationship { 
+          name: 'Aggregates',
+          type: 'Aggregation',
+          description: 'Total Sales aggregates various sales metrics',
+          metadata: '{"frequency": "monthly"}',
+          vector: [0.1, 0.1, 0.1, 0.1],
+          created_at: '2024-04-17T12:30:00Z'
+        }]->(a),
+        (c)-[:Relationship { 
+          name: 'Tracks',
+          type: 'Tracking',
+          description: 'Monthly Sales tracks sales on a monthly basis',
+          metadata: '{"frequency": "monthly"}',
+          vector: [0.2, 0.2, 0.2, 0.2],
+          created_at: '2024-04-17T12:35:00Z'
+        }]->(a),
+        (d)-[:Relationship { 
+          name: 'Tracks',
+          type: 'Tracking',
+          description: 'Quarterly Sales tracks sales on a quarterly basis',
+          metadata: '{"frequency": "quarterly"}',
+          vector: [0.3, 0.3, 0.3, 0.3],
+          created_at: '2024-04-17T12:40:00Z'
+        }]->(a),
+        (e)-[:Relationship { 
+          name: 'Projects',
+          type: 'Projection',
+          description: 'Sales Forecast projects future sales figures',
+          metadata: '{"model": "linear regression"}',
+          vector: [0.4, 0.4, 0.4, 0.4],
+          created_at: '2024-04-17T12:45:00Z'
+        }]->(a),
+        (f)-[:Relationship { 
+          name: 'Measures',
+          type: 'Measurement',
+          description: 'Customer Retention measures the ability to retain customers',
+          metadata: '{"target": "90%"}',
+          vector: [0.5, 0.5, 0.5, 0.5],
+          created_at: '2024-04-17T12:50:00Z'
+        }]->(a)
+    \$CYPHER\$) AS t(c agtype);
 EOSQL
 
-if [ $? -eq 0 ]; then
-  echo "Graph data with enhanced properties inserted successfully."
-else
-  echo "Failed to insert enhanced graph data. Exiting..."
-  exit 1
-fi
+    if [ $? -eq 0 ]; then
+      echo "Graph data with enhanced properties inserted successfully into ${GRAPH_NAME}."
+    else
+      echo "Failed to insert enhanced graph data into ${GRAPH_NAME}. Exiting..."
+      exit 1
+    fi
+}
+
+# Insert data into 'Sales_v1' graph
+insert_graph_data "Sales_v1"
+
+# Function to insert IT_v1 graph data
+insert_it_graph_data() {
+  GRAPH_NAME=$1
+  psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
+    -- Enable error stopping
+    \set ON_ERROR_STOP on
+
+    -- Set search path for AGE graphs
+    SET search_path = ag_catalog, public;
+
+    -- Insert entities into the ${GRAPH_NAME} graph with additional fields
+    SELECT * FROM cypher('${GRAPH_NAME}', \$CYPHER\$
+      CREATE 
+        (:Entity { 
+          id: '11111111-1111-1111-1111-111111111111', 
+          name: 'IT Department',
+          type: 'Department',
+          description: 'Handles all IT operations',
+          metadata: '{"location": "Building B", "budget": 200000}',
+          vector: [0.1, 0.2, 0.3, 0.4],
+          created_at: '2024-04-17T13:00:00Z'
+        }),
+        (:Entity { 
+          id: '22222222-2222-2222-2222-222222222222', 
+          name: 'Network Infrastructure',
+          type: 'System',
+          description: 'Manages network systems',
+          metadata: '{"priority": "high"}',
+          vector: [0.2, 0.3, 0.4, 0.5],
+          created_at: '2024-04-17T13:05:00Z'
+        }),
+        (:Entity { 
+          id: '33333333-3333-3333-3333-333333333333', 
+          name: 'IT Support',
+          type: 'Service',
+          description: 'Provides IT support services',
+          metadata: '{"sla": "24/7"}',
+          vector: [0.3, 0.4, 0.5, 0.6],
+          created_at: '2024-04-17T13:10:00Z'
+        })
+    \$CYPHER\$) AS t(c agtype);
+
+    -- Insert relationships into the ${GRAPH_NAME} graph with additional fields
+    SELECT * FROM cypher('${GRAPH_NAME}', \$CYPHER\$
+      MATCH 
+        (a:Entity {id: '11111111-1111-1111-1111-111111111111'}),
+        (b:Entity {id: '22222222-2222-2222-2222-222222222222'}),
+        (c:Entity {id: '33333333-3333-3333-3333-333333333333'})
+      CREATE 
+        (b)-[:Relationship { 
+          name: 'Depends_On',
+          type: 'Dependency',
+          description: 'Network Infrastructure depends on IT Department',
+          metadata: '{"critical": "true"}',
+          vector: [0.1, 0.1, 0.1, 0.1],
+          created_at: '2024-04-17T13:15:00Z'
+        }]->(a),
+        (c)-[:Relationship { 
+          name: 'Provides',
+          type: 'Service',
+          description: 'IT Support provides services to IT Department',
+          metadata: '{"coverage": "full"}',
+          vector: [0.2, 0.2, 0.2, 0.2],
+          created_at: '2024-04-17T13:20:00Z'
+        }]->(a)
+    \$CYPHER\$) AS t(c agtype);
+EOSQL
+
+    if [ $? -eq 0 ]; then
+      echo "Graph data with enhanced properties inserted successfully into ${GRAPH_NAME}."
+    else
+      echo "Failed to insert enhanced graph data into ${GRAPH_NAME}. Exiting..."
+      exit 1
+    fi
+}
+
+# Insert data into 'IT_v1' graph
+insert_it_graph_data "IT_v1"
+
+echo "All operations completed successfully."
