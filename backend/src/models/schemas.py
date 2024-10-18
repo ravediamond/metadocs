@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
 
@@ -113,41 +113,40 @@ class DomainConfigSchema(BaseModel):
 class EntityBase(BaseModel):
     name: str
     description: Optional[str]
-    entity_type: str  # e.g., 'concept', 'source', 'methodology'
-    tenant_id: UUID  # Add tenant_id here
+    type: str  # e.g., 'concept', 'source', 'methodology'
+    version: int
+    metadata: Optional[Dict[str, Any]]
 
 
 class EntityCreate(EntityBase):
-    entity_id: Optional[UUID]
+    entity_id: Optional[int]
 
 
 class Entity(EntityBase):
-    entity_id: UUID
-    domain_id: UUID
-    domain_version: int
+    id: int
     created_at: datetime
-    updated_at: datetime
 
     class Config:
         from_attributes = True
 
 
 # RelationshipEdge Schemas (replacing the old Relationship model)
-class RelationshipEdgeBase(BaseModel):
-    from_entity_id: UUID
-    to_entity_id: UUID
-    relationship_type: Optional[str]
-    tenant_id: UUID  # Add tenant_id here
+class RelationshipBase(BaseModel):
+    from_entity_id: int
+    to_entity_id: int
+    name: Optional[str]
+    type: Optional[str]
+    description: Optional[str]
+    metadata: Optional[Dict[str, Any]]
 
 
-class RelationshipEdgeCreate(RelationshipEdgeBase):
-    edge_id: Optional[UUID]
+class RelationshipCreate(RelationshipBase):
+    id: Optional[int]
 
 
-class RelationshipEdge(RelationshipEdgeBase):
-    edge_id: UUID
-    domain_id: UUID
-    domain_version: int
+class Relationship(RelationshipBase):
+    id: int
+    version: int
     created_at: datetime
 
     class Config:
@@ -162,8 +161,8 @@ class DomainDataSchema(BaseModel):
     tenant_id: UUID
     version: int
     created_at: datetime
-    concepts: List[Entity]  # Representing entities (e.g., concepts)
-    relationships: List[RelationshipEdge]  # Representing relationships
+    entities: List[Entity]  # Representing entities (e.g., concepts)
+    relationships: List[Relationship]  # Representing relationships
 
     class Config:
         from_attributes = True
@@ -171,8 +170,8 @@ class DomainDataSchema(BaseModel):
 
 # Schema for saving the domain with new version (updating entities and relationships)
 class DomainSaveSchema(BaseModel):
-    concepts: List[Entity]
-    relationships: List[RelationshipEdge]
+    entities: List[Entity]
+    relationships: List[Relationship]
 
 
 # Role Schemas

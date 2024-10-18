@@ -3,22 +3,17 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from typing import List
 from uuid import UUID
+import json
 
-from ..models.models import (
-    Domain,
-    DomainVersion,
-    Tenant,
-    gen_random_uuid,
-)
+from ..models.models import Domain, DomainVersion, Tenant, gen_random_uuid
 from ..models.schemas import (
     Domain as DomainSchema,
     DomainCreate,
     DomainDataSchema,
     DomainSaveSchema,
 )
-from ..core.database import get_db  # Assuming you have a function to get the DB session
+from ..core.database import get_db
 
-# Import to interact with PostgreSQL
 from sqlalchemy import text
 
 router = APIRouter()
@@ -27,7 +22,7 @@ router = APIRouter()
 # Utility function to create a graph in Apache AGE
 def create_graph(db: Session, graph_name: str):
     try:
-        create_graph_sql = text(f"SELECT ag_catalog.create_graph('{graph_name}');")
+        create_graph_sql = text(f"SELECT create_graph('{graph_name}');")
         db.execute(create_graph_sql)
         db.commit()
     except SQLAlchemyError as e:
@@ -103,7 +98,7 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
     if not domain:
         raise HTTPException(status_code=404, detail="Domain not found")
 
-    # Get latest version of the domain
+    # Get the latest version of the domain
     latest_version = (
         db.query(DomainVersion)
         .filter(
@@ -117,7 +112,7 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Domain version not found")
 
     # Retrieve the entities and relationships from the graph
-    concepts_query = text(
+    entities_query = text(
         f"SELECT * FROM cypher('{latest_version.graph_name}', $$ MATCH (n:Entity) RETURN n $$) as (v agtype);"
     )
     relationships_query = text(
@@ -125,46 +120,59 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
     )
 
     try:
-        concepts_result = db.execute(concepts_query).fetchall()
+        entities_result = db.execute(entities_query).fetchall()
         relationships_result = db.execute(relationships_query).fetchall()
     except SQLAlchemyError as e:
         raise HTTPException(status_code=500, detail=f"Graph query failed: {str(e)}")
 
     # Process the results to extract data
-    concepts = []
-    for row in concepts_result:
-        entity = row[0]["n"]  # Extract the 'n' node from the agtype
-        concepts.append(
-            {
-                "id": entity.get("id"),
-                "name": entity.get("name"),
-                "type": entity.get("type"),
-                "description": entity.get("description"),
-                "metadata": entity.get("metadata"),
-                "vector": entity.get("vector"),
-                "created_at": entity.get("created_at"),
-            }
-        )
+    entities = []
+    for row in entities_result:
+        try:
+            entity_str = row[0].split("::vertex")[0].strip()  # Get the JSON part
+            entity_data = json.loads(entity_str)  # Parse the JSON
+            properties = entity_data.get("properties", {})
+            print(properties)
+            entities.append(
+                {
+                    "id": entity_data.get("id"),
+                    "name": properties.get("name"),
+                    "type": properties.get("type"),
+                    "description": properties.get("description"),
+                    "metadata": json.loads(properties.get("metadata")),
+                    "version": latest_version.version,
+                    "created_at": properties.get("created_at"),
+                }
+            )
+        except (json.JSONDecodeError, TypeError, KeyError) as e:
+            print(f"Error parsing entity data: {e}")
+            continue
 
     relationships = []
     for row in relationships_result:
-        relationship = row[0]["r"]  # Extract the 'r' relationship from the agtype
-        relationships.append(
-            {
-                "name": relationship.get("name"),
-                "type": relationship.get("type"),
-                "description": relationship.get("description"),
-                "metadata": relationship.get("metadata"),
-                "vector": relationship.get("vector"),
-                "created_at": relationship.get("created_at"),
-                "from_entity_id": relationship.get(
-                    "from"
-                ),  # Adjust based on actual graph schema
-                "to_entity_id": relationship.get(
-                    "to"
-                ),  # Adjust based on actual graph schema
-            }
-        )
+        try:
+            relationship_str = row[0].split("::edge")[0].strip()  # Get the JSON part
+            relationship_data = json.loads(relationship_str)
+            properties = relationship_data.get("properties", {})
+            print(properties)
+            print(relationship_data.get("start_id"))
+            print(relationship_data.get("end_id"))
+            relationships.append(
+                {
+                    "id": relationship_data.get("id"),
+                    "from_entity_id": relationship_data.get("start_id"),
+                    "to_entity_id": relationship_data.get("end_id"),
+                    "name": properties.get("name"),
+                    "type": properties.get("type"),
+                    "description": properties.get("description"),
+                    "metadata": json.loads(properties.get("metadata")),
+                    "version": latest_version.version,
+                    "created_at": properties.get("created_at"),
+                }
+            )
+        except (json.JSONDecodeError, TypeError, KeyError) as e:
+            print(f"Error parsing relationship data: {e}")
+            continue
 
     # Structure the domain data
     domain_data = DomainDataSchema(
@@ -174,7 +182,7 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
         tenant_id=tenant_id,
         version=latest_version.version,
         created_at=domain.created_at,
-        concepts=concepts,
+        entities=entities,
         relationships=relationships,
     )
 
@@ -232,8 +240,7 @@ def save_domain(
     create_graph(db, new_graph_name)
 
     # Save entities and relationships into the new graph
-    # Use parameterized queries to prevent Cypher injection
-    for entity in domain_data.concepts:
+    for entity in domain_data.entities:
         create_entity_sql = text(
             """
             SELECT * FROM cypher(:graph_name, $$
@@ -243,7 +250,7 @@ def save_domain(
                     type: :type,
                     description: :description,
                     metadata: :metadata,
-                    vector: :vector,
+                    version: :version,
                     created_at: :created_at
                 })
             $$) as (v agtype);
@@ -258,8 +265,10 @@ def save_domain(
                     "name": entity.name,
                     "type": entity.type,
                     "description": entity.description,
-                    "metadata": entity.metadata,
-                    "vector": entity.vector,
+                    "metadata": (
+                        json.dumps(entity.metadata) if entity.metadata else None
+                    ),
+                    "version": entity.version,
                     "created_at": entity.created_at,
                 },
             )
@@ -275,11 +284,10 @@ def save_domain(
             SELECT * FROM cypher(:graph_name, $$
                 MATCH (from:Entity {id: :from_id}), (to:Entity {id: :to_id})
                 CREATE (from)-[:Relationship {
-                    name: :name,
+                    id: :id,
                     type: :type,
-                    description: :description,
                     metadata: :metadata,
-                    vector: :vector,
+                    version: :version,
                     created_at: :created_at
                 }]->(to)
             $$) as (v agtype);
@@ -290,13 +298,16 @@ def save_domain(
                 create_relationship_sql,
                 {
                     "graph_name": new_graph_name,
+                    "id": str(relationship.id or gen_random_uuid()),
                     "from_id": str(relationship.from_entity_id),
                     "to_id": str(relationship.to_entity_id),
-                    "name": relationship.name,
                     "type": relationship.type,
-                    "description": relationship.description,
-                    "metadata": relationship.metadata,
-                    "vector": relationship.vector,
+                    "metadata": (
+                        json.dumps(relationship.metadata)
+                        if relationship.metadata
+                        else None
+                    ),
+                    "version": relationship.version,
                     "created_at": relationship.created_at,
                 },
             )
@@ -308,6 +319,5 @@ def save_domain(
 
     db.commit()
 
-    # Optionally, retrieve and return the newly saved domain data
-    # This can be similar to the get_domain_details endpoint
+    # Retrieve and return the newly saved domain data
     return get_domain_details(tenant_id, domain_id, db)
