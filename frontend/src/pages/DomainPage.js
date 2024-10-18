@@ -198,12 +198,10 @@ const DomainPage = () => {
       alert('Please provide a name and description for the entity');
       return;
     }
-
-    const newEntityId = uuidv4();
+;
     const now = new Date().toISOString();
 
     const newEntity = {
-      id: newEntityId,
       name: newNodeName,
       type: newNodeType,
       description: newNodeDescription,
@@ -272,10 +270,7 @@ const DomainPage = () => {
   const addRelationship = () => {
     if (!selectedSourceNode || !selectedTargetNode || !relationshipType) return;
 
-    const newRelationshipId = uuidv4();
-
     const newEdge = {
-      id: newRelationshipId,
       source: selectedSourceNode,
       target: selectedTargetNode,
       animated: true,
