@@ -135,7 +135,7 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
             print(properties)
             entities.append(
                 {
-                    "id": entity_data.get("id"),
+                    "id": str(entity_data.get("id")),
                     "name": properties.get("name"),
                     "type": properties.get("type"),
                     "description": properties.get("description"),
@@ -159,9 +159,9 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
             print(relationship_data.get("end_id"))
             relationships.append(
                 {
-                    "id": relationship_data.get("id"),
-                    "from_entity_id": relationship_data.get("start_id"),
-                    "to_entity_id": relationship_data.get("end_id"),
+                    "id": str(relationship_data.get("id")),
+                    "from_entity_id": str(relationship_data.get("start_id")),
+                    "to_entity_id": str(relationship_data.get("end_id")),
                     "name": properties.get("name"),
                     "type": properties.get("type"),
                     "description": properties.get("description"),

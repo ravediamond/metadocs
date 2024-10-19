@@ -119,11 +119,11 @@ class EntityBase(BaseModel):
 
 
 class EntityCreate(EntityBase):
-    entity_id: Optional[int]
+    id: Optional[str]
 
 
 class Entity(EntityBase):
-    id: int
+    id: str
     created_at: datetime
 
     class Config:
@@ -132,8 +132,8 @@ class Entity(EntityBase):
 
 # RelationshipEdge Schemas (replacing the old Relationship model)
 class RelationshipBase(BaseModel):
-    from_entity_id: int
-    to_entity_id: int
+    from_entity_id: str
+    to_entity_id: str
     name: Optional[str]
     type: Optional[str]
     description: Optional[str]
@@ -141,11 +141,11 @@ class RelationshipBase(BaseModel):
 
 
 class RelationshipCreate(RelationshipBase):
-    id: Optional[int]
+    id: Optional[str]
 
 
 class Relationship(RelationshipBase):
-    id: int
+    id: str
     version: int
     created_at: datetime
 
