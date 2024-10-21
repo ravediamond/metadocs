@@ -59,9 +59,6 @@ const DomainPage = () => {
   const [currentVersion, setCurrentVersion] = useState(1);
   const [isModified, setIsModified] = useState(false);
 
-  const [isNodeModalOpen, setIsNodeModalOpen] = useState(false);
-  const [isEdgeModalOpen, setIsEdgeModalOpen] = useState(false);
-
   const generateFlowElements = (entities, relationships) => {
     const typeColors = {
       Department: '#FFB6C1', System: '#90EE90', Service: '#FFD700', other: '#FFA07A',
@@ -75,11 +72,7 @@ const DomainPage = () => {
       }
     });
 
-    console.log('Entities to be processed:', entities);
-    console.log('Relationships to be processed:', relationships);
-
     const createNode = (entity) => {
-      console.log('Creating Node:', entity);
       return {
         id: entity.id,
         data: {
@@ -104,10 +97,6 @@ const DomainPage = () => {
 
     const allNodes = entities.map((e) => createNode(e));
 
-    relationships.forEach(({ id, name, type, description, from_entity_id, to_entity_id }) => {
-      console.log(`Processing Relationship: ${id} ${name}, Source: ${from_entity_id}, Target: ${to_entity_id}`);
-    });
-
     const relationshipEdges = relationships.map(({ id, name, type, description, from_entity_id, to_entity_id }) => {
       const edge = {
         id: id,
@@ -120,16 +109,10 @@ const DomainPage = () => {
         label: name,
         labelStyle: { fill: '#4682B4', fontWeight: 700 },
       };
-      console.log('Creating Edge:', edge);
       return edge;
     });
 
     const layoutedNodes = getLayoutedNodes(allNodes, relationshipEdges);
-    layoutedNodes.forEach(node => {
-      console.log(`Node ID: ${node.id}, Label: ${node.data.label}`);
-    });
-    console.log('Generated Nodes:', layoutedNodes);
-    console.log('Generated Edges:', relationshipEdges);
     setNodes(layoutedNodes);
     setEdges(relationshipEdges);
   };
@@ -144,14 +127,10 @@ const DomainPage = () => {
 
       if (res.ok) {
         const domainData = await res.json();
-        console.log('Domain Data:', domainData);
         const { entities, relationships, version } = domainData;
         setEntities(entities);
         setRelationships(relationships);
         setCurrentVersion(version);
-
-        console.log('Fetched Entities:', entities);
-        console.log('Fetched Relationships:', relationships);
 
         generateFlowElements(entities, relationships);
       }
@@ -177,7 +156,6 @@ const DomainPage = () => {
   const onNodeClick = (_, node) => {
     setSelectedNode(node);
     setSelectedEdge(null);
-    setIsNodeModalOpen(true);
   };
 
   const onEdgeClick = (_, edge) => {
@@ -190,18 +168,18 @@ const DomainPage = () => {
       targetLabel,
     });
     setSelectedNode(null);
-    setIsEdgeModalOpen(true);
   };
 
   const addNewEntity = () => {
     if (!newNodeName || !newNodeDescription) {
       alert('Please provide a name and description for the entity');
       return;
-    }
-;
+    };
+
     const now = new Date().toISOString();
 
     const newEntity = {
+      id: uuidv4(),
       name: newNodeName,
       type: newNodeType,
       description: newNodeDescription,
@@ -213,8 +191,33 @@ const DomainPage = () => {
     const updatedEntities = [...entities, newEntity];
     setEntities(updatedEntities);
 
-    const layoutedNodes = getLayoutedNodes([...nodes, createNode(newEntity)], edges);
-    setNodes(layoutedNodes);
+    const newNode = {
+      id: newEntity.id,
+      data: {
+        label: newEntity.name,
+        type: newEntity.type,
+        description: newEntity.description,
+        metadata: newEntity.metadata,
+        vector: newEntity.vector,
+        created_at: newEntity.created_at,
+      },
+      style: {
+        background: {
+          Department: '#FFB6C1',
+          System: '#90EE90',
+          Service: '#FFD700',
+          other: '#FFA07A',
+        }[newEntity.type] || '#FFA07A',
+        borderRadius: '12px',
+        padding: '15px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+      },
+      width: nodeWidth,
+      height: nodeHeight,
+      position: { x: Math.random() * 400, y: Math.random() * 400 },
+    };
+
+    setNodes([...nodes, newNode]);
     setIsModified(true);
 
     onClose();
@@ -234,43 +237,13 @@ const DomainPage = () => {
     setEdges(updatedEdges);
     setIsModified(true);
     setSelectedNode(null);
-    setIsNodeModalOpen(false);
-  };
-
-  const createNode = (entity) => {
-    const typeColors = {
-      Department: '#FFB6C1',
-      System: '#90EE90',
-      Service: '#FFD700',
-      other: '#FFA07A',
-    };
-  
-    return {
-      id: entity.id,
-      data: {
-        label: entity.name,
-        type: entity.type,
-        description: entity.description,
-        metadata: entity.metadata,
-        vector: entity.vector,
-        created_at: entity.created_at,
-      },
-      style: {
-        background: typeColors[entity.type] || typeColors.other,
-        borderRadius: '12px',
-        padding: '15px',
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-      },
-      width: nodeWidth,
-      height: nodeHeight,
-      position: { x: 0, y: 0 },
-    };
   };
 
   const addRelationship = () => {
     if (!selectedSourceNode || !selectedTargetNode || !relationshipType) return;
 
     const newEdge = {
+      id: uuidv4(),
       source: selectedSourceNode,
       target: selectedTargetNode,
       animated: true,
@@ -287,31 +260,31 @@ const DomainPage = () => {
 
   const removeRelationship = () => {
     if (!selectedEdge) return;
-  
+
     const edgeId = selectedEdge.id;
     const updatedEdges = edges.filter((edge) => edge.id !== edgeId);
-  
+
     setEdges(updatedEdges);
     setIsModified(true);
     setSelectedEdge(null);
-    setIsEdgeModalOpen(false);
   };
 
   const saveGraph = async () => {
     try {
       const now = new Date().toISOString();
 
-      const entitiesData = entities.map(entity => ({
-        id: entity.id,
-        name: entity.name,
-        type: entity.type,
-        description: entity.description,
-        metadata: entity.metadata,
-        vector: entity.vector,
-        created_at: entity.created_at,
+      const entitiesData = nodes.map(node => ({
+        id: node.id,
+        name: node.data.label,
+        type: node.data.type,
+        description: node.data.description,
+        metadata: node.data.metadata,
+        vector: node.data.vector,
+        created_at: node.data.created_at,
       }));
 
       const relationshipsData = edges.map(edge => ({
+        id: edge.id,
         name: edge.data.name,
         type: edge.data.type,
         description: edge.data.description,
@@ -324,8 +297,6 @@ const DomainPage = () => {
         entities: entitiesData,
         relationships: relationshipsData,
       };
-
-      console.log('Data being sent to backend:', JSON.stringify(domainData, null, 2));
 
       const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/save`, {
         method: 'POST',
@@ -342,7 +313,6 @@ const DomainPage = () => {
 
       const responseData = await response.json();
       setCurrentVersion(responseData.version);
-      console.log('Response data:', responseData);
 
       await fetchData();
 
@@ -363,8 +333,8 @@ const DomainPage = () => {
         <Text fontSize="lg" color="gray.500" mb={4}>
           Current Version: {currentVersion} {isModified && '(Unsaved Changes)'}
         </Text>
-        <Flex justify="center">
-          <Box width="100%">
+        <Flex>
+          <Box width="70%" pr={4}>
             {entities.length > 0 || relationships.length > 0 ? (
               <Box height="500px" bg="white" borderRadius="xl" boxShadow="lg" p={5}>
                 <ReactFlow
@@ -386,6 +356,39 @@ const DomainPage = () => {
                 </ReactFlow>
               </Box>
             ) : <Text fontSize="lg" color="gray.500">No data found for this domain.</Text>}
+          </Box>
+          <Box width="30%" pl={4}>
+            {selectedNode && (
+              <Box bg="white" borderRadius="xl" boxShadow="lg" p={5}>
+                <Heading fontSize="2xl" fontWeight="bold" color="gray.900">
+                  {selectedNode.data.label}
+                </Heading>
+                <Text mt={4} color="gray.600">
+                  <b>Type:</b> {selectedNode.data.type}
+                </Text>
+                <Text mt={2} color="gray.600">
+                  <b>Description:</b> {selectedNode.data.description || 'No description available'}
+                </Text>
+                <Button mt={4} colorScheme="red" onClick={removeEntity}>Remove Entity</Button>
+              </Box>
+            )}
+            {selectedEdge && (
+              <Box bg="white" borderRadius="xl" boxShadow="lg" p={5}>
+                <Heading fontSize="2xl" fontWeight="bold" color="gray.900">
+                {selectedEdge.data.name}
+                </Heading>
+                <Text mt={4} color="gray.600"><b>Source:</b> {selectedEdge.sourceLabel}</Text>
+                <Text mt={2} color="gray.600"><b>Target:</b> {selectedEdge.targetLabel}</Text>
+                <Text mt={2} color="gray.600"><b>Type:</b> {selectedEdge.data.type}</Text>
+                <Text mt={2} color="gray.600">
+                  <b>Description:</b> {selectedEdge.data.description || 'No description available'}
+                </Text>
+                <Button mt={4} colorScheme="red" onClick={removeRelationship}>Remove Relationship</Button>
+              </Box>
+            )}
+            {(!selectedNode && !selectedEdge) && (
+              <Text fontSize="lg" color="gray.500">Select an entity or relationship to see details.</Text>
+            )}
           </Box>
         </Flex>
         <Flex justify="center" mt={8}>
@@ -477,47 +480,6 @@ const DomainPage = () => {
                 Add Relationship
               </Button>
               <Button variant="ghost" size="lg" onClick={onRelClose}>Cancel</Button>
-            </ModalFooter>
-          </ModalContent>
-        </Modal>
-
-        {/* Modal for entity information */}
-        <Modal isOpen={isNodeModalOpen} onClose={() => setIsNodeModalOpen(false)}>
-          <ModalOverlay />
-          <ModalContent borderRadius="xl" p={4}>
-            <ModalHeader fontSize="2xl" fontWeight="bold" color="gray.900">
-              {selectedNode?.data.label}
-            </ModalHeader>
-            <ModalCloseButton />
-            <ModalBody>
-              <Text mt={4} color="gray.600">
-                <b>Type:</b> {selectedNode?.data.type}
-              </Text>
-              <Text mt={2} color="gray.600">
-                <b>Description:</b> {selectedNode?.data.description || 'No description available'}
-              </Text>
-            </ModalBody>
-            <ModalFooter>
-              <Button colorScheme="red" onClick={removeEntity}>Remove Entity</Button>
-              <Button variant="ghost" onClick={() => setIsNodeModalOpen(false)}>Close</Button>
-            </ModalFooter>
-          </ModalContent>
-        </Modal>
-
-        {/* Modal for relationship information */}
-        <Modal isOpen={isEdgeModalOpen} onClose={() => setIsEdgeModalOpen(false)}>
-          <ModalOverlay />
-          <ModalContent borderRadius="xl" p={4}>
-            <ModalHeader fontSize="2xl" fontWeight="bold" color="gray.900">Relationship</ModalHeader>
-            <ModalCloseButton />
-            <ModalBody>
-              <Text mt={4} color="gray.600"><b>Source:</b> {selectedEdge?.sourceLabel}</Text>
-              <Text mt={2} color="gray.600"><b>Target:</b> {selectedEdge?.targetLabel}</Text>
-              <Text mt={2} color="gray.600"><b>Type:</b> {selectedEdge?.data?.name}</Text>
-            </ModalBody>
-            <ModalFooter>
-              <Button colorScheme="red" onClick={removeRelationship}>Remove Relationship</Button>
-              <Button variant="ghost" onClick={() => setIsEdgeModalOpen(false)}>Close</Button>
             </ModalFooter>
           </ModalContent>
         </Modal>
