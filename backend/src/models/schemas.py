@@ -52,7 +52,7 @@ class APIKeyBase(BaseModel):
     api_key: str
     tenant_id: UUID
     created_at: datetime
-    revoked: Optional[datetime]
+    revoked: Optional[datetime] = None
 
 
 class APIKeyResponse(APIKeyBase):
@@ -80,7 +80,7 @@ class UserConfigSchema(BaseModel):
 # Domain Schemas
 class DomainBase(BaseModel):
     domain_name: str
-    description: Optional[str]
+    description: Optional[str] = None
     tenant_id: UUID
 
 
@@ -112,14 +112,14 @@ class DomainConfigSchema(BaseModel):
 # Entity Schemas (replacing Concept, Source, and Methodology)
 class EntityBase(BaseModel):
     name: str
-    description: Optional[str]
+    description: Optional[str] = None
     type: str  # e.g., 'concept', 'source', 'methodology'
-    version: int
-    metadata: Optional[Dict[str, Any]]
+    version: Optional[int] = 1
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class EntityCreate(EntityBase):
-    id: Optional[str]
+    id: Optional[str] = None
 
 
 class Entity(EntityBase):
@@ -134,19 +134,19 @@ class Entity(EntityBase):
 class RelationshipBase(BaseModel):
     from_entity_id: str
     to_entity_id: str
-    name: Optional[str]
-    type: Optional[str]
-    description: Optional[str]
-    metadata: Optional[Dict[str, Any]]
+    name: str
+    type: str
+    description: Optional[str] = None
+    version: Optional[int] = 1
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class RelationshipCreate(RelationshipBase):
-    id: Optional[str]
+    id: Optional[str] = None
 
 
 class Relationship(RelationshipBase):
     id: str
-    version: int
     created_at: datetime
 
     class Config:
@@ -157,7 +157,7 @@ class Relationship(RelationshipBase):
 class DomainDataSchema(BaseModel):
     domain_id: UUID
     domain_name: str
-    description: Optional[str]
+    description: Optional[str] = None
     tenant_id: UUID
     version: int
     created_at: datetime
@@ -177,7 +177,7 @@ class DomainSaveSchema(BaseModel):
 # Role Schemas
 class RoleBase(BaseModel):
     role_name: str
-    description: Optional[str]
+    description: Optional[str] = None
     tenant_id: UUID  # Add tenant_id here
 
 
