@@ -7,9 +7,6 @@ import logging
 import json
 import re
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
-
 from ..models.models import Domain, DomainVersion, Tenant, gen_random_uuid
 from ..models.schemas import (
     Domain as DomainSchema,
@@ -65,6 +62,25 @@ def clean_agtype_string(s):
     return re.sub(r"::\w+", "", s)
 
 
+def parse_metadata_fields(data):
+    """
+    Recursively traverses the data to find 'metadata' fields that are strings and parses them into dictionaries.
+    """
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key == "metadata" and isinstance(value, str):
+                try:
+                    data[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse metadata field: {value}")
+            else:
+                parse_metadata_fields(value)
+    elif isinstance(data, list):
+        for item in data:
+            parse_metadata_fields(item)
+    return data
+
+
 def execute_cypher_query(conn, graph_name: str, cypher_query: str):
     """
     Executes a Cypher query on the specified Apache AGE graph and returns parsed results.
@@ -103,6 +119,10 @@ def execute_cypher_query(conn, graph_name: str, cypher_query: str):
 
                 try:
                     parsed_v = json.loads(v_str_clean)
+                    parsed_v = parse_metadata_fields(
+                        parsed_v
+                    )  # Parse 'metadata' fields
+                    logger.debug(f"Parsed entity: {parsed_v}")
                     parsed_rows.append(parsed_v)
                 except json.JSONDecodeError as je:
                     logger.error(f"JSON decoding failed for v: {v_str} | Error: {je}")
@@ -247,8 +267,6 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
     # Process the results to extract data
     entities = []
     for row in entities_result:
-        print("######")
-        print(row)
         try:
             # agtype_data = row["v"]
             # entity = agtype_data.get("n")
@@ -270,11 +288,7 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
 
     relationships = []
     for row in relationships_result:
-        print("######")
-        print(row)
         try:
-            # agtype_data = row["v"]
-            # relationship = agtype_data.get("r")
             properties = row.get("properties", {})
             relationships.append(
                 {
@@ -284,7 +298,7 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
                     "name": properties.get("name"),
                     "type": properties.get("type"),
                     "description": properties.get("description"),
-                    "metadata": json.loads(properties.get("metadata", {})),
+                    "metadata": properties.get("metadata", {}),
                     "version": latest_version.version,
                     "created_at": properties.get("created_at"),
                 }
@@ -344,7 +358,7 @@ def save_domain(
 
     # Increment the version
     new_version = latest_version.version + 1
-    new_graph_name = f"{domain.domain_id}_v{new_version}"
+    new_graph_name = f"{domain.domain_name}_v{new_version}"
 
     # Create a new DomainVersion for the updated domain
     new_domain_version = DomainVersion(
