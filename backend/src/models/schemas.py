@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
 
@@ -50,9 +50,9 @@ class Token(BaseModel):
 class APIKeyBase(BaseModel):
     api_key_id: UUID
     api_key: str
-    tenant_id: UUID  # Add tenant_id here
+    tenant_id: UUID
     created_at: datetime
-    revoked: Optional[datetime]
+    revoked: Optional[datetime] = None
 
 
 class APIKeyResponse(APIKeyBase):
@@ -68,7 +68,7 @@ class APIKeyCreateResponse(BaseModel):
 class UserConfigSchema(BaseModel):
     config_id: UUID
     user_id: UUID
-    tenant_id: UUID  # Add tenant_id here
+    tenant_id: UUID
     config_key: str
     config_value: str
     created_at: datetime
@@ -80,7 +80,7 @@ class UserConfigSchema(BaseModel):
 # Domain Schemas
 class DomainBase(BaseModel):
     domain_name: str
-    description: Optional[str]
+    description: Optional[str] = None
     tenant_id: UUID
 
 
@@ -109,136 +109,75 @@ class DomainConfigSchema(BaseModel):
         from_attributes = True
 
 
-# Concept Schemas
-class ConceptBase(BaseModel):
+# Entity Schemas (replacing Concept, Source, and Methodology)
+class EntityBase(BaseModel):
     name: str
-    description: Optional[str]
-    type: Optional[str]
-    tenant_id: UUID  # Add tenant_id here
+    description: Optional[str] = None
+    type: str  # e.g., 'concept', 'source', 'methodology'
+    version: Optional[int] = 1
+    metadata: Optional[Dict[str, Any]] = None
 
 
-class ConceptCreate(ConceptBase):
-    concept_id: Optional[UUID]
+class EntityCreate(EntityBase):
+    id: Optional[str] = None
 
 
-class Concept(ConceptBase):
-    concept_id: UUID
-    domain_id: UUID
-    domain_version: int
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# Source Schemas
-class SourceBase(BaseModel):
-    name: str
-    description: Optional[str]
-    source_type: Optional[str]
-    location: Optional[str]
-    tenant_id: UUID  # Add tenant_id here
-
-
-class SourceCreate(SourceBase):
-    source_id: Optional[UUID]
-
-
-class Source(SourceBase):
-    source_id: UUID
-    domain_id: UUID
-    domain_version: int
+class Entity(EntityBase):
+    id: str
     created_at: datetime
 
     class Config:
         from_attributes = True
 
 
-# Methodology Schemas
-class MethodologyBase(BaseModel):
-    name: str
-    description: Optional[str]
-    steps: Optional[str]
-    tenant_id: UUID  # Add tenant_id here
-
-
-class MethodologyCreate(MethodologyBase):
-    methodology_id: Optional[UUID]
-
-
-class Methodology(MethodologyBase):
-    methodology_id: UUID
-    domain_id: UUID
-    domain_version: int
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# Relationship Schemas
+# RelationshipEdge Schemas (replacing the old Relationship model)
 class RelationshipBase(BaseModel):
-    entity_id_1: UUID
-    entity_type_1: str
-    entity_id_2: UUID
-    entity_type_2: str
-    relationship_type: Optional[str]
-    tenant_id: UUID  # Add tenant_id here
+    from_entity_id: str
+    to_entity_id: str
+    name: str
+    type: str
+    description: Optional[str] = None
+    version: Optional[int] = 1
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class RelationshipCreate(RelationshipBase):
-    relationship_id: Optional[UUID]
+    id: Optional[str] = None
 
 
 class Relationship(RelationshipBase):
-    relationship_id: UUID
-    domain_id: UUID
-    domain_version: int
+    id: str
     created_at: datetime
 
     class Config:
         from_attributes = True
 
 
-# Domain Config Schema
-class DomainConfig(BaseModel):
-    config_id: UUID
-    domain_id: UUID
-    tenant_id: UUID  # Add tenant_id here
-    config_key: str
-    config_value: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# Updated Domain Data Schema to include domain-level info
+# Domain Data Schema with entities and relationships
 class DomainDataSchema(BaseModel):
     domain_id: UUID
     domain_name: str
-    description: Optional[str]
+    description: Optional[str] = None
     tenant_id: UUID
     version: int
     created_at: datetime
-    concepts: List[Concept]
-    sources: List[Source]
-    methodologies: List[Methodology]
-    relationships: List[Relationship]
+    entities: List[Entity]  # Representing entities (e.g., concepts)
+    relationships: List[Relationship]  # Representing relationships
+
+    class Config:
+        from_attributes = True
 
 
+# Schema for saving the domain with new version (updating entities and relationships)
 class DomainSaveSchema(BaseModel):
-    concepts: List[Concept]
-    sources: List[Source]
-    methodologies: List[Methodology]
+    entities: List[Entity]
     relationships: List[Relationship]
 
 
 # Role Schemas
 class RoleBase(BaseModel):
     role_name: str
-    description: Optional[str]
+    description: Optional[str] = None
     tenant_id: UUID  # Add tenant_id here
 
 
