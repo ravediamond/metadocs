@@ -150,6 +150,16 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     accepted_at TIMESTAMP
   );
 
+  -- Create Files table
+  CREATE TABLE IF NOT EXISTS files (
+    file_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
+    filename VARCHAR(255) NOT NULL,
+    filepath TEXT NOT NULL,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    uploaded_by UUID REFERENCES users(user_id) ON DELETE SET NULL
+  );
+
   -- Indexes
   CREATE INDEX IF NOT EXISTS email_index ON users (email);
   CREATE INDEX IF NOT EXISTS owner_user_id_index ON domains (owner_user_id);
