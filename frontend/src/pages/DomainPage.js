@@ -409,9 +409,9 @@ const DomainPage = () => {
             size="lg"
             ml={6}
             mt={2}
-            onClick={() => navigate(`/domain/${domain_id}/upload`)}
+            onClick={() => navigate(`/domains/${domain_id}/files`)}
           >
-            Upload Files
+            Manage files
           </Button>
         </Flex>
 
