@@ -342,6 +342,7 @@ class File(Base):
         ForeignKey("users.user_id", ondelete="SET NULL"),
         nullable=True,
     )
+    last_processed_at = Column(TIMESTAMP, nullable=True)
 
     # Relationships
     domain = relationship("Domain", back_populates="files")

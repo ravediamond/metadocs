@@ -1,3 +1,5 @@
+// FileManagerPage.jsx
+
 import React, { useState, useEffect, useContext } from 'react';
 import {
   Box,
@@ -28,14 +30,15 @@ import {
   ModalBody,
   ModalCloseButton,
   useDisclosure,
+  Badge,
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { DeleteIcon } from '@chakra-ui/icons';
+import { DeleteIcon, RepeatIcon } from '@chakra-ui/icons';
 import AuthContext from '../context/AuthContext';
 
 const FileManagerPage = () => {
   const { domain_id } = useParams();
-  const { token, currentTenant } = useContext(AuthContext);
+  const { user, token, currentTenant } = useContext(AuthContext); // Updated to include 'user'
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -44,6 +47,7 @@ const FileManagerPage = () => {
   const [files, setFiles] = useState([]);
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [error, setError] = useState(null);
+  const [processing, setProcessing] = useState(false);
 
   // For delete confirmation modal
   const { isOpen, onOpen, onClose } = useDisclosure();
@@ -57,7 +61,7 @@ const FileManagerPage = () => {
       setError(null);
       try {
         const response = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/`,
+          `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/`,
           {
             method: 'GET',
             headers: {
@@ -109,7 +113,7 @@ const FileManagerPage = () => {
 
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/upload`,
+        `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/upload`,
         {
           method: 'POST',
           headers: {
@@ -161,7 +165,7 @@ const FileManagerPage = () => {
     setDeleting(true);
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/${fileToDelete.file_id}`,
+        `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/files/${fileToDelete.file_id}`,
         {
           method: 'DELETE',
           headers: {
@@ -200,6 +204,71 @@ const FileManagerPage = () => {
     }
   };
 
+  // Handle processing files
+  const handleProcessFiles = async () => {
+    setProcessing(true);
+    try {
+      const response = await fetch(
+        `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/process_files`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        toast({
+          title: 'Files processed successfully.',
+          description: data.message,
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
+        // Refresh the file list to update last_processed_at
+        const refreshedResponse = await fetch(
+          `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        if (refreshedResponse.ok) {
+          const refreshedData = await refreshedResponse.json();
+          setFiles(refreshedData);
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to process files.');
+      }
+    } catch (error) {
+      console.error('Error processing files:', error);
+      toast({
+        title: 'Processing failed.',
+        description: error.message,
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Determine if a file needs processing
+  const needsProcessing = (file) => {
+    if (!file.last_processed_at) {
+      return true; // Never processed
+    }
+    const uploadedAt = new Date(file.uploaded_at);
+    const lastProcessedAt = new Date(file.last_processed_at);
+    return uploadedAt > lastProcessedAt;
+  };
+
   return (
     <Box bg="gray.50" minH="100vh" py={10}>
       <Container maxW="container.lg">
@@ -213,9 +282,20 @@ const FileManagerPage = () => {
           File Manager for Domain
         </Heading>
         <Box bg="white" borderRadius="xl" boxShadow="lg" p={8} mb={8}>
-          <Text fontSize="lg" color="gray.700" mb={4}>
-            Domain ID: <strong>{domain_id}</strong>
-          </Text>
+          <Flex justify="space-between" align="center" mb={4}>
+            <Text fontSize="lg" color="gray.700">
+              Domain ID: <strong>{domain_id}</strong>
+            </Text>
+            <Button
+              colorScheme="blue"
+              leftIcon={<RepeatIcon />}
+              onClick={handleProcessFiles}
+              isLoading={processing}
+              loadingText="Processing"
+            >
+              Process Files
+            </Button>
+          </Flex>
           <Flex direction="column" align="start">
             <Input
               type="file"
@@ -275,6 +355,7 @@ const FileManagerPage = () => {
                   <Th>Filename</Th>
                   <Th>Uploaded At</Th>
                   <Th>Uploaded By</Th>
+                  <Th>Status</Th>
                   <Th>Actions</Th>
                 </Tr>
               </Thead>
@@ -285,14 +366,47 @@ const FileManagerPage = () => {
                     <Td>{new Date(file.uploaded_at).toLocaleString()}</Td>
                     <Td>
                       {file.uploaded_by
-                        ? file.uploaded_by
+                        ? file.uploaded_by // Optionally, display user info if available
                         : 'Unknown'}
                     </Td>
                     <Td>
-                      {/* You can add a download link if needed */}
-                      {/* <Button size="sm" colorScheme="blue" mr={2}>
-                        Download
-                      </Button> */}
+                      {needsProcessing(file) ? (
+                        <Badge colorScheme="yellow">Needs Processing</Badge>
+                      ) : (
+                        <Badge colorScheme="green">Up to Date</Badge>
+                      )}
+                    </Td>
+                    <Td>
+                      {/* Download Button (Optional) */}
+                      {/* <IconButton
+                        aria-label="Download File"
+                        icon={<DownloadIcon />}
+                        colorScheme="blue"
+                        variant="outline"
+                        size="sm"
+                        mr={2}
+                        onClick={() => {
+                          const downloadUrl = `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/files/${file.file_id}/download`;
+                          window.open(downloadUrl, '_blank');
+                        }}
+                      /> */}
+
+                      {/* Process Button (Optional) */}
+                      {/* If you implement per-file processing, you can uncomment and use the following:
+                      {needsProcessing(file) && (
+                        <Button
+                          size="sm"
+                          colorScheme="purple"
+                          mr={2}
+                          onClick={async () => {
+                            // Implement per-file processing
+                          }}
+                        >
+                          Process
+                        </Button>
+                      )} */}
+
+                      {/* Delete Button */}
                       <IconButton
                         aria-label="Delete File"
                         icon={<DeleteIcon />}

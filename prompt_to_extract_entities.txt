@@ -1,0 +1,40 @@
+You will be provided with an image that may contain text, diagrams, architecture diagrams, slides, or a combination of these elements related to a specific domain. Your task is to:
+
+1. **Extract Information from the Image:**
+   - Use your vision capabilities to analyze the image holistically.
+   - Identify and interpret all textual content, diagrams, and visual elements present.
+   - Separate the content into logical groups or sections based on titles, headings, subheadings, or thematic breaks.
+   - Assign a unique identifier (ID) to each group or section for reference purposes.
+   - Understand the hierarchical structure of the content, where titles and headings indicate parent entities, and the content or entities listed under them are child entities.
+
+2. **Identify Entities and Their Hierarchical Relationships:**
+   - From both textual and visual content, identify all entities mentioned. Entities can include concepts, methodologies, data sources, products, metrics, components in diagrams, or any domain-specific terms.
+   - For each entity, gather any directly related data, descriptions, or relationships provided in the image.
+   - Determine the hierarchical relationships between entities based on the structure implied by titles and headings. If an entity is listed under a title or heading, consider it a child of the entity related to that title or heading.
+   - Link each entity to the relevant parts of the parsed content using the IDs assigned to the groups or sections.
+
+3. **Output in JSON Format:**
+   - Structure the extracted information into a JSON object following this schema:
+
+```json
+{
+  "parsed_content": [
+    {
+      "id": "UniqueIdentifier1",
+      "group_title": "Title or Heading of the Group (if available)",
+      "content": "Text content or description of the group",
+      "elements": "Descriptions of any relevant elements (e.g., diagrams, images) (if applicable)"
+    },
+    ...
+  ],
+  "entities": [
+    {
+      "entity_name": "Name of the Entity",
+      "related_data": "Relevant data, description, or relationships associated with the entity",
+      "related_content_ids": ["UniqueIdentifier1", "UniqueIdentifier3"],
+      "parent_entity": "Name of Parent Entity (if applicable)",
+      "child_entities": ["Name of Child Entity 1", "Name of Child Entity 2", ...]
+    },
+    ...
+  ]
+}

@@ -6,9 +6,10 @@ import os
 import shutil
 import logging
 
-from ..models.models import Domain, File as FileModel
+from ..models.models import Domain, File as FileModel, User
 from ..models.schemas import FileResponse
 from ..core.database import get_db
+from ..core.security import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ def upload_file(
     tenant_id: UUID,
     domain_id: UUID,
     uploaded_file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -66,7 +68,7 @@ def upload_file(
         domain_id=domain_id,
         filename=uploaded_file.filename,
         filepath=file_path,
-        # uploaded_by can be set if user information is available
+        uploaded_by=current_user.user_id,
     )
     db.add(new_file)
     try:
@@ -172,6 +174,7 @@ def list_files(
             filename=file.filename,
             filepath=file.filepath,
             uploaded_at=file.uploaded_at,
+            last_processed_at=file.last_processed_at,
             uploaded_by=file.uploaded_by,
         )
         for file in files
