@@ -38,3 +38,27 @@ You will be provided with an image that may contain text, diagrams, architecture
     ...
   ]
 }
+
+
+
+Questions for Domain Creation:
+
+	1.	What is the name of your domain?
+	•	Provide a concise name or title for the domain you’re working in.
+	2.	What is the primary focus or purpose of this domain?
+	•	Briefly describe what the domain is about and its main objectives.
+	3.	What are the key entities or concepts within this domain?
+	•	List the main entities, concepts, terminologies, or topics that are relevant.
+	4.	What types of relationships or hierarchies exist among these entities?
+	•	Describe any important relationships, hierarchies, or associations between the entities.
+
+
+
+Questions for Each Document Upload:
+
+	1.	What is the title or subject of the document?
+	•	Provide the title or a brief description of the document.
+	2.	What is the main purpose or focus of this document?
+	•	Explain what the document aims to convey, summarize, or achieve.
+	3.	How does this document relate to your domain?
+	•	Describe how the content of the document is relevant to the domain you’ve defined.
