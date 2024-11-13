@@ -29,6 +29,8 @@ pillow = "^11.0.0"
 pdf2image = "^1.17.0"
 networkx = "^3.4.2" # dev
 matplotlib = "^3.9.2" # dev
+langchain-aws = "^0.2.7"
+pymupdf = "^1.24.13"
 
 
 [build-system]

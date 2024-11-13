@@ -90,3 +90,14 @@ The MVP (Minimum Viable Product) of your SaaS aims to enhance RAG (Retrieval-Aug
 docker-compose down -v
 docker-compose up --build
 ```
+
+
+
+### method to parse:
+
+- accept only pdf with source (sheet, words, ...)
+- generate one imag eper page
+- check if the image is readable by an human : ask a confidence value for how much it is readable by an human and ask to be noted strictly. If it is below 70%, launch error to users. Do this on first 5 images.
+- If slides, generate markdown using haiku with as much data
+- if doc, generate markdown using haiku with as much data but replace all image with description with @@@@@ before and after. Save also the page to be sent back.
+- For each part in @@@@, redo an analysis using the full text context and make the description better and detect if adding the image is needed.
