@@ -47,7 +47,29 @@ CONVERT_TO_MARKDOWN_PROMPT = """Convert the image content to properly formatted 
   - Use section headings (##, ###) for distinct content sections
   - Add horizontal rules (---) between major sections only when there's a clear visual break
 
-2. Table Formatting:
+2. Graph Conversion:
+  - Convert all graphs into properly formatted tables
+  - Include the following for each graph:
+    - Title and description
+    - X and Y axis labels
+    - Data points in tabular format
+    - Time periods if applicable
+    - Units of measurement
+    - Source attribution
+  - Format decimal numbers consistently
+  - Include trend descriptions below tables
+
+3. Diagram Conversion:
+  - Replace diagrams with detailed textual explanations
+  - Break down into:
+    - Overview of the diagram's purpose
+    - Key components and their relationships
+    - Hierarchical structure if present
+    - Process flows or connections
+    - Notable features or highlights
+  - Use appropriate heading levels for organization
+
+4. Table Formatting:
   - Always include proper header row and alignment separators
   - Use consistent column alignment with colons:
     Left align: |:---|
@@ -58,7 +80,7 @@ CONVERT_TO_MARKDOWN_PROMPT = """Convert the image content to properly formatted 
   - For lists within table cells, maintain proper formatting with line breaks
   - Preserve any bold (**text**) or italic (*text*) formatting within cells
 
-3. Lists and Content:
+5. Lists and Content:
   - Use appropriate list markers:
     - Unordered lists: Use - consistently
     - Ordered lists: Use 1., 2., etc.
@@ -66,7 +88,7 @@ CONVERT_TO_MARKDOWN_PROMPT = """Convert the image content to properly formatted 
   - Preserve original text emphasis (bold, italic)
   - Keep related content grouped together
 
-4. Special Elements:
+6 Special Elements:
   - For headers spanning multiple columns, use proper markdown table syntax
   - Include any notes or special instructions as blockquotes using >
   - Format code or technical content with appropriate code blocks
@@ -298,7 +320,7 @@ def process_pdf(pdf_path: str, output_dir: str = "output") -> ProcessingResult:
         # Initialize model
         logger.info("Initializing Bedrock model")
         model = ChatBedrock(
-            model_id="us.anthropic.claude-3-sonnet-20240229-v1:0",
+            model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
             region_name="us-east-1",
             model_kwargs=dict(temperature=0, max_tokens=4096),
         )
