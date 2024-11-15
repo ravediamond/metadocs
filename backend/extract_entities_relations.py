@@ -10,7 +10,7 @@ from datetime import datetime
 import concurrent.futures
 from pathlib import Path
 
-SYSTEM_PROMPT = """You are an expert system specialized in analyzing documents and extracting structured information about entities and their relationships."""
+SYSTEM_PROMPT = """You are an expert system specialized in analyzing documents and extracting structured information about entities and their relationships. You are particularly thorough in identifying both direct and indirect relationships between entities."""
 
 INITIAL_ENTITY_EXTRACTION_PROMPT = """Analyze the following markdown content and identify all important entities and their relationships.
 An entity can be a person, organization, system, concept, process, or any other significant noun that plays a key role in the content.
@@ -23,24 +23,49 @@ Provide your response as a valid JSON object with two arrays:
    - "type": the type of relationship (e.g., "manages", "contains", "uses", "depends on")
    - "description": brief description of the relationship"""
 
-ITERATIVE_ENTITY_EXTRACTION_PROMPT = """Given the following markdown content and the list of previously identified entities, analyze the content again to find any additional entities that might have been missed. Consider entities that:
-1. Support or interact with the known entities
-2. Are mentioned indirectly or implicitly
-3. Represent components, dependencies, or related systems
-4. Are part of the broader ecosystem described
+ITERATIVE_ENTITY_EXTRACTION_PROMPT = """Given the following markdown content and the current state of identified entities and relationships, perform a thorough analysis to find:
 
-Previously identified entities:
+1. Additional entities that might have been missed
+2. Additional relationships between ALL entities (both new and previously identified)
+3. Different types of relationships between entities that already have some connections
+
+Current entities:
 {previous_entities}
+
+Current relationships:
+{previous_relationships}
+
+Consider the following in your analysis:
+1. Entities:
+   - Supporting or interacting components
+   - Indirectly mentioned or implied entities
+   - Dependencies or related systems
+   - Sub-components or parent systems
+   - Tools, resources, or artifacts involved
+
+2. Relationships:
+   - Direct interactions or dependencies
+   - Indirect influences or impacts
+   - Hierarchical relationships (part-of, contains, extends)
+   - Temporal relationships (precedes, follows, triggers)
+   - Data or resource flow relationships
+   - Alternative relationship types between already-connected entities
+   - Transitive relationships (if A relates to B and B to C, consider A to C)
 
 Provide your response as a valid JSON object with two arrays:
 1. "new_entities": array of additional unique entities found (not including previously identified ones)
-2. "new_relationships": array of any new relationships discovered, including relationships involving both new and previously identified entities
+2. "new_relationships": array of any new relationships discovered, including:
+   - Relationships involving new entities
+   - Additional relationships between existing entities
+   - Alternative relationship types between already-connected entities
 
 Each relationship should have:
 - "source": the source entity
 - "target": the target entity
 - "type": the type of relationship
-- "description": brief description of the relationship"""
+- "description": brief description of the relationship
+
+Focus on being thorough and consider non-obvious connections while maintaining accuracy."""
 
 ENTITY_DETAILS_PROMPT = """Analyze the following markdown content and provide detailed information about the entity: {entity}
 
@@ -120,6 +145,11 @@ def setup_logging(output_dir: str) -> logging.Logger:
     return logger
 
 
+def format_relationship_for_prompt(rel: Dict) -> str:
+    """Format a relationship for inclusion in the prompt."""
+    return f"- {rel['source']} {rel['type']} {rel['target']}: {rel['description']}"
+
+
 def initial_entity_extraction(
     model: ChatBedrock, markdown_content: str, logger: logging.Logger
 ) -> tuple[List[str], List[Dict]]:
@@ -154,12 +184,18 @@ def iterative_entity_extraction(
     model: ChatBedrock,
     markdown_content: str,
     previous_entities: List[str],
+    previous_relationships: List[Dict],
     logger: logging.Logger,
 ) -> tuple[List[str], List[Dict]]:
-    """Perform another iteration of entity extraction, considering previously found entities."""
-    logger.info("Performing iterative entity extraction")
+    """Perform another iteration of entity and relationship extraction."""
+    logger.info("Performing iterative entity and relationship extraction")
 
     try:
+        # Format previous relationships for the prompt
+        formatted_relationships = "\n".join(
+            format_relationship_for_prompt(rel) for rel in previous_relationships
+        )
+
         content = [
             {"type": "text", "text": markdown_content},
             {
@@ -167,7 +203,8 @@ def iterative_entity_extraction(
                 "text": ITERATIVE_ENTITY_EXTRACTION_PROMPT.format(
                     previous_entities="\n".join(
                         [f"- {entity}" for entity in previous_entities]
-                    )
+                    ),
+                    previous_relationships=formatted_relationships,
                 ),
             },
         ]
@@ -181,12 +218,13 @@ def iterative_entity_extraction(
         result = json.loads(response.content)
 
         logger.info(
-            f"Iteration found {len(result.get('new_entities', []))} new entities and {len(result.get('new_relationships', []))} new relationships"
+            f"Iteration found {len(result.get('new_entities', []))} new entities and "
+            f"{len(result.get('new_relationships', []))} new relationships"
         )
         return result.get("new_entities", []), result.get("new_relationships", [])
 
     except Exception as e:
-        logger.error(f"Error in iterative entity extraction: {str(e)}")
+        logger.error(f"Error in iterative entity and relationship extraction: {str(e)}")
         raise
 
 
@@ -229,7 +267,7 @@ def get_entity_details(
 def analyze_markdown(
     markdown_path: str, iterations: int = 3, output_dir: str = "analysis_output"
 ) -> Optional[str]:
-    """Analyze markdown content with multiple iterations of entity extraction."""
+    """Analyze markdown content with multiple iterations of entity and relationship extraction."""
     logger = setup_logging(output_dir)
     logger.info(
         f"Starting markdown analysis for {markdown_path} with {iterations} iterations"
@@ -256,16 +294,27 @@ def analyze_markdown(
             model, markdown_content, logger
         )
 
+        # Track relationship uniqueness using a set of tuples
+        relationship_keys = {
+            (r["source"], r["target"], r["type"]) for r in all_relationships
+        }
+
         # Iterative extractions
         for i in range(iterations - 1):
             logger.info(f"Starting iteration {i + 2} of {iterations}")
             new_entities, new_relationships = iterative_entity_extraction(
-                model, markdown_content, all_entities, logger
+                model, markdown_content, all_entities, all_relationships, logger
             )
 
-            # Add new unique entities and relationships
+            # Add new unique entities
             all_entities.extend([e for e in new_entities if e not in all_entities])
-            all_relationships.extend(new_relationships)
+
+            # Add new unique relationships
+            for rel in new_relationships:
+                rel_key = (rel["source"], rel["target"], rel["type"])
+                if rel_key not in relationship_keys:
+                    relationship_keys.add(rel_key)
+                    all_relationships.append(rel)
 
         # Get detailed information for each entity
         entity_details = {}
@@ -300,7 +349,8 @@ def analyze_markdown(
             "metadata": {
                 "iterations": iterations,
                 "total_entities": len(all_entities),
-                "total_relationships": len(all_relationships),
+                "total_unique_relationships": len(relationship_keys),
+                "analysis_timestamp": datetime.now().isoformat(),
             },
         }
 
@@ -334,8 +384,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--iterations",
         type=int,
-        default=3,
-        help="Number of iterations for entity extraction (default: 3)",
+        default=5,
+        help="Number of iterations for entity extraction (default: 5)",
     )
     parser.add_argument(
         "--output", type=str, default="analysis_output", help="Output directory path"

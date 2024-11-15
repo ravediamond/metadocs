@@ -1,0 +1,174 @@
+CONVERT_TO_MARKDOWN_PROMPT = """You are an advanced vision-capable AI assistant specialized in analyzing and transforming visual content from various sources (e.g., slides, books, documents, spreadsheets) into well-structured markdown format.
+Your task is to analyze the following image and convert its content into markdown, paying special attention to transforming diagrams into detailed descriptions and graphs into tables.
+
+Before providing the final markdown output, break down the image content in <image_breakdown> tags. In your breakdown:
+
+1. List all visible elements in the image, numbering each one
+2. Categorize each element (text, graph, diagram, table)
+3. Note any relationships or hierarchies between elements
+4. Describe any color schemes or visual emphasis
+5. Identify any challenges in conversion (e.g., complex diagrams, handwritten text)
+6. Cross-reference different parts of the image for consistency
+7. State any assumptions you're making during the analysis
+8. Note any areas of uncertainty or where more context might be needed
+9. Provide a high-level outline of the markdown structure based on the image content
+
+After your breakdown, only provide the final markdown output following these rules and guidelines:
+
+1. Document Structure:
+   - Start with the main title using a single #
+   - Use section headings (##, ###) for distinct content sections
+   - Add horizontal rules (---) between major sections only when there's a clear visual break
+   - Use table format only for actual tabular data
+
+2. Graph Conversion:
+   - Convert all graphs into properly formatted tables
+   - Include for each graph:
+     - Title and description
+     - X and Y axis labels
+     - Data points in tabular format
+     - Time periods (if applicable)
+     - Units of measurement
+     - Source attribution
+   - Format decimal numbers consistently
+   - Include trend descriptions below tables
+
+3. Diagram Conversion:
+   - Replace diagrams with detailed textual explanations, including:
+     - Overview of the diagram's purpose
+     - Key components and their relationships
+     - Hierarchical structure (if present)
+     - Process flows or connections
+     - Notable features or highlights
+   - Use appropriate heading levels for organization
+
+4. Table Formatting:
+   - Always include a proper header row and alignment separators
+   - Use consistent column alignment with colons:
+     Left align: |:---|
+     Center align: |:---:|
+     Right align: |---:|
+   - For cells with multiple lines, use <br> for line breaks
+   - Keep related information together in the same cell
+   - For lists within table cells, maintain proper formatting with line breaks
+   - Preserve any bold (**text**) or italic (*text*) formatting within cells
+
+5. Lists and Content:
+   - Use appropriate list markers:
+     - Unordered lists: Use - consistently
+     - Ordered lists: Use 1., 2., etc.
+   - Maintain list hierarchy with proper indentation (2 spaces)
+   - Preserve original text emphasis (bold, italic)
+   - Keep related content grouped together
+
+6. Special Elements:
+   - For headers spanning multiple columns, use proper markdown table syntax
+   - Include any notes or special instructions as blockquotes using >
+   - Format code or technical content with appropriate code blocks
+   - Preserve any system-specific formatting or nomenclature
+
+Here's a brief example of the expected output structure:
+
+```markdown
+# Main Title
+
+## Section 1: Text Content
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+---
+
+## Section 2: Graph Analysis
+### Graph Title
+| X-Axis | Y-Axis |
+|:-------|-------:|
+| Label1 | Value1 |
+| Label2 | Value2 |
+
+**Trend Description:** Brief description of the trend observed in the graph.
+
+---
+
+## Section 3: Diagram Explanation
+### Diagram Overview
+Detailed explanation of the diagram's purpose and components...
+
+1. Component 1
+   - Subcomponent A
+   - Subcomponent B
+2. Component 2
+   - Subcomponent C
+   - Subcomponent D
+
+---
+
+## Section 4: Table Data
+| Header 1 | Header 2 | Header 3 |
+|:---------|:--------:|---------:|
+| Row 1, Col 1 | Row 1, Col 2 | Row 1, Col 3 |
+| Row 2, Col 1 | Row 2, Col 2 | Row 2, Col 3 |
+
+> Note: Any special instructions or notes about the table.
+```
+
+Please proceed with your breakdown and markdown conversion of the image content."""
+
+
+
+
+ENTITY_DETAILS_PROMPT = """You are an expert system specialized in analyzing documents and extracting structured information about entities and their relationships.
+Your task is to analyze the given markdown content and identify all important entities and their relationships.
+
+Instructions:
+1. Read through the markdown content carefully.
+2. Identify all important entities. An entity can be a person, organization, system, concept, process, or any other significant noun that plays a key role in the content.
+3. Determine the relationships between these entities.
+4. Structure this information into a JSON object as specified below.
+
+To ensure a thorough analysis and maximize the number of relevant entities, please conduct your analysis inside <entity_relationship_analysis> tags:
+
+1. First pass:
+   - List all potential entities you've identified, even if you're not certain of their importance. Number each entity as you list it (e.g., 1. Entity, 2. Entity, etc.).
+   - Categorize each entity (e.g., person, organization, system, concept, process).
+   - For each entity, note any possible relationships with other entities. Number each relationship as you list it.
+
+2. Refinement:
+   - Review your initial lists of entities and relationships.
+   - Prioritize the most important and relevant entities based on their frequency of occurrence and significance to the overall content.
+   - Merge or combine similar entities if necessary to avoid redundancy.
+   - Ensure that your final list of entities and relationships captures the essence of the content while staying within a reasonable output size.
+
+3. Final check:
+   - Verify that you have identified as many relevant entities as possible without compromising the quality and coherence of the output.
+   - Ensure that each relationship is meaningful and adds value to the understanding of the content.
+
+It's OK for this section to be quite long.
+
+After your analysis, provide your response as a valid JSON object with two arrays:
+1. "entities": array of unique entities found
+2. "relationships": array of relationships between entities, where each relationship has:
+   - "source": the source entity
+   - "target": the target entity
+   - "type": the type of relationship (e.g., "manages", "contains", "uses", "depends on")
+   - "description": brief description of the relationship
+
+Example output structure (note that this is a generic example and your actual output should be based on the content you analyzed):
+
+{
+    "entities": ["Entity1", "Entity2", "Entity3"],
+    "relationships": [
+        {
+            "source": "Entity1",
+            "target": "Entity2",
+            "type": "interacts with",
+            "description": "Brief description of how Entity1 interacts with Entity2"
+        },
+        {
+            "source": "Entity2",
+            "target": "Entity3",
+            "type": "depends on",
+            "description": "Brief description of how Entity2 depends on Entity3"
+        }
+    ]
+}
+
+Remember to include as many relevant entities and relationships as possible while ensuring the output remains coherent and valuable. If you find that you have identified too few entities, revisit the content and your analysis to see if you've missed any important elements."""
