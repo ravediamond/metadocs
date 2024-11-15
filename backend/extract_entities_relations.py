@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 import json
 import logging
 from langchain_aws.chat_models import ChatBedrock
@@ -12,7 +12,7 @@ from pathlib import Path
 
 SYSTEM_PROMPT = """You are an expert system specialized in analyzing documents and extracting structured information about entities and their relationships."""
 
-ENTITY_EXTRACTION_PROMPT = """Analyze the following markdown content and identify all important entities and their relationships.
+INITIAL_ENTITY_EXTRACTION_PROMPT = """Analyze the following markdown content and identify all important entities and their relationships.
 An entity can be a person, organization, system, concept, process, or any other significant noun that plays a key role in the content.
 
 Provide your response as a valid JSON object with two arrays:
@@ -21,20 +21,26 @@ Provide your response as a valid JSON object with two arrays:
    - "source": the source entity
    - "target": the target entity
    - "type": the type of relationship (e.g., "manages", "contains", "uses", "depends on")
-   - "description": brief description of the relationship
+   - "description": brief description of the relationship"""
 
-Example output:
-{
-    "entities": ["Database", "Application Server", "User Interface"],
-    "relationships": [
-        {
-            "source": "Application Server",
-            "target": "Database",
-            "type": "connects to",
-            "description": "Server maintains persistent connection to database for data storage"
-        }
-    ]
-}"""
+ITERATIVE_ENTITY_EXTRACTION_PROMPT = """Given the following markdown content and the list of previously identified entities, analyze the content again to find any additional entities that might have been missed. Consider entities that:
+1. Support or interact with the known entities
+2. Are mentioned indirectly or implicitly
+3. Represent components, dependencies, or related systems
+4. Are part of the broader ecosystem described
+
+Previously identified entities:
+{previous_entities}
+
+Provide your response as a valid JSON object with two arrays:
+1. "new_entities": array of additional unique entities found (not including previously identified ones)
+2. "new_relationships": array of any new relationships discovered, including relationships involving both new and previously identified entities
+
+Each relationship should have:
+- "source": the source entity
+- "target": the target entity
+- "type": the type of relationship
+- "description": brief description of the relationship"""
 
 ENTITY_DETAILS_PROMPT = """Analyze the following markdown content and provide detailed information about the entity: {entity}
 
@@ -114,16 +120,16 @@ def setup_logging(output_dir: str) -> logging.Logger:
     return logger
 
 
-def extract_entities_and_relationships(
+def initial_entity_extraction(
     model: ChatBedrock, markdown_content: str, logger: logging.Logger
 ) -> tuple[List[str], List[Dict]]:
-    """Extract entities and their relationships from markdown content."""
-    logger.info("Extracting entities and relationships")
+    """Perform initial extraction of entities and relationships."""
+    logger.info("Performing initial entity extraction")
 
     try:
         content = [
             {"type": "text", "text": markdown_content},
-            {"type": "text", "text": ENTITY_EXTRACTION_PROMPT},
+            {"type": "text", "text": INITIAL_ENTITY_EXTRACTION_PROMPT},
         ]
 
         prompt = ChatPromptTemplate.from_messages(
@@ -135,12 +141,52 @@ def extract_entities_and_relationships(
         result = json.loads(response.content)
 
         logger.info(
-            f"Found {len(result['entities'])} entities and {len(result['relationships'])} relationships"
+            f"Initial extraction found {len(result['entities'])} entities and {len(result['relationships'])} relationships"
         )
         return result["entities"], result["relationships"]
 
     except Exception as e:
-        logger.error(f"Error extracting entities and relationships: {str(e)}")
+        logger.error(f"Error in initial entity extraction: {str(e)}")
+        raise
+
+
+def iterative_entity_extraction(
+    model: ChatBedrock,
+    markdown_content: str,
+    previous_entities: List[str],
+    logger: logging.Logger,
+) -> tuple[List[str], List[Dict]]:
+    """Perform another iteration of entity extraction, considering previously found entities."""
+    logger.info("Performing iterative entity extraction")
+
+    try:
+        content = [
+            {"type": "text", "text": markdown_content},
+            {
+                "type": "text",
+                "text": ITERATIVE_ENTITY_EXTRACTION_PROMPT.format(
+                    previous_entities="\n".join(
+                        [f"- {entity}" for entity in previous_entities]
+                    )
+                ),
+            },
+        ]
+
+        prompt = ChatPromptTemplate.from_messages(
+            [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=content)]
+        )
+
+        chain = prompt | model
+        response = chain.invoke({})
+        result = json.loads(response.content)
+
+        logger.info(
+            f"Iteration found {len(result.get('new_entities', []))} new entities and {len(result.get('new_relationships', []))} new relationships"
+        )
+        return result.get("new_entities", []), result.get("new_relationships", [])
+
+    except Exception as e:
+        logger.error(f"Error in iterative entity extraction: {str(e)}")
         raise
 
 
@@ -181,11 +227,13 @@ def get_entity_details(
 
 
 def analyze_markdown(
-    markdown_path: str, output_dir: str = "analysis_output"
+    markdown_path: str, iterations: int = 3, output_dir: str = "analysis_output"
 ) -> Optional[str]:
-    """Analyze markdown content and generate detailed entity analysis."""
+    """Analyze markdown content with multiple iterations of entity extraction."""
     logger = setup_logging(output_dir)
-    logger.info(f"Starting markdown analysis for {markdown_path}")
+    logger.info(
+        f"Starting markdown analysis for {markdown_path} with {iterations} iterations"
+    )
 
     try:
         # Initialize model
@@ -203,10 +251,21 @@ def analyze_markdown(
         with open(markdown_path, "r", encoding="utf-8") as f:
             markdown_content = f.read()
 
-        # Extract entities and relationships
-        entities, relationships = extract_entities_and_relationships(
+        # Initial extraction
+        all_entities, all_relationships = initial_entity_extraction(
             model, markdown_content, logger
         )
+
+        # Iterative extractions
+        for i in range(iterations - 1):
+            logger.info(f"Starting iteration {i + 2} of {iterations}")
+            new_entities, new_relationships = iterative_entity_extraction(
+                model, markdown_content, all_entities, logger
+            )
+
+            # Add new unique entities and relationships
+            all_entities.extend([e for e in new_entities if e not in all_entities])
+            all_relationships.extend(new_relationships)
 
         # Get detailed information for each entity
         entity_details = {}
@@ -215,7 +274,7 @@ def analyze_markdown(
                 executor.submit(
                     get_entity_details, model, entity, markdown_content, logger
                 ): entity
-                for entity in entities
+                for entity in all_entities
             }
 
             for future in concurrent.futures.as_completed(future_to_entity):
@@ -235,7 +294,15 @@ def analyze_markdown(
                     logger.error(f"Error processing entity {entity}: {str(e)}")
 
         # Prepare final analysis
-        analysis = {"entities": entity_details, "relationships": relationships}
+        analysis = {
+            "entities": entity_details,
+            "relationships": all_relationships,
+            "metadata": {
+                "iterations": iterations,
+                "total_entities": len(all_entities),
+                "total_relationships": len(all_relationships),
+            },
+        }
 
         # Save analysis to file
         output_file = os.path.join(output_dir, "entity_analysis.json")
@@ -265,11 +332,17 @@ if __name__ == "__main__":
         "markdown_path", type=str, help="Path to the markdown file to analyze"
     )
     parser.add_argument(
+        "--iterations",
+        type=int,
+        default=3,
+        help="Number of iterations for entity extraction (default: 3)",
+    )
+    parser.add_argument(
         "--output", type=str, default="analysis_output", help="Output directory path"
     )
 
     args = parser.parse_args()
-    output_file = analyze_markdown(args.markdown_path, args.output)
+    output_file = analyze_markdown(args.markdown_path, args.iterations, args.output)
 
     if output_file:
         print(f"Analysis completed successfully. Results saved to: {output_file}")
