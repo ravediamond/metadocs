@@ -248,3 +248,23 @@ class InvitationResponse(InvitationBase):
 
     class Config:
         from_attributes = True
+
+
+class FileBase(BaseModel):
+    filename: str
+
+
+class FileCreate(FileBase):
+    pass
+
+
+class FileResponse(FileBase):
+    file_id: UUID
+    domain_id: UUID
+    filepath: str
+    uploaded_at: datetime
+    last_processed_at: Optional[datetime] = None
+    uploaded_by: Optional[UUID] = None
+
+    class Config:
+        from_attributes = True

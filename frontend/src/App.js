@@ -11,6 +11,7 @@ import DomainConfigPage from './pages/DomainConfigPage';  // Import DomainConfig
 import UserConfigPage from './pages/UserConfigPage';  // Import UserConfigPage
 import TenantSelectionPage from './pages/TenantSelectionPage';
 import { AuthProvider } from './context/AuthContext';
+import FileManagerPage from './pages/FileManagerPage';
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -70,6 +71,14 @@ function App() {
           element={
             <ProtectedRoute>
               <UserConfigPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/domains/:domain_id/files"
+          element={
+            <ProtectedRoute>
+              <FileManagerPage />
             </ProtectedRoute>
           }
         />

@@ -404,6 +404,15 @@ const DomainPage = () => {
           <Button colorScheme="teal" size="lg" ml={6} onClick={saveGraph}>
             Save Graph
           </Button>
+          <Button
+            colorScheme="purple"
+            size="lg"
+            ml={6}
+            mt={2}
+            onClick={() => navigate(`/domains/${domain_id}/files`)}
+          >
+            Manage files
+          </Button>
         </Flex>
 
         {/* Modal for adding new entity */}

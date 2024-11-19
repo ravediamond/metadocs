@@ -101,6 +101,9 @@ class User(Base):
     api_keys = relationship(
         "APIKey", back_populates="user", cascade="all, delete-orphan"
     )
+    files = relationship(
+        "File", back_populates="uploader", cascade="all, delete-orphan"
+    )
 
 
 # APIKey Model
@@ -165,6 +168,7 @@ class Domain(Base):
         "DomainConfig", back_populates="domain", cascade="all, delete-orphan"
     )
     user_roles = relationship("UserRole", back_populates="domain")
+    files = relationship("File", back_populates="domain", cascade="all, delete-orphan")
 
 
 # DomainVersion Model
@@ -319,3 +323,27 @@ class Invitation(Base):
     inviter = relationship("User", foreign_keys=[inviter_user_id])
     tenant = relationship("Tenant")
     domain = relationship("Domain", foreign_keys=[domain_id])
+
+
+class File(Base):
+    __tablename__ = "files"
+
+    file_id = Column(UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid)
+    domain_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("domains.domain_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    filename = Column(String(255), nullable=False)
+    filepath = Column(String(1024), nullable=False)
+    uploaded_at = Column(TIMESTAMP, default=func.now())
+    uploaded_by = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("users.user_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    last_processed_at = Column(TIMESTAMP, nullable=True)
+
+    # Relationships
+    domain = relationship("Domain", back_populates="files")
+    uploader = relationship("User", back_populates="files")
