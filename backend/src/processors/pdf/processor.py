@@ -20,6 +20,7 @@ from ..prompts.document_prompts import (
     CHECK_READABILITY_PROMPT,
     CONVERT_TO_MARKDOWN_PROMPT,
 )
+from ...llm.llm_factory import LLMConfig, LLMFactory
 
 
 @dataclass
@@ -40,6 +41,19 @@ class PDFProcessor:
         )
         self.logger = self._setup_logger()
         self.model = self._setup_model()
+
+    def _setup_llm_config(self) -> LLMConfig:
+        """Initialize the LLM config"""
+        return LLMConfig(
+            provider="bedrock",
+            profile_name="my-aws-profile",
+            model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            model_kwargs={"temperature": 0, "max_tokens": 4096},
+        )
+
+    def _setup_model(self) -> ChatBedrock:
+        """Initialize the LLM model"""
+        return LLMFactory(self.llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
         """Setup logging for the processor."""
@@ -63,14 +77,6 @@ class PDFProcessor:
         logger.addHandler(file_handler)
 
         return logger
-
-    def _setup_model(self) -> ChatBedrock:
-        """Initialize the Bedrock model."""
-        return ChatBedrock(
-            model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-            region_name="us-east-1",
-            model_kwargs=dict(temperature=0, max_tokens=4096),
-        )
 
     def _setup_directories(self):
         """Create necessary directories for processing."""

@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from ...models.models import File as FileModel
 from ...core.config import settings
 from ..prompts.ontology_prompts import SYSTEM_PROMPT, MERMAID_GENERATION_PROMPT
+from ...llm.llm_factory import LLMConfig, LLMFactory
 
 
 @dataclass
@@ -33,6 +34,19 @@ class OntologyProcessor:
         )
         self.model = self._setup_model()
 
+    def _setup_llm_config(self) -> LLMConfig:
+        """Initialize the LLM config"""
+        return LLMConfig(
+            provider="bedrock",
+            profile_name="my-aws-profile",
+            model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            model_kwargs={"temperature": 0, "max_tokens": 4096},
+        )
+
+    def _setup_model(self) -> ChatBedrock:
+        """Initialize the LLM model"""
+        return LLMFactory(self.llm_config).create_model()
+
     def _setup_logger(self) -> logging.Logger:
         logger = logging.getLogger(f"OntologyProcessor_{self.file_model.file_id}")
         logger.setLevel(logging.DEBUG)
@@ -51,13 +65,6 @@ class OntologyProcessor:
         )
         logger.addHandler(file_handler)
         return logger
-
-    def _setup_model(self) -> ChatBedrock:
-        return ChatBedrock(
-            model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-            region_name="us-east-1",
-            model_kwargs=dict(temperature=0, max_tokens=4096),
-        )
 
     def _generate_mermaid(self, entities_data: Dict, groups_data: Dict) -> str:
         self.logger.info("Generating Mermaid diagram")

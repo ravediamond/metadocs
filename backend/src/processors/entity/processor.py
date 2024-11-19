@@ -17,6 +17,7 @@ from ..prompts.entity_prompts import (
     ITERATIVE_ENTITY_EXTRACTION_PROMPT,
     ENTITY_DETAILS_PROMPT,
 )
+from ...llm.llm_factory import LLMConfig, LLMFactory
 
 
 @dataclass
@@ -49,7 +50,21 @@ class EntityProcessor:
             str(self.file_model.file_id),
             "entity_extraction",
         )
+        self.llm_config = self._setup_llm_config()
         self.model = self._setup_model()
+
+    def _setup_llm_config(self) -> LLMConfig:
+        """Initialize the LLM config"""
+        return LLMConfig(
+            provider="bedrock",
+            profile_name="my-aws-profile",
+            model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            model_kwargs={"temperature": 0, "max_tokens": 4096},
+        )
+
+    def _setup_model(self) -> ChatBedrock:
+        """Initialize the LLM model"""
+        return LLMFactory(self.llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
         """Setup logging for the processor."""
@@ -73,14 +88,6 @@ class EntityProcessor:
         logger.addHandler(file_handler)
 
         return logger
-
-    def _setup_model(self) -> ChatBedrock:
-        """Initialize the Bedrock model."""
-        return ChatBedrock(
-            model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-            region_name="us-east-1",
-            model_kwargs=dict(temperature=0, max_tokens=4096),
-        )
 
     def _initial_extraction(self, content: str) -> tuple[List[str], List[Dict]]:
         """Perform initial extraction of entities and relationships."""

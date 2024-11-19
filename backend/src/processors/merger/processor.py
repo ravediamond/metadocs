@@ -8,6 +8,13 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 from ...models.models import File as FileModel
+from ...core.config import settings
+from ..prompts.merger_prompts import (
+    SYSTEM_PROMPT,
+    ENTITY_MERGE_PROMPT,
+    ENTITY_DETAILS_PROMPT,
+)
+from ...llm.llm_factory import LLMConfig, LLMFactory
 
 
 @dataclass
@@ -26,7 +33,21 @@ class EntityMerger:
         self.output_dir = os.path.join(
             settings.PROCESSING_DIR, str(domain_id), "merged"
         )
+        self.llm_config = self._setup_llm_config()
         self.model = self._setup_model()
+
+    def _setup_llm_config(self) -> LLMConfig:
+        """Initialize the LLM config"""
+        return LLMConfig(
+            provider="bedrock",
+            profile_name="my-aws-profile",
+            model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            model_kwargs={"temperature": 0, "max_tokens": 4096},
+        )
+
+    def _setup_model(self) -> ChatBedrock:
+        """Initialize the LLM model"""
+        return LLMFactory(self.llm_config).create_model()
 
     def _merge_batch(self, entities_batch: List[Dict]) -> Dict:
         content = [
