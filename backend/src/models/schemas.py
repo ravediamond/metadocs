@@ -258,13 +258,44 @@ class FileCreate(FileBase):
     pass
 
 
-class FileResponse(FileBase):
+class FileResponse(BaseModel):
     file_id: UUID
     domain_id: UUID
+    filename: str
     filepath: str
     uploaded_at: datetime
-    last_processed_at: Optional[datetime] = None
     uploaded_by: Optional[UUID] = None
+    last_processed_at: Optional[datetime] = None
+    processing_status: Optional[str] = None
+    processing_error: Optional[str] = None
+    markdown_path: Optional[str] = None
+    entity_extraction_path: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class FileStatus(BaseModel):
+    file_id: str
+    filename: str
+    status: (
+        str  # "queued", "processing_pdf", "processing_entities", "completed", "failed"
+    )
+    error: Optional[str] = None
+    markdown_path: Optional[str] = None
+    entity_extraction_path: Optional[str] = None
+    last_processed_at: Optional[datetime] = None
+    processing_details: Dict[str, Any]
+
+
+class ProcessingStatus(BaseModel):
+    message: str
+    total_files: int
+    files_completed: Optional[int] = 0
+    files_failed: Optional[int] = 0
+    files_processing: Optional[int] = 0
+    processing_started: bool
+    file_statuses: Optional[List[FileStatus]] = None
 
     class Config:
         from_attributes = True

@@ -61,7 +61,7 @@ const FileManagerPage = () => {
       setError(null);
       try {
         const response = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/`,
+          `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/`,
           {
             method: 'GET',
             headers: {
@@ -113,7 +113,7 @@ const FileManagerPage = () => {
 
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/upload`,
+        `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/upload`,
         {
           method: 'POST',
           headers: {
@@ -165,7 +165,7 @@ const FileManagerPage = () => {
     setDeleting(true);
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/files/${fileToDelete.file_id}`,
+        `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/files/${fileToDelete.file_id}`,
         {
           method: 'DELETE',
           headers: {
@@ -209,7 +209,7 @@ const FileManagerPage = () => {
     setProcessing(true);
     try {
       const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/process_files`,
+        `${process.env.REACT_APP_BACKEND_URL}/process/tenants/${currentTenant}/domains/${domain_id}/process_files`,
         {
           method: 'POST',
           headers: {
@@ -229,7 +229,7 @@ const FileManagerPage = () => {
         });
         // Refresh the file list to update last_processed_at
         const refreshedResponse = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/`,
+          `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/`,
           {
             method: 'GET',
             headers: {

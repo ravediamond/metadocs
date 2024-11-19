@@ -344,6 +344,14 @@ class File(Base):
     )
     last_processed_at = Column(TIMESTAMP, nullable=True)
 
+    # New and updated fields
+    processing_status = Column(
+        String(50), nullable=True
+    )  # queued, processing_pdf, processing_entities, completed, failed
+    processing_error = Column(String(1024), nullable=True)
+    markdown_path = Column(String(1024), nullable=True)
+    entity_extraction_path = Column(String(1024), nullable=True)
+
     # Relationships
     domain = relationship("Domain", back_populates="files")
     uploader = relationship("User", back_populates="files")

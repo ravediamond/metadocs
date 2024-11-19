@@ -8,6 +8,7 @@ services:
     command: sh -c "./create_tables.sh && poetry run uvicorn src.main:app --host 0.0.0.0 --port 8000"
     volumes:
       - ./backend:/app
+      - ~/.aws:/root/.aws:ro # To have the AWS profile for local dev
     environment:
       - POSTGRES_DB=db
       - POSTGRES_USER=admin
@@ -28,6 +29,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./frontend:/app
+      - /app/node_modules
     ports:
       - "3000:3000"
     environment:
@@ -38,9 +40,7 @@ services:
       - backend-network
 
   postgres:
-    build:
-      context: .
-      dockerfile: Dockerfile.postgres
+    image: postgres:16
     environment:
       POSTGRES_DB: db
       POSTGRES_USER: admin
