@@ -8,13 +8,10 @@ from sqlalchemy import (
     TIMESTAMP,
     Integer,
     func,
-    UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID as UUIDType, JSONB
+from sqlalchemy.dialects.postgresql import UUID as UUIDType
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
-
-from .custom_types import Vector  # Import the custom Vector type
 
 
 def generate_api_key():
@@ -169,6 +166,7 @@ class Domain(Base):
     )
     user_roles = relationship("UserRole", back_populates="domain")
     files = relationship("File", back_populates="domain", cascade="all, delete-orphan")
+    processings = relationship("DomainProcessing", back_populates="domain")
 
 
 # DomainVersion Model
@@ -186,12 +184,17 @@ class DomainVersion(Base):
         nullable=False,
     )
     version = Column(Integer, primary_key=True)
-    graph_name = Column(String(255), nullable=False, unique=True)
     created_at = Column(TIMESTAMP, default=func.now())
+    entity_grouping_path = Column(String(1024))
+    ontology_path = Column(String(1024))
+    processing_id = Column(
+        UUIDType(as_uuid=True), ForeignKey("domain_processing.processing_id")
+    )
 
     # Relationships
     domain = relationship("Domain", back_populates="versions")
     tenant = relationship("Tenant")
+    processing = relationship("DomainProcessing")
 
 
 # DomainConfig Model
@@ -344,14 +347,55 @@ class File(Base):
     )
     last_processed_at = Column(TIMESTAMP, nullable=True)
 
-    # New and updated fields
-    processing_status = Column(
-        String(50), nullable=True
-    )  # queued, processing_pdf, processing_entities, completed, failed
+    # Processing fields
+    processing_status = Column(String(50), nullable=True)
     processing_error = Column(String(1024), nullable=True)
     markdown_path = Column(String(1024), nullable=True)
     entity_extraction_path = Column(String(1024), nullable=True)
+    entity_grouping_path = Column(String(1024), nullable=True)
+    ontology_path = Column(String(1024), nullable=True)
 
     # Relationships
     domain = relationship("Domain", back_populates="files")
     uploader = relationship("User", back_populates="files")
+
+    # Relationships
+    domain = relationship("Domain", back_populates="files")
+    uploader = relationship("User", back_populates="files")
+
+
+class DomainProcessing(Base):
+    __tablename__ = "domain_processing"
+
+    processing_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
+    )
+    domain_id = Column(
+        UUIDType(as_uuid=True), ForeignKey("domains.domain_id", ondelete="CASCADE")
+    )
+    status = Column(
+        String(50)
+    )  # merging_entities, processing_groups, processing_ontology, completed, failed
+    error = Column(String(1024))
+    merged_entities_path = Column(String(1024))
+    entity_grouping_path = Column(String(1024))
+    ontology_path = Column(String(1024))
+    created_at = Column(TIMESTAMP, default=func.now())
+    completed_at = Column(TIMESTAMP)
+
+    # Relationships
+    domain = relationship("Domain", back_populates="processings")
+    files = relationship("File", secondary="domain_processing_files")
+
+
+class DomainProcessingFiles(Base):
+    __tablename__ = "domain_processing_files"
+
+    processing_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("domain_processing.processing_id"),
+        primary_key=True,
+    )
+    file_id = Column(
+        UUIDType(as_uuid=True), ForeignKey("files.file_id"), primary_key=True
+    )

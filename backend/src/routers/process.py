@@ -5,66 +5,119 @@ from datetime import datetime
 from typing import List, Dict
 import logging
 
-from ..models.models import Domain, File as FileModel
-from ..models.schemas import ProcessingStatus, FileStatus
+from ..models.models import Domain, File as FileModel, DomainProcessing
+from ..models.schemas import ProcessingStatus, FileStatus, DomainProcessingSchema
 from ..core.database import get_db
 from ..processors.pdf.processor import PDFProcessor
 from ..processors.entity.processor import EntityProcessor
+from ..processors.groups.processor import GroupProcessor
+from ..processors.ontology.processor import OntologyProcessor
+from ..processors.merger.processor import EntityMerger
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 async def process_file_background(file_id: UUID, db: Session):
-    """Background task to process a single file"""
     try:
-        # Get a new database session for this background task
         file = db.query(FileModel).filter(FileModel.file_id == file_id).first()
         if not file:
             logger.error(f"File {file_id} not found")
             return
 
-        # Step 1: PDF Processing
-        logger.info(f"Starting PDF processing for file {file_id}")
+        # PDF and Entity Processing
         file.processing_status = "processing_pdf"
         db.commit()
-
         pdf_processor = PDFProcessor(file)
         pdf_result = pdf_processor.process()
 
         if not pdf_result.success:
-            logger.error(
-                f"PDF processing failed for file {file_id}: {pdf_result.message}"
-            )
             file.processing_status = "failed"
             file.processing_error = f"PDF processing failed: {pdf_result.message}"
             db.commit()
             return
 
         file.markdown_path = pdf_result.markdown_path
-        logger.info(f"PDF processing completed for file {file_id}")
-
-        # Step 2: Entity Extraction
-        logger.info(f"Starting entity extraction for file {file_id}")
         file.processing_status = "processing_entities"
         db.commit()
 
         entity_processor = EntityProcessor(file)
         entity_result = entity_processor.process()
 
-        if entity_result.success:
-            file.entity_extraction_path = entity_result.analysis_path
-            file.processing_status = "completed"
-            file.last_processed_at = datetime.utcnow()
-            logger.info(f"Entity extraction completed for file {file_id}")
-        else:
-            logger.error(
-                f"Entity extraction failed for file {file_id}: {entity_result.message}"
-            )
+        if not entity_result.success:
             file.processing_status = "failed"
             file.processing_error = f"Entity extraction failed: {entity_result.message}"
+            db.commit()
+            return
 
+        file.entity_extraction_path = entity_result.analysis_path
+        file.processing_status = "completed"
+        file.last_processed_at = datetime.utcnow()
         db.commit()
+
+        # Check if all files in domain are processed
+        domain_files = (
+            db.query(FileModel).filter(FileModel.domain_id == file.domain_id).all()
+        )
+
+        all_completed = all(f.processing_status == "completed" for f in domain_files)
+
+        if all_completed:
+            # Create new domain processing
+            domain_processing = DomainProcessing(
+                domain_id=file.domain_id, status="merging_entities"
+            )
+            domain_processing.files = domain_files
+            db.add(domain_processing)
+            db.commit()
+
+            # Merge entities
+            merger = EntityMerger(domain_processing)
+            merge_result = merger.process()
+
+            if not merge_result.success:
+                domain_processing.status = "failed"
+                domain_processing.error = (
+                    f"Entity merging failed: {merge_result.message}"
+                )
+                db.commit()
+                return
+
+            domain_processing.merged_entities_path = merge_result.merged_path
+            domain_processing.status = "processing_groups"
+            db.commit()
+
+            # Process groups
+            group_processor = GroupProcessor(domain_processing)
+            group_result = group_processor.process()
+
+            if not group_result.success:
+                domain_processing.status = "failed"
+                domain_processing.error = (
+                    f"Group analysis failed: {group_result.message}"
+                )
+                db.commit()
+                return
+
+            domain_processing.entity_grouping_path = group_result.groups_path
+            domain_processing.status = "processing_ontology"
+            db.commit()
+
+            # Generate ontology
+            ontology_processor = OntologyProcessor(domain_processing)
+            ontology_result = ontology_processor.process()
+
+            if not ontology_result.success:
+                domain_processing.status = "failed"
+                domain_processing.error = (
+                    f"Ontology generation failed: {ontology_result.message}"
+                )
+            else:
+                domain_processing.ontology_path = ontology_result.diagram_path
+                domain_processing.status = "completed"
+                domain_processing.completed_at = datetime.utcnow()
+
+            db.commit()
 
     except Exception as e:
         logger.error(f"Error processing file {file_id}: {str(e)}")
@@ -72,7 +125,6 @@ async def process_file_background(file_id: UUID, db: Session):
             file.processing_status = "failed"
             file.processing_error = str(e)
             db.commit()
-
     finally:
         db.close()
 
@@ -123,6 +175,29 @@ async def process_files(
         total_files=len(files),
         processing_started=True,
     )
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/domain_processing_status",
+    response_model=DomainProcessingSchema,
+)
+async def get_domain_processing_status(
+    tenant_id: UUID,
+    domain_id: UUID,
+    db: Session = Depends(get_db),
+):
+    domain_processing = (
+        db.query(DomainProcessing)
+        .join(Domain)
+        .filter(Domain.tenant_id == tenant_id, DomainProcessing.domain_id == domain_id)
+        .order_by(DomainProcessing.created_at.desc())
+        .first()
+    )
+
+    if not domain_processing:
+        raise HTTPException(status_code=404, detail="No domain processing found")
+
+    return domain_processing
 
 
 @router.get(

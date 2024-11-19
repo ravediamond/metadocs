@@ -2,7 +2,6 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import psycopg2
 
 import logging
 
@@ -21,9 +20,7 @@ POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
 # SQLAlchemy setup
-engine = create_engine(
-    DATABASE_URL, connect_args={"options": "-csearch_path=public,ag_catalog"}, echo=True
-)
+engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -35,23 +32,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-
-def get_age_connection():
-    """
-    Establishes and returns a psycopg2 connection to the PostgreSQL database with Apache AGE configured.
-    """
-    try:
-        conn = psycopg2.connect(
-            host=POSTGRES_HOST,
-            port=POSTGRES_PORT,
-            dbname=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD,
-            options="-c search_path=public,ag_catalog",
-        )
-        logger.info("psycopg2 connection for Apache AGE established.")
-        return conn
-    except Exception as e:
-        logger.error(f"Failed to connect to the database with psycopg2: {e}")
-        raise

@@ -159,19 +159,28 @@ class DomainDataSchema(BaseModel):
     domain_name: str
     description: Optional[str] = None
     tenant_id: UUID
-    version: int
     created_at: datetime
-    entities: List[Entity]  # Representing entities (e.g., concepts)
-    relationships: List[Relationship]  # Representing relationships
+    entities: Dict[str, Any]
+    groups: List[Dict[str, Any]]
+    ontology: str
+    processing_id: Optional[UUID]
+    last_processed_at: Optional[datetime]
 
     class Config:
         from_attributes = True
 
 
-# Schema for saving the domain with new version (updating entities and relationships)
-class DomainSaveSchema(BaseModel):
-    entities: List[Entity]
-    relationships: List[Relationship]
+class DomainVersionSchema(BaseModel):
+    domain_id: UUID
+    tenant_id: UUID
+    version: int
+    created_at: datetime
+    entity_grouping_path: str
+    ontology_path: str
+    file_id: UUID
+
+    class Config:
+        from_attributes = True
 
 
 # Role Schemas
@@ -270,6 +279,7 @@ class FileResponse(BaseModel):
     processing_error: Optional[str] = None
     markdown_path: Optional[str] = None
     entity_extraction_path: Optional[str] = None
+    ontology_path: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -284,8 +294,12 @@ class FileStatus(BaseModel):
     error: Optional[str] = None
     markdown_path: Optional[str] = None
     entity_extraction_path: Optional[str] = None
+    ontology_path: Optional[str] = None
     last_processed_at: Optional[datetime] = None
     processing_details: Dict[str, Any]
+
+    class Config:
+        from_attributes = True
 
 
 class ProcessingStatus(BaseModel):
@@ -296,6 +310,22 @@ class ProcessingStatus(BaseModel):
     files_processing: Optional[int] = 0
     processing_started: bool
     file_statuses: Optional[List[FileStatus]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class DomainProcessingSchema(BaseModel):
+    processing_id: UUID
+    domain_id: UUID
+    status: str
+    error: Optional[str]
+    merged_entities_path: Optional[str]
+    entity_grouping_path: Optional[str]
+    ontology_path: Optional[str]
+    created_at: datetime
+    completed_at: Optional[datetime]
+    file_ids: List[UUID]
 
     class Config:
         from_attributes = True

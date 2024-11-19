@@ -355,7 +355,7 @@ def analyze_markdown(
         }
 
         # Save analysis to file
-        output_file = os.path.join(output_dir, "entity_analysis.json")
+        output_file = os.path.join(output_dir, "entity_extraction.json")
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(analysis, f, indent=2, ensure_ascii=False)
 

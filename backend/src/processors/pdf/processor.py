@@ -33,12 +33,12 @@ class ProcessingResult:
 class PDFProcessor:
     def __init__(self, file_model: FileModel):
         self.file_model = file_model
-        self.logger = self._setup_logger()
         self.output_dir = os.path.join(
             settings.PROCESSING_DIR,
             str(self.file_model.domain_id),
             str(self.file_model.file_id),
         )
+        self.logger = self._setup_logger()
         self.model = self._setup_model()
 
     def _setup_logger(self) -> logging.Logger:

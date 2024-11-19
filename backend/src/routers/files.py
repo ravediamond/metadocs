@@ -6,7 +6,13 @@ import os
 import shutil
 import logging
 
-from ..models.models import Domain, File as FileModel, User
+from ..models.models import (
+    Domain,
+    File as FileModel,
+    User,
+    DomainProcessing,
+    DomainProcessingFiles,
+)
 from ..models.schemas import FileResponse
 from ..core.database import get_db
 from ..core.security import get_current_user
@@ -16,6 +22,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 os.makedirs(settings.PROCESSING_DIR, exist_ok=True)
+
+
+def get_file_response(file: FileModel) -> FileResponse:
+    return FileResponse(
+        file_id=file.file_id,
+        domain_id=file.domain_id,
+        filename=file.filename,
+        filepath=file.filepath,
+        uploaded_at=file.uploaded_at,
+        uploaded_by=file.uploaded_by,
+        last_processed_at=file.last_processed_at,
+        processing_status=file.processing_status,
+        processing_error=file.processing_error,
+        markdown_path=file.markdown_path,
+        entity_extraction_path=file.entity_extraction_path,
+        entity_grouping_path=file.entity_grouping_path,
+        ontology_path=file.ontology_path,
+    )
 
 
 def get_file_storage_path(domain_id: UUID, filename: str) -> str:
@@ -89,10 +113,7 @@ def upload_file(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def delete_file(
-    tenant_id: UUID,
-    domain_id: UUID,
-    file_id: UUID,
-    db: Session = Depends(get_db),
+    tenant_id: UUID, domain_id: UUID, file_id: UUID, db: Session = Depends(get_db)
 ):
     file = (
         db.query(FileModel)
@@ -104,28 +125,45 @@ def delete_file(
         )
         .first()
     )
+
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    try:
-        os.remove(file.filepath)
-        if file.markdown_path and os.path.exists(file.markdown_path):
-            os.remove(file.markdown_path)
-        if file.entity_extraction_path and os.path.exists(file.entity_extraction_path):
-            os.remove(file.entity_extraction_path)
-    except FileNotFoundError:
-        logger.warning(f"One or more files not found for {file_id}")
-    except Exception as e:
-        logger.error(f"Error deleting files for {file_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete files")
+    # List of paths to cleanup
+    paths_to_remove = [
+        file.filepath,
+        file.markdown_path,
+        file.entity_extraction_path,
+        file.entity_grouping_path,
+        file.ontology_path,
+    ]
+
+    for path in paths_to_remove:
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception as e:
+                logger.warning(f"Failed to remove file {path}: {e}")
+
+    # Also check domain processing that uses this file
+    domain_processings = (
+        db.query(DomainProcessing)
+        .join(DomainProcessingFiles)
+        .filter(DomainProcessingFiles.file_id == file_id)
+        .all()
+    )
+
+    for processing in domain_processings:
+        if processing.merged_entities_path and os.path.exists(
+            processing.merged_entities_path
+        ):
+            try:
+                os.remove(processing.merged_entities_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove merged entities file: {e}")
 
     db.delete(file)
-    try:
-        db.commit()
-    except Exception as e:
-        logger.error(f"Database commit failed while deleting file {file_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete file record")
-
+    db.commit()
     return
 
 
