@@ -13,118 +13,139 @@ from ..processors.entity.processor import EntityProcessor
 from ..processors.groups.processor import GroupProcessor
 from ..processors.ontology.processor import OntologyProcessor
 from ..processors.merger.processor import EntityMerger
+from ..core.config import ConfigManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def process_file_background(file_id: UUID, db: Session):
+async def process_file(file: FileModel, config: ConfigManager, db: Session) -> bool:
+    """Process a single file through PDF and Entity extraction stages"""
     try:
-        file = db.query(FileModel).filter(FileModel.file_id == file_id).first()
-        if not file:
-            logger.error(f"File {file_id} not found")
-            return
-
-        # PDF and Entity Processing
+        # PDF Processing
         file.processing_status = "processing_pdf"
         db.commit()
-        pdf_processor = PDFProcessor(file)
+
+        pdf_processor = PDFProcessor(file, config)
         pdf_result = pdf_processor.process()
 
         if not pdf_result.success:
             file.processing_status = "failed"
             file.processing_error = f"PDF processing failed: {pdf_result.message}"
             db.commit()
-            return
+            return False
 
         file.markdown_path = pdf_result.markdown_path
         file.processing_status = "processing_entities"
         db.commit()
 
-        entity_processor = EntityProcessor(file)
+        # Entity Processing
+        entity_processor = EntityProcessor(file, config)
         entity_result = entity_processor.process()
 
         if not entity_result.success:
             file.processing_status = "failed"
             file.processing_error = f"Entity extraction failed: {entity_result.message}"
             db.commit()
-            return
+            return False
 
         file.entity_extraction_path = entity_result.analysis_path
         file.processing_status = "completed"
         file.last_processed_at = datetime.utcnow()
         db.commit()
-
-        # Check if all files in domain are processed
-        domain_files = (
-            db.query(FileModel).filter(FileModel.domain_id == file.domain_id).all()
-        )
-
-        all_completed = all(f.processing_status == "completed" for f in domain_files)
-
-        if all_completed:
-            # Create new domain processing
-            domain_processing = DomainProcessing(
-                domain_id=file.domain_id, status="merging_entities"
-            )
-            domain_processing.files = domain_files
-            db.add(domain_processing)
-            db.commit()
-
-            # Merge entities
-            merger = EntityMerger(domain_processing)
-            merge_result = merger.process()
-
-            if not merge_result.success:
-                domain_processing.status = "failed"
-                domain_processing.error = (
-                    f"Entity merging failed: {merge_result.message}"
-                )
-                db.commit()
-                return
-
-            domain_processing.merged_entities_path = merge_result.merged_path
-            domain_processing.status = "processing_groups"
-            db.commit()
-
-            # Process groups
-            group_processor = GroupProcessor(domain_processing)
-            group_result = group_processor.process()
-
-            if not group_result.success:
-                domain_processing.status = "failed"
-                domain_processing.error = (
-                    f"Group analysis failed: {group_result.message}"
-                )
-                db.commit()
-                return
-
-            domain_processing.entity_grouping_path = group_result.groups_path
-            domain_processing.status = "processing_ontology"
-            db.commit()
-
-            # Generate ontology
-            ontology_processor = OntologyProcessor(domain_processing)
-            ontology_result = ontology_processor.process()
-
-            if not ontology_result.success:
-                domain_processing.status = "failed"
-                domain_processing.error = (
-                    f"Ontology generation failed: {ontology_result.message}"
-                )
-            else:
-                domain_processing.ontology_path = ontology_result.diagram_path
-                domain_processing.status = "completed"
-                domain_processing.completed_at = datetime.utcnow()
-
-            db.commit()
+        return True
 
     except Exception as e:
-        logger.error(f"Error processing file {file_id}: {str(e)}")
-        if file:
-            file.processing_status = "failed"
-            file.processing_error = str(e)
+        logger.error(f"Error processing file {file.file_id}: {str(e)}")
+        file.processing_status = "failed"
+        file.processing_error = str(e)
+        db.commit()
+        return False
+
+
+async def process_domain(
+    domain_id: UUID, files: List[FileModel], config: ConfigManager, db: Session
+):
+    """Process domain-level analysis after all files are processed"""
+    try:
+        domain_processing = DomainProcessing(
+            domain_id=domain_id, status="merging_entities", files=files
+        )
+        db.add(domain_processing)
+        db.commit()
+
+        # Merge entities from all files
+        merger = EntityMerger(domain_processing, config)  # Pass config here
+        merge_result = merger.process()
+
+        if not merge_result.success:
+            domain_processing.status = "failed"
+            domain_processing.error = f"Entity merging failed: {merge_result.message}"
             db.commit()
+            return
+
+        domain_processing.merged_entities_path = merge_result.merged_path
+        domain_processing.status = "processing_groups"
+        db.commit()
+
+        # Process groups
+        group_processor = GroupProcessor(domain_processing, config)
+        group_result = group_processor.process()
+
+        if not group_result.success:
+            domain_processing.status = "failed"
+            domain_processing.error = f"Group analysis failed: {group_result.message}"
+            db.commit()
+            return
+
+        domain_processing.entity_grouping_path = group_result.groups_path
+        domain_processing.status = "processing_ontology"
+        db.commit()
+
+        # Generate ontology
+        ontology_processor = OntologyProcessor(domain_processing, config)
+        ontology_result = ontology_processor.process()
+
+        if not ontology_result.success:
+            domain_processing.status = "failed"
+            domain_processing.error = (
+                f"Ontology generation failed: {ontology_result.message}"
+            )
+        else:
+            domain_processing.ontology_path = ontology_result.diagram_path
+            domain_processing.status = "completed"
+            domain_processing.completed_at = datetime.utcnow()
+
+        db.commit()
+
+    except Exception as e:
+        logger.error(f"Error processing domain {domain_id}: {str(e)}")
+        if domain_processing:
+            domain_processing.status = "failed"
+            domain_processing.error = str(e)
+            db.commit()
+
+
+async def process_all(domain_id: UUID, db: Session):
+    """Main processing coordinator"""
+    try:
+        # Get domain info and setup config
+        domain = db.query(Domain).filter(Domain.domain_id == domain_id).first()
+        config = ConfigManager(db, str(domain.tenant_id), str(domain.domain_id))
+
+        # Get all files for processing
+        files = db.query(FileModel).filter(FileModel.domain_id == domain_id).all()
+
+        # Process all files first
+        success = True
+        for file in files:
+            file_success = await process_file(file, config, db)
+            success = success and file_success
+
+        # If all files processed successfully, start domain processing
+        if success:
+            await process_domain(domain_id, files, config, db)
+
     finally:
         db.close()
 
@@ -135,17 +156,13 @@ async def process_file_background(file_id: UUID, db: Session):
     response_model=ProcessingStatus,
     summary="Process all files in a domain",
 )
-async def process_files(
+async def start_processing(
     tenant_id: UUID,
     domain_id: UUID,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """
-    Initiates processing of all files associated with a specific domain.
-    Processing includes PDF conversion and entity extraction.
-    """
-    # Validate domain exists and belongs to tenant
+    # Validate domain exists
     domain = (
         db.query(Domain)
         .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)
@@ -154,21 +171,20 @@ async def process_files(
     if not domain:
         raise HTTPException(status_code=404, detail="Domain not found")
 
-    # Get all files for the domain
+    # Get all files
     files = db.query(FileModel).filter(FileModel.domain_id == domain_id).all()
-
     if not files:
         return ProcessingStatus(
             message="No files to process.", total_files=0, processing_started=False
         )
 
-    # Initialize processing for each file
+    # Queue processing
     for file in files:
         file.processing_status = "queued"
         file.processing_error = None
-        background_tasks.add_task(process_file_background, file_id=file.file_id, db=db)
-
     db.commit()
+
+    background_tasks.add_task(process_all, domain_id=domain_id, db=db)
 
     return ProcessingStatus(
         message=f"Processing started for {len(files)} files.",

@@ -32,7 +32,7 @@ class LLMFactory:
                 },
             }
             if self.config.profile_name:
-                kwargs["profile_name"] = self.config.profile_name
+                kwargs["credentials_profile_name"] = self.config.profile_name
             return ChatBedrock(**kwargs)
 
         elif self.config.provider == "anthropic":

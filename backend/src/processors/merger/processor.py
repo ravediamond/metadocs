@@ -1,20 +1,18 @@
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 import json
-import logging
-from datetime import datetime
 import os
 from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
-from ...models.models import File as FileModel
-from ...core.config import settings
+from ...models.models import DomainProcessing
 from ..prompts.merger_prompts import (
     SYSTEM_PROMPT,
     ENTITY_MERGE_PROMPT,
     ENTITY_DETAILS_PROMPT,
 )
 from ...llm.llm_factory import LLMConfig, LLMFactory
+from ...core.config import ConfigManager
 
 
 @dataclass
@@ -26,28 +24,32 @@ class MergeResult:
 
 
 class EntityMerger:
-    def __init__(self, domain_id: str, file_models: List[FileModel]):
-        self.domain_id = domain_id
-        self.file_models = file_models
+    def __init__(self, processing: DomainProcessing, config: ConfigManager):
+        self.domain_id = processing.domain_id
+        self.file_models = processing.files
         self.logger = self._setup_logger()
+        self.config = config
         self.output_dir = os.path.join(
-            settings.PROCESSING_DIR, str(domain_id), "merged"
+            self.config.get("processing_dir", "processing_output"),
+            str(self.domain_id),
+            "merged",
         )
-        self.llm_config = self._setup_llm_config()
         self.model = self._setup_model()
 
-    def _setup_llm_config(self) -> LLMConfig:
-        """Initialize the LLM config"""
-        return LLMConfig(
-            provider="bedrock",
-            profile_name="my-aws-profile",
-            model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-            model_kwargs={"temperature": 0, "max_tokens": 4096},
-        )
-
     def _setup_model(self) -> ChatBedrock:
-        """Initialize the LLM model"""
-        return LLMFactory(self.llm_config).create_model()
+        """Initialize the LLM model based on domain configuration"""
+        llm_config = LLMConfig(
+            provider=self.config.get("llm_provider", "bedrock"),
+            profile_name=self.config.get("aws_profile"),
+            model_id=self.config.get(
+                "aws_model_id", "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+            ),
+            model_kwargs={
+                "temperature": float(self.config.get("llm_temperature", 0)),
+                "max_tokens": int(self.config.get("llm_max_tokens", 4096)),
+            },
+        )
+        return LLMFactory(llm_config).create_model()
 
     def _merge_batch(self, entities_batch: List[Dict]) -> Dict:
         content = [

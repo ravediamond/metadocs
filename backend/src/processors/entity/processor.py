@@ -10,7 +10,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 import concurrent.futures
 
 from ...models.models import File as FileModel
-from ...core.config import settings
 from ..prompts.entity_prompts import (
     SYSTEM_PROMPT,
     INITIAL_ENTITY_EXTRACTION_PROMPT,
@@ -41,30 +40,32 @@ class ProcessingResult:
 
 
 class EntityProcessor:
-    def __init__(self, file_model: FileModel):
+    def __init__(self, file_model: FileModel, config_manager):
         self.file_model = file_model
-        self.logger = self._setup_logger()
+        self.config = config_manager
         self.output_dir = os.path.join(
-            settings.PROCESSING_DIR,
+            self.config.get("processing_dir", "processing_output"),
             str(self.file_model.domain_id),
             str(self.file_model.file_id),
             "entity_extraction",
         )
-        self.llm_config = self._setup_llm_config()
+        self.logger = self._setup_logger()
         self.model = self._setup_model()
-
-    def _setup_llm_config(self) -> LLMConfig:
-        """Initialize the LLM config"""
-        return LLMConfig(
-            provider="bedrock",
-            profile_name="my-aws-profile",
-            model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-            model_kwargs={"temperature": 0, "max_tokens": 4096},
-        )
 
     def _setup_model(self) -> ChatBedrock:
         """Initialize the LLM model"""
-        return LLMFactory(self.llm_config).create_model()
+        llm_config = LLMConfig(
+            provider=self.config.get("llm_provider", "bedrock"),
+            profile_name=self.config.get("aws_profile"),
+            model_id=self.config.get(
+                "aws_model_id", "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+            ),
+            model_kwargs={
+                "temperature": float(self.config.get("llm_temperature", 0)),
+                "max_tokens": int(self.config.get("llm_max_tokens", 4096)),
+            },
+        )
+        return LLMFactory(llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
         """Setup logging for the processor."""
@@ -192,9 +193,10 @@ class EntityProcessor:
             self.logger.error(f"Error getting details for entity {entity}: {str(e)}")
             raise
 
-    def process(self, iterations: int = 3) -> ProcessingResult:
+    def process(self, iterations: Optional[int] = None) -> ProcessingResult:
         """Process the file and extract entities and relationships."""
         try:
+            iterations = iterations or int(self.config.get("entity_max_iterations", 3))
             self.logger.info(
                 f"Starting entity extraction for file: {self.file_model.filename}"
             )

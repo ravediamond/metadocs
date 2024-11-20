@@ -1,6 +1,9 @@
+import os
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
-from models import DomainConfig
+from ..models.models import DomainConfig
+
+SYSTEM_MODE = os.getenv("SYSTEM_MODE", "open_source")
 
 
 class ConfigManager:

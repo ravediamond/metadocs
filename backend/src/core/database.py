@@ -7,7 +7,7 @@ import logging
 
 logging.basicConfig()
 logger = logging.getLogger("sqlalchemy.engine")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 # Get environment variables for the database
 POSTGRES_USER = os.getenv("POSTGRES_USER", "admin")

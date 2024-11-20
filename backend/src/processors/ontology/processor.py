@@ -9,7 +9,6 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from ...models.models import File as FileModel
-from ...core.config import settings
 from ..prompts.ontology_prompts import SYSTEM_PROMPT, MERMAID_GENERATION_PROMPT
 from ...llm.llm_factory import LLMConfig, LLMFactory
 
@@ -23,29 +22,32 @@ class ProcessingResult:
 
 
 class OntologyProcessor:
-    def __init__(self, file_model: FileModel):
+    def __init__(self, file_model: FileModel, config_manager):
         self.file_model = file_model
-        self.logger = self._setup_logger()
+        self.config = config_manager
         self.output_dir = os.path.join(
-            settings.PROCESSING_DIR,
+            self.config.get("processing_dir", "processing_output"),
             str(self.file_model.domain_id),
             str(self.file_model.file_id),
             "ontology",
         )
+        self.logger = self._setup_logger()
         self.model = self._setup_model()
-
-    def _setup_llm_config(self) -> LLMConfig:
-        """Initialize the LLM config"""
-        return LLMConfig(
-            provider="bedrock",
-            profile_name="my-aws-profile",
-            model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-            model_kwargs={"temperature": 0, "max_tokens": 4096},
-        )
 
     def _setup_model(self) -> ChatBedrock:
         """Initialize the LLM model"""
-        return LLMFactory(self.llm_config).create_model()
+        llm_config = LLMConfig(
+            provider=self.config.get("llm_provider", "bedrock"),
+            profile_name=self.config.get("aws_profile"),
+            model_id=self.config.get(
+                "aws_model_id", "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+            ),
+            model_kwargs={
+                "temperature": float(self.config.get("llm_temperature", 0)),
+                "max_tokens": int(self.config.get("llm_max_tokens", 4096)),
+            },
+        )
+        return LLMFactory(llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
         logger = logging.getLogger(f"OntologyProcessor_{self.file_model.file_id}")

@@ -12,22 +12,246 @@ import {
   Select,
   Alert,
   AlertIcon,
+  Divider,
+  FormControl,
+  FormLabel,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
+  Grid,
+  GridItem,
 } from '@chakra-ui/react';
 import AuthContext from '../context/AuthContext';
 
+const LLMConfigSection = ({ config, onConfigChange, isLoading }) => {
+  const provider = config?.llm_provider || 'bedrock';
+
+  return (
+    <Box mt={8}>
+      <Heading size="lg" mb={6}>LLM Configuration</Heading>
+      <Text color="gray.600" mb={4}>Configure your LLM Model settings here.</Text>
+
+      <Grid templateColumns="repeat(2, 1fr)" gap={6}>
+        <GridItem>
+          <FormControl>
+            <FormLabel>LLM Provider</FormLabel>
+            <Select
+              value={provider}
+              onChange={(e) => onConfigChange('llm_provider', e.target.value)}
+              isDisabled={isLoading}
+            >
+              <option value="bedrock">AWS Bedrock</option>
+              <option value="anthropic">Anthropic</option>
+            </Select>
+          </FormControl>
+        </GridItem>
+
+        <GridItem>
+          <FormControl>
+            <FormLabel>Model ID</FormLabel>
+            <Input
+              value={config?.aws_model_id || ''}
+              onChange={(e) => onConfigChange('aws_model_id', e.target.value)}
+              placeholder="Enter model ID"
+              isDisabled={isLoading}
+            />
+          </FormControl>
+        </GridItem>
+
+        <GridItem>
+          <FormControl>
+            <FormLabel>Temperature</FormLabel>
+            <NumberInput
+              min={0}
+              max={1}
+              step={0.1}
+              value={config?.llm_temperature || 0}
+              onChange={(value) => onConfigChange('llm_temperature', value)}
+              isDisabled={isLoading}
+            >
+              <NumberInputField />
+              <NumberInputStepper>
+                <NumberIncrementStepper />
+                <NumberDecrementStepper />
+              </NumberInputStepper>
+            </NumberInput>
+          </FormControl>
+        </GridItem>
+
+        <GridItem>
+          <FormControl>
+            <FormLabel>Max Tokens</FormLabel>
+            <NumberInput
+              min={1}
+              max={100000}
+              step={1}
+              value={config?.llm_max_tokens || 1000}
+              onChange={(value) => onConfigChange('llm_max_tokens', value)}
+              isDisabled={isLoading}
+            >
+              <NumberInputField />
+              <NumberInputStepper>
+                <NumberIncrementStepper />
+                <NumberDecrementStepper />
+              </NumberInputStepper>
+            </NumberInput>
+          </FormControl>
+        </GridItem>
+
+        {provider === 'bedrock' && (
+          <>
+            <GridItem>
+              <FormControl>
+                <FormLabel>AWS Region</FormLabel>
+                <Input
+                  value={config?.aws_region || ''}
+                  onChange={(e) => onConfigChange('aws_region', e.target.value)}
+                  placeholder="Enter AWS region"
+                  isDisabled={isLoading}
+                />
+              </FormControl>
+            </GridItem>
+
+            <GridItem>
+              <FormControl>
+                <FormLabel>AWS Profile</FormLabel>
+                <Input
+                  value={config?.aws_profile || ''}
+                  onChange={(e) => onConfigChange('aws_profile', e.target.value)}
+                  placeholder="Enter AWS profile name (optional)"
+                  isDisabled={isLoading}
+                />
+              </FormControl>
+            </GridItem>
+          </>
+        )}
+
+        {provider === 'anthropic' && (
+          <GridItem>
+            <FormControl>
+              <FormLabel>Anthropic API Key</FormLabel>
+              <Input
+                type="password"
+                value={config?.anthropic_api_key || ''}
+                onChange={(e) => onConfigChange('anthropic_api_key', e.target.value)}
+                placeholder="Enter Anthropic API key"
+                isDisabled={isLoading}
+              />
+            </FormControl>
+          </GridItem>
+        )}
+      </Grid>
+    </Box>
+  );
+};
+
+const ProcessingConfigSection = ({ config, onConfigChange, isLoading }) => {
+  return (
+    <Box mt={8}>
+      <Heading size="lg" mb={6}>Processing Configuration</Heading>
+      <Text color="gray.600" mb={4}>These are domain-wide processing settings.</Text>
+
+      <Grid templateColumns="repeat(2, 1fr)" gap={6}>
+        <GridItem>
+          <FormControl>
+            <FormLabel>Processing Directory</FormLabel>
+            <Input
+              value={config?.processing_dir || ''}
+              onChange={(e) => onConfigChange('processing_dir', e.target.value)}
+              placeholder="Enter processing directory"
+              isDisabled={isLoading}
+            />
+          </FormControl>
+        </GridItem>
+
+        <GridItem>
+          <FormControl>
+            <FormLabel>PDF Quality Threshold</FormLabel>
+            <NumberInput
+              value={config?.pdf_quality_threshold || 0}
+              onChange={(value) => onConfigChange('pdf_quality_threshold', value)}
+              isDisabled={isLoading}
+            >
+              <NumberInputField />
+              <NumberInputStepper>
+                <NumberIncrementStepper />
+                <NumberDecrementStepper />
+              </NumberInputStepper>
+            </NumberInput>
+          </FormControl>
+        </GridItem>
+
+        <GridItem>
+          <FormControl>
+            <FormLabel>PDF Max Iterations</FormLabel>
+            <NumberInput
+              value={config?.pdf_max_iterations || 0}
+              onChange={(value) => onConfigChange('pdf_max_iterations', value)}
+              isDisabled={isLoading}
+            >
+              <NumberInputField />
+              <NumberInputStepper>
+                <NumberIncrementStepper />
+                <NumberDecrementStepper />
+              </NumberInputStepper>
+            </NumberInput>
+          </FormControl>
+        </GridItem>
+
+        <GridItem>
+          <FormControl>
+            <FormLabel>Entity Max Iterations</FormLabel>
+            <NumberInput
+              value={config?.entity_max_iterations || 0}
+              onChange={(value) => onConfigChange('entity_max_iterations', value)}
+              isDisabled={isLoading}
+            >
+              <NumberInputField />
+              <NumberInputStepper>
+                <NumberIncrementStepper />
+                <NumberDecrementStepper />
+              </NumberInputStepper>
+            </NumberInput>
+          </FormControl>
+        </GridItem>
+
+        <GridItem>
+          <FormControl>
+            <FormLabel>Entity Batch Size</FormLabel>
+            <NumberInput
+              value={config?.entity_batch_size || 0}
+              onChange={(value) => onConfigChange('entity_batch_size', value)}
+              isDisabled={isLoading}
+            >
+              <NumberInputField />
+              <NumberInputStepper>
+                <NumberIncrementStepper />
+                <NumberDecrementStepper />
+              </NumberInputStepper>
+            </NumberInput>
+          </FormControl>
+        </GridItem>
+      </Grid>
+    </Box>
+  );
+};
+
 const DomainConfigPage = () => {
   const { domain_id } = useParams();
-  const { token, currentTenant, currentUserRole } = useContext(AuthContext); // Assuming role is part of AuthContext
-  const [config, setConfig] = useState([]);
-  const [newConfig, setNewConfig] = useState({});
+  const { token, currentTenant, currentUserRole } = useContext(AuthContext);
+  const [config, setConfig] = useState({});
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [selectedRoles, setSelectedRoles] = useState({});
   const [message, setMessage] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Fetch domain configuration
   const fetchConfig = async () => {
     try {
+      setIsLoading(true);
       const response = await fetch(
         `${process.env.REACT_APP_BACKEND_URL}/config/tenants/${currentTenant}/domains/${domain_id}/config`,
         {
@@ -38,12 +262,20 @@ const DomainConfigPage = () => {
       );
       const data = await response.json();
       if (response.ok) {
-        setConfig(data);
+        // Transform array of configs into an object
+        const configObj = data.reduce((acc, item) => {
+          acc[item.config_key] = item.config_value;
+          return acc;
+        }, {});
+        setConfig(configObj);
       } else {
-        console.error('Failed to fetch domain config');
+        setMessage({ type: 'error', text: 'Failed to fetch domain config' });
       }
     } catch (error) {
       console.error('Error fetching domain config:', error);
+      setMessage({ type: 'error', text: 'Error loading configuration' });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -97,39 +329,44 @@ const DomainConfigPage = () => {
       fetchUsers();
       fetchRoles();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domain_id, token]);
 
   const handleInputChange = (key, value) => {
-    setNewConfig((prev) => ({ ...prev, [key]: value }));
+    setConfig(prev => ({
+      ...prev,
+      [key]: value
+    }));
   };
 
   const handleSubmit = async () => {
-    for (const key in newConfig) {
-      try {
-        const response = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL}/config/tenants/${currentTenant}/domains/${domain_id}/config`,
-          {
-            method: 'PUT',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              config_key: key,
-              config_value: newConfig[key],
-            }),
-          }
-        );
+    setIsLoading(true);
+    try {
+      const responses = await Promise.all(
+        Object.entries(config).map(([key, value]) =>
+          fetch(
+            `${process.env.REACT_APP_BACKEND_URL}/config/tenants/${currentTenant}/domains/${domain_id}/config?config_key=${encodeURIComponent(key)}&config_value=${encodeURIComponent(value.toString())}`,
+            {
+              method: 'PUT',
+              headers: {
+                Authorization: `Bearer ${token}`,
+              }
+            }
+          )
+        )
+      );
 
-        if (!response.ok) {
-          console.error('Failed to update config');
-        }
-      } catch (error) {
-        console.error('Error updating config:', error);
+      if (responses.every(response => response.ok)) {
+        setMessage({ type: 'success', text: 'Configuration updated successfully' });
+        fetchConfig();
+      } else {
+        setMessage({ type: 'error', text: 'Failed to update some configuration values' });
       }
+    } catch (error) {
+      console.error('Error updating config:', error);
+      setMessage({ type: 'error', text: 'Error saving configuration' });
+    } finally {
+      setIsLoading(false);
     }
-    window.location.reload();
   };
 
   // Handle role selection change
@@ -200,15 +437,20 @@ const DomainConfigPage = () => {
     }
   };
 
+  if (isLoading && Object.keys(config).length === 0) {
+    return (
+      <Box bg="gray.50" minH="100vh" py={12}>
+        <Container maxW="container.xl">
+          <Text>Loading configuration...</Text>
+        </Container>
+      </Box>
+    );
+  }
+
   return (
     <Box bg="gray.50" minH="100vh" py={12}>
       <Container maxW="container.xl">
-        <Heading
-          fontSize={{ base: '3xl', md: '4xl' }}
-          fontWeight="bold"
-          color="gray.800"
-          mb={8}
-        >
+        <Heading fontSize={{ base: '3xl', md: '4xl' }} fontWeight="bold" color="gray.800" mb={8}>
           Domain Configuration
         </Heading>
 
@@ -219,41 +461,17 @@ const DomainConfigPage = () => {
           </Alert>
         )}
 
-        {/* Domain Configurations */}
-        {config.length > 0 ? (
-          <Stack spacing={6}>
-            {config.map((item) => (
-              <Box
-                key={item.config_id}
-                p={6}
-                border="1px solid"
-                borderColor="gray.200"
-                borderRadius="lg"
-                bg="white"
-                shadow="sm"
-                _hover={{ shadow: 'md' }}
-              >
-                <Text fontSize="lg" mb={4} fontWeight="semibold" color="blue.600">
-                  {item.config_key}
-                </Text>
-                <Text fontSize="md" color="gray.600" mb={4}>
-                  Current Value: {item.config_value}
-                </Text>
-                <Input
-                  size="lg"
-                  placeholder={`Update ${item.config_key}`}
-                  onChange={(e) => handleInputChange(item.config_key, e.target.value)}
-                  bg="gray.50"
-                  _focus={{ borderColor: 'blue.500' }}
-                />
-              </Box>
-            ))}
-          </Stack>
-        ) : (
-          <Text fontSize="lg" color="gray.600" textAlign="center">
-            No configuration available for this domain.
-          </Text>
-        )}
+        <LLMConfigSection
+          config={config}
+          onConfigChange={handleInputChange}
+          isLoading={isLoading}
+        />
+        <Divider my={8} />
+        <ProcessingConfigSection
+          config={config}
+          onConfigChange={handleInputChange}
+          isLoading={isLoading}
+        />
 
         <Flex justify="center" mt={10}>
           <Button
@@ -262,14 +480,15 @@ const DomainConfigPage = () => {
             px={10}
             py={6}
             onClick={handleSubmit}
+            isLoading={isLoading}
             shadow="md"
             _hover={{ bg: 'blue.600' }}
           >
-            Save Config Changes
+            Save All Configuration Changes
           </Button>
         </Flex>
 
-        {/* Conditional Role Assignment Rendering */}
+        {/* Role Management Section */}
         {["admin", "owner"].includes(currentUserRole) && (
           <>
             <Heading
@@ -305,6 +524,7 @@ const DomainConfigPage = () => {
                       placeholder="Assign a new role"
                       value={selectedRoles[user.user_id] || ''}
                       onChange={(e) => handleRoleChange(user.user_id, e.target.value)}
+                      mb={4}
                     >
                       {roles.map((role) => (
                         <option key={role.role_id} value={role.role_name}>
@@ -312,11 +532,12 @@ const DomainConfigPage = () => {
                         </option>
                       ))}
                     </Select>
-                    <Flex mt={4}>
+                    <Flex>
                       <Button
                         colorScheme="blue"
                         onClick={() => assignRole(user.user_id)}
                         mr={4}
+                        isDisabled={!selectedRoles[user.user_id]}
                       >
                         Assign Role
                       </Button>

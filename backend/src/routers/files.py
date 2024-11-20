@@ -16,12 +16,10 @@ from ..models.models import (
 from ..models.schemas import FileResponse
 from ..core.database import get_db
 from ..core.security import get_current_user
-from ..core.config import settings
+from ..core.config import ConfigManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-os.makedirs(settings.PROCESSING_DIR, exist_ok=True)
 
 
 def get_file_response(file: FileModel) -> FileResponse:
@@ -42,8 +40,9 @@ def get_file_response(file: FileModel) -> FileResponse:
     )
 
 
-def get_file_storage_path(domain_id: UUID, filename: str) -> str:
-    domain_path = os.path.join(settings.PROCESSING_DIR, str(domain_id))
+def get_file_storage_path(config: ConfigManager, domain_id: UUID, filename: str) -> str:
+    processing_dir = config.get("processing_dir", "processing_output")
+    domain_path = os.path.join(processing_dir, str(domain_id))
     os.makedirs(domain_path, exist_ok=True)
     return os.path.join(domain_path, filename)
 
@@ -68,7 +67,11 @@ def upload_file(
     if not domain:
         raise HTTPException(status_code=404, detail="Domain not found")
 
-    file_path = get_file_storage_path(domain_id, uploaded_file.filename)
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
+    processing_dir = config.get("processing_dir", "processing_output")
+    os.makedirs(processing_dir, exist_ok=True)
+
+    file_path = get_file_storage_path(config, domain_id, uploaded_file.filename)
 
     try:
         with open(file_path, "wb") as buffer:
@@ -93,19 +96,7 @@ def upload_file(
         raise HTTPException(status_code=500, detail="Failed to save file record")
     db.refresh(new_file)
 
-    return FileResponse(
-        file_id=new_file.file_id,
-        domain_id=new_file.domain_id,
-        filename=new_file.filename,
-        filepath=new_file.filepath,
-        uploaded_at=new_file.uploaded_at,
-        uploaded_by=new_file.uploaded_by,
-        last_processed_at=new_file.last_processed_at,
-        processing_status=new_file.processing_status,
-        processing_error=new_file.processing_error,
-        markdown_path=new_file.markdown_path,
-        entity_extraction_path=new_file.entity_extraction_path,
-    )
+    return get_file_response(new_file)
 
 
 @router.delete(
@@ -113,7 +104,10 @@ def upload_file(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def delete_file(
-    tenant_id: UUID, domain_id: UUID, file_id: UUID, db: Session = Depends(get_db)
+    tenant_id: UUID,
+    domain_id: UUID,
+    file_id: UUID,
+    db: Session = Depends(get_db),
 ):
     file = (
         db.query(FileModel)
@@ -185,20 +179,4 @@ def list_files(
         raise HTTPException(status_code=404, detail="Domain not found")
 
     files = db.query(FileModel).filter(FileModel.domain_id == domain_id).all()
-
-    return [
-        FileResponse(
-            file_id=file.file_id,
-            domain_id=file.domain_id,
-            filename=file.filename,
-            filepath=file.filepath,
-            uploaded_at=file.uploaded_at,
-            uploaded_by=file.uploaded_by,
-            last_processed_at=file.last_processed_at,
-            processing_status=file.processing_status,
-            processing_error=file.processing_error,
-            markdown_path=file.markdown_path,
-            entity_extraction_path=file.entity_extraction_path,
-        )
-        for file in files
-    ]
+    return [get_file_response(file) for file in files]
