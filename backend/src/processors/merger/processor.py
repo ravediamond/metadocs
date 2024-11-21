@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import List, Dict, Optional
 import json
 import os
+import logging
+from datetime import datetime
 from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -27,13 +29,13 @@ class EntityMerger:
     def __init__(self, processing: DomainProcessing, config: ConfigManager):
         self.domain_id = processing.domain_id
         self.file_models = processing.files
-        self.logger = self._setup_logger()
         self.config = config
         self.output_dir = os.path.join(
             self.config.get("processing_dir", "processing_output"),
             str(self.domain_id),
             "merged",
         )
+        self.logger = self._setup_logger()
         self.model = self._setup_model()
 
     def _setup_model(self) -> ChatBedrock:
@@ -50,6 +52,26 @@ class EntityMerger:
             },
         )
         return LLMFactory(llm_config).create_model()
+
+    def _setup_logger(self) -> logging.Logger:
+        logger = logging.getLogger(f"EntityMergerProcessor_{self.domain_id}")
+        logger.setLevel(logging.DEBUG)
+
+        log_dir = os.path.join(self.output_dir, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+
+        file_handler = logging.FileHandler(
+            os.path.join(
+                log_dir,
+                f"entity_merger_processor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+            )
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+        logger.addHandler(file_handler)
+        return logger
 
     def _merge_batch(self, entities_batch: List[Dict]) -> Dict:
         content = [
@@ -86,6 +108,26 @@ class EntityMerger:
         try:
             self.logger.info(f"Starting entity merging for domain {self.domain_id}")
             os.makedirs(self.output_dir, exist_ok=True)
+
+            if len(self.file_models) == 1:
+                self.logger.info(
+                    "Single file detected, returning entities without merging"
+                )
+                with open(self.file_models[0].entity_extraction_path, "r") as f:
+                    entities_data = json.load(f)
+                    # Check if 'entities' key exists and get its value, otherwise use the whole data
+                    entities_to_return = entities_data.get("entities", entities_data)
+
+                merged_path = os.path.join(self.output_dir, "merged_entities.json")
+                with open(merged_path, "w") as f:
+                    json.dump({"entities": entities_to_return}, f, indent=2)
+
+                return MergeResult(
+                    success=True,
+                    message="Single file processed without merging",
+                    data={"entities": entities_to_return},
+                    merged_path=merged_path,
+                )
 
             # Collect all entities
             all_entities = {}

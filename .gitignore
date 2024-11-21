@@ -4,6 +4,7 @@
 ### Personnal
 **/*.pdf
 **/*.png
+backend/processing_output/*
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
