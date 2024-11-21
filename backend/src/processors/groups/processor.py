@@ -10,7 +10,7 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ...models.models import File as FileModel
+from ...models.models import DomainProcessing
 from ..prompts.group_prompts import SYSTEM_PROMPT, GROUP_ANALYSIS_PROMPT
 from ...llm.llm_factory import LLMConfig, LLMFactory
 
@@ -24,13 +24,12 @@ class ProcessingResult:
 
 
 class GroupProcessor:
-    def __init__(self, file_model: FileModel, config_manager):
-        self.file_model = file_model
+    def __init__(self, domain_processing: DomainProcessing, config_manager):
+        self.domain_processing = domain_processing
         self.config = config_manager
         self.output_dir = os.path.join(
             self.config.get("processing_dir", "processing_output"),
-            str(self.file_model.domain_id),
-            str(self.file_model.file_id),
+            str(self.domain_processing.domain_id),
             "groups_analysis",
         )
         self.logger = self._setup_logger()
@@ -52,7 +51,9 @@ class GroupProcessor:
         return LLMFactory(llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
-        logger = logging.getLogger(f"GroupProcessor_{self.file_model.file_id}")
+        logger = logging.getLogger(
+            f"GroupProcessor_{self.domain_processing.processing_id}"
+        )
         logger.setLevel(logging.DEBUG)
         os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
 
@@ -94,13 +95,13 @@ class GroupProcessor:
     def process(self) -> ProcessingResult:
         try:
             self.logger.info(
-                f"Starting group analysis for file: {self.file_model.filename}"
+                f"Starting group analysis for domain processing: {self.domain_processing.processing_id}"
             )
             os.makedirs(self.output_dir, exist_ok=True)
 
-            # Load entity analysis results
+            # Load merged entities results
             with open(
-                self.file_model.entity_extraction_path, "r", encoding="utf-8"
+                self.domain_processing.merged_entities_path, "r", encoding="utf-8"
             ) as f:
                 entities_data = json.load(f)
 
@@ -112,6 +113,9 @@ class GroupProcessor:
             with open(groups_path, "w", encoding="utf-8") as f:
                 json.dump(groups_analysis, f, indent=2, ensure_ascii=False)
 
+            self.domain_processing.entity_grouping_path = groups_path
+            self.domain_processing.status = "processing_ontology"
+
             return ProcessingResult(
                 success=True,
                 message="Group analysis completed successfully",
@@ -121,6 +125,8 @@ class GroupProcessor:
 
         except Exception as e:
             self.logger.error(f"Error during group analysis: {str(e)}", exc_info=True)
+            self.domain_processing.status = "failed"
+            self.domain_processing.error = str(e)
             return ProcessingResult(
                 success=False, message=f"Group analysis failed: {str(e)}"
             )
