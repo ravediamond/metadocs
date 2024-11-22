@@ -162,7 +162,7 @@ class DomainDataSchema(BaseModel):
     created_at: datetime
     entities: Dict[str, Any]
     groups: List[Dict[str, Any]]
-    ontology: str
+    ontology: Dict[str, Any]
     processing_id: Optional[UUID]
     last_processed_at: Optional[datetime]
 

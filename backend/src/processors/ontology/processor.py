@@ -113,7 +113,7 @@ class OntologyProcessor:
 
             mermaid_diagram = self._generate_mermaid(entities_data, groups_data)
 
-            diagram_path = os.path.join(self.output_dir, "ontology.md")
+            diagram_path = os.path.join(self.output_dir, "ontology.json")
             with open(diagram_path, "w", encoding="utf-8") as f:
                 f.write(mermaid_diagram)
 

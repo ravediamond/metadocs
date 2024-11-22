@@ -122,7 +122,7 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
         with open(domain_processing.entity_grouping_path, "r") as f:
             groups_data = json.load(f)
         with open(domain_processing.ontology_path, "r") as f:
-            ontology = f.read()
+            ontology = json.load(f)
 
         return DomainDataSchema(
             domain_id=domain.domain_id,
