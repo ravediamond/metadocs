@@ -1,87 +1,325 @@
-# Metadocs
+# Domain Knowledge Extraction System
 
-## Features
+## Architecture Overview
 
-The MVP (Minimum Viable Product) of your SaaS aims to enhance RAG (Retrieval-Augmented Generation) systems by managing domain-specific concepts and definitions in a specific store, integrating with other system like Langchain, and dynamically detecting undefined concepts. Here are the summarized features:
+This system extracts, processes, and structures business domain knowledge from various documents into a knowledge graph. The system uses a step-by-step processing pipeline with version control and user validation at each stage.
 
-1. Concept and Definition Management:
+### Core Components
 
-    Centralized repository for creating, editing, deleting, and managing domain-specific concepts and definitions.
-    Categorization, tagging, and synonym management for better organization and retrieval.
+1. **Domain Management**
+   - Organizes knowledge by business domains (e.g., gas bottle sales, medical equipment)
+   - Each domain maintains its own set of documents and processing history
+   - Supports domain-specific terminology and validation rules
 
-2. LangChain Integration:
+2. **Processing Pipeline**
+   - Sequential processing steps with version control
+   - User validation and iteration capability at each step
+   - Chat-based interaction for modifications and improvements
 
-    Dedicated API endpoints for seamless integration with LangChain-based RAG pipelines.
-    Pre-built LangChain components (e.g., ConceptRetriever) to simplify integration.   
-    Real-time sync to reflect changes in concepts for integrated systems.
+### Processing Steps
 
-3. Service Account Management:
+1. **Document Parsing**
+   - Converts input documents to markdown format
+   - Maintains original document structure
+   - Output: Structured markdown files
 
-    Creation and management of service accounts with role-based access control (e.g., read-only, read-write).
-    API key generation and management, including usage monitoring, rate limiting, and audit logs.
+2. **Entity Extraction**
+   - Identifies domain-specific entities
+   - Extracts relationships between entities
+   - Output: JSON/JSONL files containing entities and relationships
 
-4. Semantic Search and Synonym Support:
+3. **Entity Merging**
+   - Combines entities from multiple documents
+   - Resolves conflicts and duplicates
+   - Output: Consolidated entity list with relationships
 
-    Basic semantic search using embeddings to retrieve relevant concepts based on context.
-    Support for managing synonyms to improve retrieval accuracy.
+4. **Entity Grouping**
+   - Organizes entities into logical groups
+   - Establishes hierarchy and relationships
+   - Output: Grouped entity structure
 
-5. User Roles and Permissions:
+5. **Ontology Generation**
+   - Creates domain-specific ontology
+   - Defines entity types and relationships
+   - Output: Domain ontology file
 
-    Role-based access control (RBAC) for managing user permissions (e.g., Admin, Viewer).
-    Ability to invite users and manage roles.
+6. **Knowledge Graph Generation**
+   - Builds final knowledge graph
+   - Incorporates all processed information
+   - Output: Complete domain knowledge graph
 
-6. Feedback and Suggestions:
+### Data Model
 
-    Mechanism for users to suggest new definitions or modifications and provide feedback on existing definitions.
-    Admin capabilities to review, approve, or reject suggestions.
+```mermaid
+erDiagram
+    Domain ||--o{ ProcessRun : "has many"
+    ProcessRun ||--|{ ProcessStep : "contains"
+    File }|--o{ ProcessRun : "used in"
+    
+    Domain {
+        UUID domain_id PK
+        string name
+    }
 
-7. Analytics Dashboard:
+    ProcessRun {
+        UUID run_id PK
+        UUID domain_id FK
+        string status
+        string error
+        timestamp created_at
+        int version
+    }
 
-    Basic analytics to show usage statistics, most searched concepts, user engagement, and other key metrics.
+    ProcessStep {
+        UUID step_id PK
+        UUID run_id FK
+        string step_type
+        string status
+        string input_path
+        string output_path
+        string error
+        timestamp created_at
+        UUID previous_step_id FK
+    }
 
-8. Undefined Concept Detection:
+    File {
+        UUID file_id PK
+        UUID domain_id FK
+        string filepath
+        timestamp uploaded_at
+    }
+```
 
-    Query Analysis Module: Capture and analyze user queries to identify undefined terms.
-    Data Retrieval Analysis Module: Analyze retrieved data to detect frequently occurring undefined terms.
-    Suggestions for Undefined Concepts: Generate a list of undefined concepts with a review interface for admins to add or dismiss them.
-    Feedback Loop: Allow users to mark suggestions as "Not Relevant" or "Add Later," improving future suggestions.
+#### Key Entities
 
+1. **Domain**
+   - Represents a specific business domain
+   - Contains all related files and processing runs
 
+2. **ProcessRun**
+   - Represents one complete processing attempt
+   - Maintains version control for the entire process
+   - Tracks overall status and errors
 
+3. **ProcessStep**
+   - Individual steps in the processing pipeline
+   - Maintains input and output file paths
+   - Links to previous versions for history tracking
 
-## Screens Needed for the MVP
+4. **File**
+   - Tracks uploaded documents
+   - Maintains file paths and metadata
 
-1. Login and Signup Screen: Secure access to the platform with options for OAuth login, password recovery, and account creation.
+### User Interface
 
-2. Dashboard Screen: Overview of key metrics, recent activities, and quick actions for managing concepts, undefined concepts, and user roles.
+```mermaid
+flowchart TD
+    %% Main Navigation Nodes
+    login[Login Screen]
+    dash[Domain Dashboard]
+    dwork[Domain Knowledge Workspace]
+    kgraph[Knowledge Graph]
+    uconfig[User Settings]
+    dconfig[Domain Settings]
+    sconfig[System Settings]
 
-3. Concept Library Screen: A searchable and filterable table displaying all concepts with actions to edit, delete, and add new concepts. A new tab for "Undefined Concepts" to display detected undefined terms.
+    %% Dashboard Elements and Links
+    subgraph "Domain Dashboard"
+        dash --> dlist[Domain List<br>- Gas Bottle Sales<br>- Medical Equipment<br>- Industrial Cleaning<br>etc.]
+        dash --> metrics[Domain Knowledge Metrics<br>- Entities Count<br>- Relationships<br>- Coverage Areas]
+        dash --> recent[Recent Activities]
+        dlist --> dnew[+ New Domain]
+    end
 
-4. Concept Detail and Edit Screen: Detailed view of a concept with options to edit fields like definition, category, and synonyms.
+    %% Domain Workspace Elements
+    subgraph "Domain Knowledge Workspace"
+        dwork --> vis1[Visualization Area]
+        dwork --> chat1[Chat Interface]
+        dwork --> docs[Document Manager<br>- Industry Standards<br>- Process Documents<br>- Market Reports]
+        dwork --> steps[Knowledge Extraction Steps]
+        steps --> s1[1. Parse Documents]
+        steps --> s2[2. Extract Domain Entities<br>- Products<br>- Processes<br>- Stakeholders]
+        steps --> s3[3. Merge Knowledge]
+        steps --> s4[4. Group Concepts]
+        steps --> s5[5. Create Domain Ontology]
+        steps --> s6[6. Generate Knowledge Graph]
+    end
 
-5. Add New Concept Screen (or Modal): A form/modal for adding new concepts with fields for term, definition, tags, and synonyms.
+    %% Knowledge Graph Elements
+    subgraph "Knowledge Graph View"
+        kgraph --> gvis[Domain Knowledge Visualization]
+        kgraph --> filters[Knowledge Filters<br>- Entity Types<br>- Relationship Types<br>- Process Flows]
+        kgraph --> export[Export Options]
+        kgraph --> layers[View Layers<br>- Core Concepts<br>- Processes<br>- Relationships]
+    end
 
-6. Suggestions and Feedback Screen: Display suggestions for new definitions or edits submitted by users, with options for admins to approve or reject.
+    %% Settings Pages
+    subgraph "Settings"
+        uconfig --> uprefs[UI Preferences]
+        uconfig --> uacc[Account Settings]
+        
+        dconfig --> dent[Domain Entity Types]
+        dconfig --> dterm[Domain Terminology]
+        dconfig --> dval[Domain Validation Rules]
+        
+        sconfig --> sproc[Processing Settings]
+        sconfig --> sapi[API Configuration]
+        sconfig --> sstore[Storage Settings]
+    end
 
-7. User Management Screen: Manage users and service accounts, including role assignment and invitation management.
+    %% Main Navigation Links
+    dash --> dwork
+    dwork --> kgraph
 
-8. Integration Settings Screen: Configure and manage integrations, particularly for LangChain, with API settings and integration status.
+    %% Settings Access Links
+    dash --> uconfig
+    dash --> sconfig
+    dwork --> dconfig
+    dwork --> uconfig
+    kgraph --> dconfig
 
-9. Service Accounts Management Screen: Create and manage service accounts, view API key usage, and monitor activity.
+    %% Return Links
+    dwork --> dash
+    kgraph --> dwork
+    uconfig --> dash
+    dconfig --> dwork
+    sconfig --> dash
 
-10. Undefined Concept Review Screen: A dedicated screen for reviewing all detected undefined concepts, seeing context snippets, and defining or dismissing them.
+    %% Styling
+    classDef mainPage fill:#f9f,stroke:#333,stroke-width:2px
+    classDef subPage fill:#bbf,stroke:#333,stroke-width:1px
+    classDef configPage fill:#bfb,stroke:#333,stroke-width:1px
 
-11. API Documentation and Support Screen: Provide detailed information on API usage, endpoints, and integration guides, specifically for LangChain.
+    class dash,dwork,kgraph mainPage
+    class dlist,docs,gvis,filters subPage
+    class uconfig,dconfig,sconfig configPage
+```
 
-12. Analytics Screen (Updated): Include analytics on undefined concepts, such as frequency, user actions, and trends over time.
+The system provides a chat-based interface for interaction:
 
-13. Notification Screen: Manage and view notifications related to concept management activities.
+1. **Main Views**
+   - Domain Dashboard: Overview of all domains and their status
+   - Domain Workspace: Processing interface with visualization and chat
+   - Knowledge Graph View: Final graph visualization and export
 
-14. Settings Screen: Customize platform settings, manage API keys, security options, and set up notification preferences.
+2. **Interaction Model**
+   - Chat-based interface for all operations
+   - Natural language processing for user commands
+   - Interactive visualizations of processing results
 
-15. Global intégration of any system by just using putting this service around the other service
+3. **User Validation**
+   - Each processing step can be validated via chat
+   - Users can request modifications or improvements
+   - System generates new versions based on feedback
 
-16. Anonymization of all personal related data when stored and sorted in specific région and capacity to destroy everything whenever you want
+### File Storage
+
+- Files are stored in local storage or S3
+- Only file paths are stored in the database
+- Organized by domain and processing step
+- Version control through separate files for each process run
+
+### Configuration Levels
+
+1. **User Configuration**
+   - UI preferences
+   - Default views
+   - Notification settings
+
+2. **Domain Configuration**
+   - Entity types
+   - Validation rules
+   - Terminology standards
+
+3. **System Configuration**
+   - Processing parameters
+   - Storage settings
+   - API configurations
+
+### Processing Flow
+
+```mermaid
+erDiagram
+    Domain ||--o{ ProcessRun : "has many"
+    ProcessRun ||--|{ ProcessStep : "contains"
+    File }|--o{ ProcessRun : "used in"
+    
+    Domain {
+        UUID domain_id PK
+        string name
+    }
+
+    ProcessRun {
+        UUID run_id PK
+        UUID domain_id FK
+        string status
+        string error
+        timestamp created_at
+        int version
+    }
+
+    ProcessStep {
+        UUID step_id PK
+        UUID run_id FK
+        string step_type "parse|extract|merge|group|ontology|graph"
+        string status
+        string input_path "path to input data"
+        string output_path "path to output data"
+        string error
+        timestamp created_at
+        UUID previous_step_id FK "reference to previous version"
+    }
+
+    File {
+        UUID file_id PK
+        UUID domain_id FK
+        string filepath
+        timestamp uploaded_at
+    }
+```
+
+1. **Document Upload**
+   - Files are uploaded to storage
+   - System creates file records
+   - Associates files with domain
+
+2. **Processing Initiation**
+   - Creates new ProcessRun
+   - Initializes version control
+   - Begins sequential processing
+
+3. **Step Processing**
+   - Each step creates new ProcessStep record
+   - Maintains input/output paths
+   - Updates status and error information
+
+4. **Version Control**
+   - Each modification creates new version
+   - Maintains links to previous versions
+   - Enables rollback if needed
+
+### Error Handling
+
+- Each step tracks its own errors
+- Full error context stored in database
+- Processing can be resumed from failed step
+- Version history maintained even for failed runs
+
+### Extension Points
+
+1. **New Process Steps**
+   - System designed for easy addition of new steps
+   - Each step is independent and versioned
+
+2. **Custom Validation Rules**
+   - Domain-specific validation can be added
+   - Rules stored in domain configuration
+
+3. **Export Formats**
+   - Knowledge graph can be exported in various formats
+   - New export formats can be added as needed
+
+This architecture provides a flexible, maintainable system for domain knowledge extraction with strong version control and user validation capabilities.
 
 
 ## Dev
@@ -90,14 +328,3 @@ The MVP (Minimum Viable Product) of your SaaS aims to enhance RAG (Retrieval-Aug
 docker-compose down -v
 docker-compose up --build
 ```
-
-
-
-### method to parse:
-
-- accept only pdf with source (sheet, words, ...)
-- generate one imag eper page
-- check if the image is readable by an human : ask a confidence value for how much it is readable by an human and ask to be noted strictly. If it is below 70%, launch error to users. Do this on first 5 images.
-- If slides, generate markdown using haiku with as much data
-- if doc, generate markdown using haiku with as much data but replace all image with description with @@@@@ before and after. Save also the page to be sent back.
-- For each part in @@@@, redo an analysis using the full text context and make the description better and detect if adding the image is needed.
