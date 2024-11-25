@@ -7,7 +7,7 @@ from datetime import datetime
 from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
-from ...models.models import DomainProcessing
+from ...models.models import ProcessingPipeline
 from ..prompts.merger_prompts import (
     SYSTEM_PROMPT,
     ENTITY_MERGE_PROMPT,
@@ -26,9 +26,12 @@ class MergeResult:
 
 
 class EntityMerger:
-    def __init__(self, processing: DomainProcessing, config: ConfigManager):
-        self.domain_id = processing.domain_id
-        self.file_models = processing.files
+    def __init__(self, pipeline: ProcessingPipeline, config: ConfigManager):
+        self.pipeline = pipeline
+        self.domain_id = pipeline.domain_id
+        self.file_models = [
+            file for file in pipeline.files if file.processing_status == "completed"
+        ]
         self.config = config
         self.output_dir = os.path.join(
             self.config.get("processing_dir", "processing_output"),

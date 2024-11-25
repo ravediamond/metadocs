@@ -329,3 +329,70 @@ class DomainProcessingSchema(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ProcessingVersionBase(BaseModel):
+    version_id: UUID
+    pipeline_id: UUID
+    version_number: int
+    input_path: Optional[str]
+    output_path: Optional[str]
+    status: str
+    error: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ParseVersion(ProcessingVersionBase):
+    """Version info for PDF parsing stage"""
+
+    pass
+
+
+class ExtractVersion(ProcessingVersionBase):
+    """Version info for entity extraction stage"""
+
+    pass
+
+
+class MergeVersion(ProcessingVersionBase):
+    """Version info for entity merging stage"""
+
+    pass
+
+
+class GroupVersion(ProcessingVersionBase):
+    """Version info for entity grouping stage"""
+
+    pass
+
+
+class OntologyVersion(ProcessingVersionBase):
+    """Version info for ontology generation stage"""
+
+    pass
+
+
+class GraphVersion(ProcessingVersionBase):
+    """Version info for graph generation stage"""
+
+    pass
+
+
+class ProcessingPipeline(BaseModel):
+    pipeline_id: UUID
+    domain_id: UUID
+    current_parse_id: Optional[UUID]
+    current_extract_id: Optional[UUID]
+    current_merge_id: Optional[UUID]
+    current_group_id: Optional[UUID]
+    current_ontology_id: Optional[UUID]
+    current_graph_id: Optional[UUID]
+    status: str
+    error: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

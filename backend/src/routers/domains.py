@@ -1,3 +1,5 @@
+# domains.py
+
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -11,7 +13,7 @@ from ..models.models import (
     Domain,
     DomainVersion,
     Tenant,
-    DomainProcessing,
+    ProcessingPipeline,
 )
 from ..models.schemas import (
     Domain as DomainSchema,
@@ -20,8 +22,6 @@ from ..models.schemas import (
     DomainVersionSchema,
 )
 from ..core.database import get_db
-
-from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ def create_domain(
     tenant_id: UUID, domain_data: DomainCreate, db: Session = Depends(get_db)
 ):
     """
-    Creates a new domain and initializes its corresponding Apache AGE graph.
+    Creates a new domain and initializes its corresponding version tracking.
     """
     # Ensure the tenant exists
     tenant = db.query(Tenant).filter(Tenant.tenant_id == tenant_id).first()
@@ -94,6 +94,9 @@ def get_domains(tenant_id: UUID, db: Session = Depends(get_db)):
 
 @router.get("/tenants/{tenant_id}/domains/{domain_id}", response_model=DomainDataSchema)
 def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(get_db)):
+    """
+    Retrieves domain details including the latest successful processing results.
+    """
     domain = (
         db.query(Domain)
         .filter(Domain.tenant_id == tenant_id, Domain.domain_id == domain_id)
@@ -102,26 +105,35 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
     if not domain:
         raise HTTPException(status_code=404, detail="Domain not found")
 
-    # Get latest domain processing
-    domain_processing = (
-        db.query(DomainProcessing)
+    # Get latest completed pipeline
+    latest_pipeline = (
+        db.query(ProcessingPipeline)
         .filter(
-            DomainProcessing.domain_id == domain_id,
-            DomainProcessing.status == "completed",
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.status == "completed",
         )
-        .order_by(DomainProcessing.created_at.desc())
+        .order_by(ProcessingPipeline.created_at.desc())
         .first()
     )
 
-    if not domain_processing:
+    if not latest_pipeline:
         raise HTTPException(status_code=404, detail="No completed processing found")
 
     try:
-        with open(domain_processing.merged_entities_path, "r") as f:
+        # Get paths from the latest versions in the pipeline
+        ontology_version = latest_pipeline.current_ontology
+        group_version = latest_pipeline.current_group
+        merge_version = latest_pipeline.current_merge
+
+        if not all([ontology_version, group_version, merge_version]):
+            raise HTTPException(status_code=404, detail="Missing processing results")
+
+        # Load data from the version files
+        with open(merge_version.output_path, "r") as f:
             entities_data = json.load(f)
-        with open(domain_processing.entity_grouping_path, "r") as f:
+        with open(group_version.output_path, "r") as f:
             groups_data = json.load(f)
-        with open(domain_processing.ontology_path, "r") as f:
+        with open(ontology_version.output_path, "r") as f:
             ontology = json.load(f)
 
         return DomainDataSchema(
@@ -130,11 +142,11 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
             description=domain.description,
             tenant_id=tenant_id,
             created_at=domain.created_at,
-            processing_id=domain_processing.processing_id,
+            processing_id=latest_pipeline.pipeline_id,
             entities=entities_data,
             groups=groups_data["groups"],
             ontology=ontology,
-            last_processed_at=domain_processing.completed_at,
+            last_processed_at=latest_pipeline.created_at,
         )
 
     except Exception as e:
@@ -149,6 +161,9 @@ def get_domain_details(tenant_id: UUID, domain_id: UUID, db: Session = Depends(g
 def create_domain_version(
     tenant_id: UUID, domain_id: UUID, processing_id: UUID, db: Session = Depends(get_db)
 ):
+    """
+    Creates a new domain version from a completed processing pipeline.
+    """
     domain = (
         db.query(Domain)
         .filter(Domain.tenant_id == tenant_id, Domain.domain_id == domain_id)
@@ -157,17 +172,22 @@ def create_domain_version(
     if not domain:
         raise HTTPException(status_code=404, detail="Domain not found")
 
-    domain_processing = (
-        db.query(DomainProcessing)
+    # Get the pipeline instead of domain processing
+    pipeline = (
+        db.query(ProcessingPipeline)
         .filter(
-            DomainProcessing.processing_id == processing_id,
-            DomainProcessing.status == "completed",
+            ProcessingPipeline.pipeline_id == processing_id,
+            ProcessingPipeline.status == "completed",
         )
         .first()
     )
 
-    if not domain_processing:
+    if not pipeline:
         raise HTTPException(status_code=404, detail="No completed processing found")
+
+    # Check for required versions
+    if not pipeline.current_group or not pipeline.current_ontology:
+        raise HTTPException(status_code=400, detail="Processing results incomplete")
 
     latest_version = (
         db.query(func.max(DomainVersion.version))
@@ -181,8 +201,8 @@ def create_domain_version(
         tenant_id=tenant_id,
         version=latest_version + 1,
         processing_id=processing_id,
-        entity_grouping_path=domain_processing.entity_grouping_path,
-        ontology_path=domain_processing.ontology_path,
+        entity_grouping_path=pipeline.current_group.output_path,
+        ontology_path=pipeline.current_ontology.output_path,
     )
 
     db.add(new_version)

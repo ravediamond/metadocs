@@ -8,7 +8,7 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ...models.models import DomainProcessing
+from ...models.models import ProcessingPipeline
 from ..prompts.ontology_prompts import SYSTEM_PROMPT, MERMAID_GENERATION_PROMPT
 from ...llm.llm_factory import LLMConfig, LLMFactory
 
@@ -22,12 +22,12 @@ class ProcessingResult:
 
 
 class OntologyProcessor:
-    def __init__(self, domain_processing: DomainProcessing, config_manager):
-        self.domain_processing = domain_processing
+    def __init__(self, pipeline: ProcessingPipeline, config_manager):
+        self.pipeline = pipeline
         self.config = config_manager
         self.output_dir = os.path.join(
             self.config.get("processing_dir", "processing_output"),
-            str(self.domain_processing.domain_id),
+            str(self.pipeline.domain_id),
             "ontology",
         )
         self.logger = self._setup_logger()
@@ -97,17 +97,19 @@ class OntologyProcessor:
     def process(self) -> ProcessingResult:
         try:
             self.logger.info(
-                f"Starting ontology generation for domain processing: {self.domain_processing.processing_id}"
+                f"Starting ontology generation for pipeline: {self.pipeline.pipeline_id}"
             )
             os.makedirs(self.output_dir, exist_ok=True)
 
+            # Use current merge version path for entities
             with open(
-                self.domain_processing.merged_entities_path, "r", encoding="utf-8"
+                self.pipeline.current_merge.output_path, "r", encoding="utf-8"
             ) as f:
                 entities_data = json.load(f)
 
+            # Use current group version path for groups
             with open(
-                self.domain_processing.entity_grouping_path, "r", encoding="utf-8"
+                self.pipeline.current_group.output_path, "r", encoding="utf-8"
             ) as f:
                 groups_data = json.load(f)
 
@@ -116,10 +118,6 @@ class OntologyProcessor:
             diagram_path = os.path.join(self.output_dir, "ontology.json")
             with open(diagram_path, "w", encoding="utf-8") as f:
                 f.write(mermaid_diagram)
-
-            self.domain_processing.ontology_path = diagram_path
-            self.domain_processing.status = "completed"
-            self.domain_processing.completed_at = datetime.now()
 
             return ProcessingResult(
                 success=True,
@@ -130,8 +128,6 @@ class OntologyProcessor:
 
         except Exception as e:
             self.logger.error(f"Error generating ontology: {str(e)}", exc_info=True)
-            self.domain_processing.status = "failed"
-            self.domain_processing.error = str(e)
             return ProcessingResult(
                 success=False, message=f"Ontology generation failed: {str(e)}"
             )
