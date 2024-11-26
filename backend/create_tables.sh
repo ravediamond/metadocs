@@ -78,35 +78,6 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       ontology_path VARCHAR(1024)
   );
 
-  CREATE TABLE domain_processing (
-      processing_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
-      status VARCHAR(50),
-      error VARCHAR(1024),
-      merged_entities_path VARCHAR(1024),
-      entity_grouping_path VARCHAR(1024),
-      ontology_path VARCHAR(1024),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      completed_at TIMESTAMP
-  );
-
-  CREATE TABLE domain_versions (
-      domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
-      tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-      version INT NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      entity_grouping_path VARCHAR(1024),
-      ontology_path VARCHAR(1024),
-      processing_id UUID REFERENCES domain_processing(processing_id),
-      PRIMARY KEY (domain_id, version)
-  );
-
-  CREATE TABLE domain_processing_files (
-      processing_id UUID REFERENCES domain_processing(processing_id) ON DELETE CASCADE,
-      file_id UUID REFERENCES files(file_id) ON DELETE CASCADE,
-      PRIMARY KEY (processing_id, file_id)
-  );
-
   CREATE TABLE user_config (
       config_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
@@ -163,15 +134,111 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       accepted_at TIMESTAMP
   );
 
+  CREATE TABLE processing_pipeline (
+    pipeline_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE NOT NULL,
+    current_parse_id UUID,
+    current_extract_id UUID,
+    current_merge_id UUID,
+    current_group_id UUID,
+    current_ontology_id UUID,
+    current_graph_id UUID,
+    status VARCHAR(50),
+    error VARCHAR(1024),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE domain_versions (
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
+    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    version INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    entity_grouping_path VARCHAR(1024),
+    ontology_path VARCHAR(1024),
+    pipeline_id UUID REFERENCES processing_pipeline(pipeline_id),
+    PRIMARY KEY (domain_id, version)
+  );
+
+  CREATE TABLE parse_versions (
+      version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
+      version_number INTEGER NOT NULL,
+      input_path VARCHAR(1024),
+      output_path VARCHAR(1024),
+      status VARCHAR(50),
+      error VARCHAR(1024),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE extract_versions (
+      version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
+      version_number INTEGER NOT NULL,
+      input_path VARCHAR(1024),
+      output_path VARCHAR(1024),
+      status VARCHAR(50),
+      error VARCHAR(1024),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE merge_versions (
+      version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
+      version_number INTEGER NOT NULL,
+      input_path VARCHAR(1024),
+      output_path VARCHAR(1024),
+      status VARCHAR(50),
+      error VARCHAR(1024),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE group_versions (
+      version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
+      version_number INTEGER NOT NULL,
+      input_path VARCHAR(1024),
+      output_path VARCHAR(1024),
+      status VARCHAR(50),
+      error VARCHAR(1024),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE ontology_versions (
+      version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
+      version_number INTEGER NOT NULL,
+      input_path VARCHAR(1024),
+      output_path VARCHAR(1024),
+      status VARCHAR(50),
+      error VARCHAR(1024),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE graph_versions (
+      version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
+      version_number INTEGER NOT NULL,
+      input_path VARCHAR(1024),
+      output_path VARCHAR(1024),
+      status VARCHAR(50),
+      error VARCHAR(1024),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
   -- Indexes
   CREATE INDEX idx_files_domain_id ON files(domain_id);
   CREATE INDEX idx_files_processing_status ON files(processing_status);
-  CREATE INDEX idx_domain_processing_status ON domain_processing(status);
-  CREATE INDEX idx_domain_processing_domain ON domain_processing(domain_id);
-  CREATE INDEX idx_domain_versions_processing ON domain_versions(processing_id);
   CREATE INDEX idx_email ON users(email);
   CREATE INDEX idx_invitee_email ON invitations(invitee_email);
   CREATE INDEX idx_tenant_id ON invitations(tenant_id);
+  CREATE INDEX idx_pipeline_domain ON processing_pipeline(domain_id);
+  CREATE INDEX idx_pipeline_status ON processing_pipeline(status);
+  CREATE INDEX idx_parse_versions_pipeline ON parse_versions(pipeline_id);
+  CREATE INDEX idx_extract_versions_pipeline ON extract_versions(pipeline_id);
+  CREATE INDEX idx_merge_versions_pipeline ON merge_versions(pipeline_id);
+  CREATE INDEX idx_group_versions_pipeline ON group_versions(pipeline_id);
+  CREATE INDEX idx_ontology_versions_pipeline ON ontology_versions(pipeline_id);
+  CREATE INDEX idx_graph_versions_pipeline ON graph_versions(pipeline_id);
 
 EOSQL
 

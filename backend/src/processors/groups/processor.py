@@ -10,7 +10,8 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ...models.models import DomainProcessing
+from ...models.models import ProcessingPipeline
+from ...core.config import ConfigManager
 from ..prompts.group_prompts import SYSTEM_PROMPT, GROUP_ANALYSIS_PROMPT
 from ...llm.llm_factory import LLMConfig, LLMFactory
 
@@ -24,13 +25,13 @@ class ProcessingResult:
 
 
 class GroupProcessor:
-    def __init__(self, domain_processing: DomainProcessing, config_manager):
-        self.domain_processing = domain_processing
-        self.config = config_manager
+    def __init__(self, pipeline: ProcessingPipeline, config: ConfigManager):
+        self.pipeline = pipeline
+        self.config = config
         self.output_dir = os.path.join(
             self.config.get("processing_dir", "processing_output"),
-            str(self.domain_processing.domain_id),
-            "groups_analysis",
+            str(self.pipeline.domain_id),
+            "groups",
         )
         self.logger = self._setup_logger()
         self.model = self._setup_model()
@@ -101,15 +102,15 @@ class GroupProcessor:
 
             # Load merged entities results
             with open(
-                self.domain_processing.merged_entities_path, "r", encoding="utf-8"
+                self.pipeline.current_merge.output_path, "r", encoding="utf-8"
             ) as f:
-                entities_data = json.load(f)
+                merged_data = json.load(f)
 
             # Analyze groups
-            groups_analysis = self._analyze_groups(entities_data)
+            groups_analysis = self._analyze_groups(merged_data)
 
             # Save analysis results
-            groups_path = os.path.join(self.output_dir, "groups_analysis.json")
+            groups_path = os.path.join(self.output_dir, "groups.json")
             with open(groups_path, "w", encoding="utf-8") as f:
                 json.dump(groups_analysis, f, indent=2, ensure_ascii=False)
 
