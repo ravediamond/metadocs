@@ -396,3 +396,19 @@ class ProcessingPipeline(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class DomainBasicResponse(BaseModel):
+    domain_id: UUID
+    domain_name: str
+    description: Optional[str] = None
+    tenant_id: UUID
+    created_at: datetime
+    owner_user_id: UUID
+    latest_pipeline: Optional[ProcessPipelineSchema] = None
+    file_count: int
+    version_count: int
+    latest_version: Optional[int] = None
+
+    class Config:
+        from_attributes = True

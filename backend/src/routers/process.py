@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, status
 from sqlalchemy.orm import Session
 from uuid import UUID
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Optional
 import logging
 
 from ..models.models import (
@@ -14,9 +14,13 @@ from ..models.models import (
     MergeVersion,
     GroupVersion,
     OntologyVersion,
-    GraphVersion,
 )
-from ..models.schemas import ProcessingStatus, FileStatus, ProcessPipelineSchema
+from ..models.schemas import (
+    ProcessingStatus,
+    FileStatus,
+    ProcessPipelineSchema,
+    ProcessingVersionBase,
+)
 from ..core.database import get_db
 from ..processors.pdf.processor import PDFProcessor
 from ..processors.entity.processor import EntityProcessor
@@ -24,105 +28,24 @@ from ..processors.groups.processor import GroupProcessor
 from ..processors.ontology.processor import OntologyProcessor
 from ..processors.merger.processor import EntityMerger
 from ..core.config import ConfigManager
+from .version_manager import VersionManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-class VersionManager:
-    def __init__(self, pipeline_id: UUID, db: Session):
-        self.pipeline_id = pipeline_id
-        self.db = db
-
-    def _get_next_version(self, version_class) -> int:
-        latest = (
-            self.db.query(version_class)
-            .filter(version_class.pipeline_id == self.pipeline_id)
-            .order_by(version_class.version_number.desc())
-            .first()
-        )
-        return (latest.version_number + 1) if latest else 1
-
-    def create_parse_version(self, input_path: str) -> ParseVersion:
-        version = ParseVersion(
-            pipeline_id=self.pipeline_id,
-            version_number=self._get_next_version(ParseVersion),
-            input_path=input_path,
-            status="processing",
-        )
-        self.db.add(version)
-        self.db.commit()
-        return version
-
-    def create_extract_version(self, input_path: str) -> ExtractVersion:
-        version = ExtractVersion(
-            pipeline_id=self.pipeline_id,
-            version_number=self._get_next_version(ExtractVersion),
-            input_path=input_path,
-            status="processing",
-        )
-        self.db.add(version)
-        self.db.commit()
-        return version
-
-    def create_merge_version(self, input_paths: List[str]) -> MergeVersion:
-        version = MergeVersion(
-            pipeline_id=self.pipeline_id,
-            version_number=self._get_next_version(MergeVersion),
-            input_path=",".join(input_paths),
-            status="processing",
-        )
-        self.db.add(version)
-        self.db.commit()
-        return version
-
-    def create_group_version(self, input_path: str) -> GroupVersion:
-        version = GroupVersion(
-            pipeline_id=self.pipeline_id,
-            version_number=self._get_next_version(GroupVersion),
-            input_path=input_path,
-            status="processing",
-        )
-        self.db.add(version)
-        self.db.commit()
-        return version
-
-    def create_ontology_version(self, input_path: str) -> OntologyVersion:
-        version = OntologyVersion(
-            pipeline_id=self.pipeline_id,
-            version_number=self._get_next_version(OntologyVersion),
-            input_path=input_path,
-            status="processing",
-        )
-        self.db.add(version)
-        self.db.commit()
-        return version
-
-    def create_graph_version(self, input_path: str) -> GraphVersion:
-        version = GraphVersion(
-            pipeline_id=self.pipeline_id,
-            version_number=self._get_next_version(GraphVersion),
-            input_path=input_path,
-            status="processing",
-        )
-        self.db.add(version)
-        self.db.commit()
-        return version
-
-
-async def process_file(
+# Processing Functions
+async def process_parse(
     file: FileModel, pipeline: ProcessingPipeline, config: ConfigManager, db: Session
 ) -> bool:
-    """Process a single file through PDF and Entity extraction stages with versioning"""
+    """Process a single file through PDF parsing stage"""
     version_manager = VersionManager(pipeline.pipeline_id, db)
 
     try:
-        # PDF Processing Version
         parse_version = version_manager.create_parse_version(file.filepath)
         pipeline.current_parse_id = parse_version.version_id
         db.commit()
 
-        # PDF Processing
         pdf_processor = PDFProcessor(file, pipeline, config)
         pdf_result = pdf_processor.process()
 
@@ -137,16 +60,34 @@ async def process_file(
         parse_version.output_path = pdf_result.markdown_path
         parse_version.status = "completed"
         file.markdown_path = pdf_result.markdown_path
+        file.processing_status = "completed"
         db.commit()
+        return True
 
-        # Entity Processing Version
-        extract_version = version_manager.create_extract_version(
-            pdf_result.markdown_path
-        )
+    except Exception as e:
+        logger.error(f"Error in parse processing for file {file.file_id}: {str(e)}")
+        parse_version.status = "failed"
+        parse_version.error = str(e)
+        file.processing_status = "failed"
+        file.processing_error = str(e)
+        db.commit()
+        return False
+
+
+async def process_extract(
+    file: FileModel, pipeline: ProcessingPipeline, config: ConfigManager, db: Session
+) -> bool:
+    """Process a single file through entity extraction stage"""
+    version_manager = VersionManager(pipeline.pipeline_id, db)
+
+    try:
+        if not file.markdown_path:
+            raise ValueError("No markdown file available for extraction")
+
+        extract_version = version_manager.create_extract_version(file.markdown_path)
         pipeline.current_extract_id = extract_version.version_id
         db.commit()
 
-        # Entity Processing
         entity_processor = EntityProcessor(pipeline, config)
         entity_result = entity_processor.process()
 
@@ -162,49 +103,38 @@ async def process_file(
         extract_version.status = "completed"
         file.entity_extraction_path = entity_result.analysis_path
         file.processing_status = "completed"
-        file.last_processed_at = datetime.utcnow()
         db.commit()
         return True
 
     except Exception as e:
-        logger.error(f"Error processing file {file.file_id}: {str(e)}")
+        logger.error(f"Error in extract processing for file {file.file_id}: {str(e)}")
+        extract_version.status = "failed"
+        extract_version.error = str(e)
         file.processing_status = "failed"
         file.processing_error = str(e)
-
-        # Update current version if exists
-        current_version = None
-        if pipeline.current_parse_id and not parse_version.status == "completed":
-            current_version = parse_version
-        elif pipeline.current_extract_id and not extract_version.status == "completed":
-            current_version = extract_version
-
-        if current_version:
-            current_version.status = "failed"
-            current_version.error = str(e)
-
         db.commit()
         return False
 
 
-async def process_domain(
-    domain_id: UUID,
+async def process_merge(
     pipeline: ProcessingPipeline,
     files: List[FileModel],
     config: ConfigManager,
     db: Session,
-):
-    """Process domain-level analysis with versioning"""
+) -> bool:
+    """Process entity merging stage"""
     version_manager = VersionManager(pipeline.pipeline_id, db)
 
     try:
-        # Get all successful entity extraction paths
         entity_paths = [
             f.entity_extraction_path
             for f in files
             if f.processing_status == "completed" and f.entity_extraction_path
         ]
 
-        # Merge entities
+        if not entity_paths:
+            raise ValueError("No entity extraction files available for merging")
+
         merge_version = version_manager.create_merge_version(entity_paths)
         pipeline.current_merge_id = merge_version.version_id
         db.commit()
@@ -218,14 +148,46 @@ async def process_domain(
             pipeline.status = "failed"
             pipeline.error = merge_version.error
             db.commit()
-            return
+            return False
 
         merge_version.output_path = merge_result.merged_path
         merge_version.status = "completed"
+        pipeline.merged_entities_path = merge_result.merged_path
         db.commit()
+        return True
 
-        # Process groups
-        group_version = version_manager.create_group_version(merge_result.merged_path)
+    except Exception as e:
+        logger.error(f"Error in merge processing: {str(e)}")
+        merge_version.status = "failed"
+        merge_version.error = str(e)
+        pipeline.status = "failed"
+        pipeline.error = str(e)
+        db.commit()
+        return False
+
+
+async def process_group(
+    pipeline: ProcessingPipeline, config: ConfigManager, db: Session
+) -> bool:
+    """Process entity grouping stage"""
+    version_manager = VersionManager(pipeline.pipeline_id, db)
+
+    try:
+        # Get latest successful merge version
+        merge_version = (
+            db.query(MergeVersion)
+            .filter(
+                MergeVersion.pipeline_id == pipeline.pipeline_id,
+                MergeVersion.status == "completed",
+            )
+            .order_by(MergeVersion.version_number.desc())
+            .first()
+        )
+
+        if not merge_version or not merge_version.output_path:
+            raise ValueError("No merged entities file available for grouping")
+
+        group_version = version_manager.create_group_version(merge_version.output_path)
         pipeline.current_group_id = group_version.version_id
         db.commit()
 
@@ -238,15 +200,49 @@ async def process_domain(
             pipeline.status = "failed"
             pipeline.error = group_version.error
             db.commit()
-            return
+            return False
 
         group_version.output_path = group_result.groups_path
         group_version.status = "completed"
+        pipeline.entity_grouping_path = group_result.groups_path
         db.commit()
+        return True
 
-        # Generate ontology
+    except Exception as e:
+        logger.error(f"Error in group processing: {str(e)}")
+        group_version.status = "failed"
+        group_version.error = str(e)
+        pipeline.status = "failed"
+        pipeline.error = str(e)
+        db.commit()
+        return False
+
+
+async def process_ontology(
+    pipeline: ProcessingPipeline, config: ConfigManager, db: Session
+) -> bool:
+    """Process ontology generation stage"""
+    version_manager = VersionManager(pipeline.pipeline_id, db)
+
+    try:
+        # Get latest successful group version
+        group_version = (
+            db.query(GroupVersion)
+            .filter(
+                GroupVersion.pipeline_id == pipeline.pipeline_id,
+                GroupVersion.status == "completed",
+            )
+            .order_by(GroupVersion.version_number.desc())
+            .first()
+        )
+
+        if not group_version or not group_version.output_path:
+            raise ValueError(
+                "No grouped entities file available for ontology generation"
+            )
+
         ontology_version = version_manager.create_ontology_version(
-            group_result.groups_path
+            group_version.output_path
         )
         pipeline.current_ontology_id = ontology_version.version_id
         db.commit()
@@ -262,234 +258,478 @@ async def process_domain(
             pipeline.status = "failed"
             pipeline.error = ontology_version.error
             db.commit()
-            return
+            return False
 
         ontology_version.output_path = ontology_result.diagram_path
         ontology_version.status = "completed"
-        db.commit()
-
-        # Mark pipeline as completed
+        pipeline.ontology_path = ontology_result.diagram_path
         pipeline.status = "completed"
+        pipeline.completed_at = datetime.utcnow()
         db.commit()
+        return True
 
     except Exception as e:
-        logger.error(f"Error in domain processing for {domain_id}: {str(e)}")
+        logger.error(f"Error in ontology processing: {str(e)}")
+        ontology_version.status = "failed"
+        ontology_version.error = str(e)
         pipeline.status = "failed"
         pipeline.error = str(e)
-
-        # Update current version if exists
-        current_version = None
-        if pipeline.current_merge_id:
-            current_version = db.query(MergeVersion).get(pipeline.current_merge_id)
-        elif pipeline.current_group_id:
-            current_version = db.query(GroupVersion).get(pipeline.current_group_id)
-        elif pipeline.current_ontology_id:
-            current_version = db.query(OntologyVersion).get(
-                pipeline.current_ontology_id
-            )
-
-        if current_version and current_version.status == "processing":
-            current_version.status = "failed"
-            current_version.error = str(e)
-
         db.commit()
+        return False
 
 
-async def process_all(domain_id: UUID, db: Session):
-    """Main processing coordinator with versioning"""
-    try:
-        # Get domain info and setup config
-        domain = db.query(Domain).filter(Domain.domain_id == domain_id).first()
-        config = ConfigManager(db, str(domain.tenant_id), str(domain.domain_id))
+# API Endpoints
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/files/{file_id}/parse",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def start_parse_processing(
+    tenant_id: UUID,
+    domain_id: UUID,
+    file_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Start PDF parsing for a single file"""
+    file = (
+        db.query(FileModel)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            FileModel.domain_id == domain_id,
+            FileModel.file_id == file_id,
+        )
+        .first()
+    )
 
-        # Create new processing pipeline
-        pipeline = ProcessingPipeline(domain_id=domain_id, status="processing")
-        db.add(pipeline)
-        db.commit()
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
 
-        # Get all files for processing
-        files = db.query(FileModel).filter(FileModel.domain_id == domain_id).all()
+    pipeline = ProcessingPipeline(domain_id=domain_id, status="processing")
+    db.add(pipeline)
+    db.commit()
 
-        # Process all files first
-        success = True
-        for file in files:
-            file_success = await process_file(file, pipeline, config, db)
-            success = success and file_success
+    file.processing_status = "processing_pdf"
+    db.commit()
 
-        # If all files processed successfully, start domain processing
-        if success:
-            await process_domain(domain_id, pipeline, files, config, db)
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
+    background_tasks.add_task(process_parse, file, pipeline, config, db)
 
-    finally:
-        db.close()
+    return {"message": "PDF parsing started", "pipeline_id": pipeline.pipeline_id}
 
 
 @router.post(
-    "/tenants/{tenant_id}/domains/{domain_id}/process_files",
+    "/tenants/{tenant_id}/domains/{domain_id}/files/{file_id}/extract",
     status_code=status.HTTP_202_ACCEPTED,
-    response_model=ProcessingStatus,
-    summary="Process all files in a domain",
 )
-async def start_processing(
+async def start_extract_processing(
+    tenant_id: UUID,
+    domain_id: UUID,
+    file_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Start entity extraction for a single file"""
+    file = (
+        db.query(FileModel)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            FileModel.domain_id == domain_id,
+            FileModel.file_id == file_id,
+        )
+        .first()
+    )
+
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if not file.markdown_path:
+        raise HTTPException(status_code=400, detail="File has not been parsed yet")
+
+    pipeline = ProcessingPipeline(domain_id=domain_id, status="processing")
+    db.add(pipeline)
+    db.commit()
+
+    file.processing_status = "processing_entities"
+    db.commit()
+
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
+    background_tasks.add_task(process_extract, file, pipeline, config, db)
+
+    return {"message": "Entity extraction started", "pipeline_id": pipeline.pipeline_id}
+
+
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/merge",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def start_merge_processing(
     tenant_id: UUID,
     domain_id: UUID,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    # Validate domain exists
-    domain = (
-        db.query(Domain)
-        .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)
-        .first()
+    """Start merging entities from all processed files in the domain"""
+    files = (
+        db.query(FileModel)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            FileModel.domain_id == domain_id,
+            FileModel.processing_status == "completed",
+            FileModel.entity_extraction_path.isnot(None),
+        )
+        .all()
     )
-    if not domain:
-        raise HTTPException(status_code=404, detail="Domain not found")
 
-    # Get all files
-    files = db.query(FileModel).filter(FileModel.domain_id == domain_id).all()
     if not files:
-        return ProcessingStatus(
-            message="No files to process.", total_files=0, processing_started=False
+        raise HTTPException(
+            status_code=400, detail="No completed files available for merging"
         )
 
-    # Queue processing
-    for file in files:
-        file.processing_status = "queued"
-        file.processing_error = None
+    pipeline = ProcessingPipeline(domain_id=domain_id, status="processing")
+    db.add(pipeline)
     db.commit()
 
-    background_tasks.add_task(process_all, domain_id=domain_id, db=db)
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
+    background_tasks.add_task(process_merge, pipeline, files, config, db)
 
-    return ProcessingStatus(
-        message=f"Processing started for {len(files)} files.",
-        total_files=len(files),
-        processing_started=True,
-    )
+    return {"message": "Entity merging started", "pipeline_id": pipeline.pipeline_id}
 
 
-@router.get(
-    "/tenants/{tenant_id}/domains/{domain_id}/domain_processing_status",
-    response_model=ProcessPipelineSchema,
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/group",
+    status_code=status.HTTP_202_ACCEPTED,
 )
-async def get_domain_processing_status(
+async def start_group_processing(
     tenant_id: UUID,
     domain_id: UUID,
+    pipeline_id: UUID,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    domain_processing = (
+    """Start grouping entities from merged results"""
+    pipeline = (
         db.query(ProcessingPipeline)
         .join(Domain)
         .filter(
-            Domain.tenant_id == tenant_id, ProcessingPipeline.domain_id == domain_id
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            ProcessingPipeline.merged_entities_path.isnot(None),
         )
-        .order_by(ProcessingPipeline.created_at.desc())
         .first()
     )
 
-    if not domain_processing:
-        raise HTTPException(status_code=404, detail="No domain processing found")
+    if not pipeline:
+        raise HTTPException(
+            status_code=404,
+            detail="Processing pipeline not found or merge not completed",
+        )
 
-    return domain_processing
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
+    background_tasks.add_task(process_group, pipeline, config, db)
+
+    return {"message": "Entity grouping started", "pipeline_id": pipeline.pipeline_id}
+
+
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/ontology",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def start_ontology_processing(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Start generating ontology from grouped entities"""
+    pipeline = (
+        db.query(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            ProcessingPipeline.entity_grouping_path.isnot(None),
+        )
+        .first()
+    )
+
+    if not pipeline:
+        raise HTTPException(
+            status_code=404,
+            detail="Processing pipeline not found or grouping not completed",
+        )
+
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
+    background_tasks.add_task(process_ontology, pipeline, config, db)
+
+    return {
+        "message": "Ontology generation started",
+        "pipeline_id": pipeline.pipeline_id,
+    }
+
+
+# Status check endpoints
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}",
+    response_model=ProcessPipelineSchema,
+)
+async def get_pipeline_status(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Get the status of a specific processing pipeline"""
+    pipeline = (
+        db.query(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+        )
+        .first()
+    )
+
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Processing pipeline not found")
+
+    # Get associated file IDs
+    file_ids = [file.file_id for file in pipeline.files]
+
+    return ProcessPipelineSchema(
+        processing_id=pipeline.pipeline_id,
+        domain_id=pipeline.domain_id,
+        status=pipeline.status,
+        error=pipeline.error,
+        merged_entities_path=pipeline.merged_entities_path,
+        entity_grouping_path=pipeline.entity_grouping_path,
+        ontology_path=pipeline.ontology_path,
+        created_at=pipeline.created_at,
+        completed_at=pipeline.completed_at if pipeline.status == "completed" else None,
+        file_ids=file_ids,
+    )
 
 
 @router.get(
-    "/tenants/{tenant_id}/domains/{domain_id}/processing_status",
-    response_model=ProcessingStatus,
-    summary="Get processing status for all files in a domain",
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/parse/{version_number}",
+    response_model=ProcessingVersionBase,
 )
-async def get_processing_status(
+async def get_parse_version(
     tenant_id: UUID,
     domain_id: UUID,
+    pipeline_id: UUID,
+    version_number: int,
     db: Session = Depends(get_db),
 ):
-    """
-    Get the current processing status of all files in a domain.
-    """
-    # Validate domain exists and belongs to tenant
-    domain = (
-        db.query(Domain)
-        .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)
+    """Get details of a specific parse version"""
+    version = (
+        db.query(ParseVersion)
+        .join(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            ParseVersion.version_number == version_number,
+        )
         .first()
     )
-    if not domain:
-        raise HTTPException(status_code=404, detail="Domain not found")
 
-    # Get all files and their processing status
-    files = db.query(FileModel).filter(FileModel.domain_id == domain_id).all()
+    if not version:
+        raise HTTPException(status_code=404, detail="Parse version not found")
 
-    if not files:
-        return ProcessingStatus(
-            message="No files found.", total_files=0, processing_started=False
+    return version
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/extract/{version_number}",
+    response_model=ProcessingVersionBase,
+)
+async def get_extract_version(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    version_number: int,
+    db: Session = Depends(get_db),
+):
+    """Get details of a specific extract version"""
+    version = (
+        db.query(ExtractVersion)
+        .join(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            ExtractVersion.version_number == version_number,
         )
-
-    # Count files in each status
-    total_files = len(files)
-    completed = sum(1 for f in files if f.processing_status == "completed")
-    failed = sum(1 for f in files if f.processing_status == "failed")
-    processing = sum(
-        1
-        for f in files
-        if f.processing_status in ["processing_pdf", "processing_entities", "queued"]
+        .first()
     )
 
-    # Create detailed status message
-    status_details = {
-        "queued": sum(1 for f in files if f.processing_status == "queued"),
-        "processing_pdf": sum(
-            1 for f in files if f.processing_status == "processing_pdf"
-        ),
-        "processing_entities": sum(
-            1 for f in files if f.processing_status == "processing_entities"
-        ),
-        "completed": completed,
-        "failed": failed,
+    if not version:
+        raise HTTPException(status_code=404, detail="Extract version not found")
+
+    return version
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/merge/{version_number}",
+    response_model=ProcessingVersionBase,
+)
+async def get_merge_version(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    version_number: int,
+    db: Session = Depends(get_db),
+):
+    """Get details of a specific merge version"""
+    version = (
+        db.query(MergeVersion)
+        .join(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            MergeVersion.version_number == version_number,
+        )
+        .first()
+    )
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Merge version not found")
+
+    return version
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/group/{version_number}",
+    response_model=ProcessingVersionBase,
+)
+async def get_group_version(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    version_number: int,
+    db: Session = Depends(get_db),
+):
+    """Get details of a specific group version"""
+    version = (
+        db.query(GroupVersion)
+        .join(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            GroupVersion.version_number == version_number,
+        )
+        .first()
+    )
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Group version not found")
+
+    return version
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/ontology/{version_number}",
+    response_model=ProcessingVersionBase,
+)
+async def get_ontology_version(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    version_number: int,
+    db: Session = Depends(get_db),
+):
+    """Get details of a specific ontology version"""
+    version = (
+        db.query(OntologyVersion)
+        .join(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            OntologyVersion.version_number == version_number,
+        )
+        .first()
+    )
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Ontology version not found")
+
+    return version
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/latest",
+    response_model=dict,
+)
+async def get_latest_versions(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Get the latest version numbers for each processing stage"""
+    pipeline = (
+        db.query(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+        )
+        .first()
+    )
+
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Processing pipeline not found")
+
+    # Get latest versions
+    latest_versions = {
+        "parse": db.query(ParseVersion)
+        .filter(ParseVersion.pipeline_id == pipeline_id)
+        .order_by(ParseVersion.version_number.desc())
+        .first(),
+        "extract": db.query(ExtractVersion)
+        .filter(ExtractVersion.pipeline_id == pipeline_id)
+        .order_by(ExtractVersion.version_number.desc())
+        .first(),
+        "merge": db.query(MergeVersion)
+        .filter(MergeVersion.pipeline_id == pipeline_id)
+        .order_by(MergeVersion.version_number.desc())
+        .first(),
+        "group": db.query(GroupVersion)
+        .filter(GroupVersion.pipeline_id == pipeline_id)
+        .order_by(GroupVersion.version_number.desc())
+        .first(),
+        "ontology": db.query(OntologyVersion)
+        .filter(OntologyVersion.pipeline_id == pipeline_id)
+        .order_by(OntologyVersion.version_number.desc())
+        .first(),
     }
 
-    status_message = (
-        f"Processing status: {completed} completed, {failed} failed, "
-        f"{status_details['queued']} queued, "
-        f"{status_details['processing_pdf']} processing PDF, "
-        f"{status_details['processing_entities']} processing entities"
-    )
-
-    return ProcessingStatus(
-        message=status_message,
-        total_files=total_files,
-        files_completed=completed,
-        files_failed=failed,
-        files_processing=processing,
-        processing_started=True if processing > 0 else False,
-        file_statuses=[
-            FileStatus(
-                file_id=str(f.file_id),
-                filename=f.filename,
-                status=f.processing_status,
-                error=f.processing_error,
-                markdown_path=f.markdown_path,
-                entity_extraction_path=f.entity_extraction_path,
-                last_processed_at=f.last_processed_at,
-                processing_details=get_processing_details(f),
-            )
-            for f in files
-        ],
-    )
-
-
-def get_processing_details(file: FileModel) -> Dict:
-    """Get detailed processing information for a file."""
-    details = {
-        "current_stage": file.processing_status,
-        "has_markdown": bool(file.markdown_path),
-        "has_entity_extraction": bool(file.entity_extraction_path),
+    return {
+        stage: (
+            {
+                "version_number": version.version_number,
+                "status": version.status,
+                "created_at": version.created_at,
+                "error": version.error,
+            }
+            if version
+            else None
+        )
+        for stage, version in latest_versions.items()
     }
-
-    if file.processing_status == "completed":
-        details["completed_stages"] = ["pdf_processing", "entity_extraction"]
-    elif file.processing_status == "processing_entities":
-        details["completed_stages"] = ["pdf_processing"]
-    elif file.processing_status == "failed":
-        details["completed_stages"] = ["pdf_processing"] if file.markdown_path else []
-    else:
-        details["completed_stages"] = []
-
-    return details
