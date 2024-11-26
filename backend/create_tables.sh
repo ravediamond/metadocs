@@ -62,22 +62,6 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       UNIQUE (tenant_id, role_name)
   );
 
-  CREATE TABLE files (
-      file_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
-      filename VARCHAR(255) NOT NULL,
-      filepath TEXT NOT NULL,
-      uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      last_processed_at TIMESTAMP,
-      uploaded_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
-      processing_status VARCHAR(50),
-      processing_error VARCHAR(1024),
-      markdown_path VARCHAR(1024),
-      entity_extraction_path VARCHAR(1024),
-      entity_grouping_path VARCHAR(1024),
-      ontology_path VARCHAR(1024)
-  );
-
   CREATE TABLE user_config (
       config_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
@@ -146,6 +130,23 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     status VARCHAR(50),
     error VARCHAR(1024),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE files (
+    file_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
+    filename VARCHAR(255) NOT NULL,
+    filepath TEXT NOT NULL,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_processed_at TIMESTAMP,
+    uploaded_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
+    processing_status VARCHAR(50),
+    processing_error VARCHAR(1024),
+    pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE SET NULL,
+    markdown_path VARCHAR(1024),
+    entity_extraction_path VARCHAR(1024),
+    entity_grouping_path VARCHAR(1024),
+    ontology_path VARCHAR(1024)
   );
 
   CREATE TABLE domain_versions (

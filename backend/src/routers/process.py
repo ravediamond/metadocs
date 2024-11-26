@@ -18,7 +18,7 @@ from ..models.models import (
     OntologyVersion,
     GraphVersion,
 )
-from ..models.schemas import ProcessingStatus, FileStatus
+from ..models.schemas import ProcessingStatus, FileStatus, ProcessPipelineSchema
 from ..core.database import get_db
 from ..processors.pdf.processor import PDFProcessor
 from ..processors.entity.processor import EntityProcessor
@@ -125,7 +125,7 @@ async def process_file(
         db.commit()
 
         # PDF Processing
-        pdf_processor = PDFProcessor(file, config)
+        pdf_processor = PDFProcessor(file, pipeline, config)
         pdf_result = pdf_processor.process()
 
         if not pdf_result.success:
@@ -149,7 +149,7 @@ async def process_file(
         db.commit()
 
         # Entity Processing
-        entity_processor = EntityProcessor(file, config)
+        entity_processor = EntityProcessor(pipeline, config)
         entity_result = entity_processor.process()
 
         if not entity_result.success:
@@ -324,3 +324,174 @@ async def process_all(domain_id: UUID, db: Session):
 
     finally:
         db.close()
+
+
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/process_files",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ProcessingStatus,
+    summary="Process all files in a domain",
+)
+async def start_processing(
+    tenant_id: UUID,
+    domain_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    # Validate domain exists
+    domain = (
+        db.query(Domain)
+        .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)
+        .first()
+    )
+    if not domain:
+        raise HTTPException(status_code=404, detail="Domain not found")
+
+    # Get all files
+    files = db.query(FileModel).filter(FileModel.domain_id == domain_id).all()
+    if not files:
+        return ProcessingStatus(
+            message="No files to process.", total_files=0, processing_started=False
+        )
+
+    # Queue processing
+    for file in files:
+        file.processing_status = "queued"
+        file.processing_error = None
+    db.commit()
+
+    background_tasks.add_task(process_all, domain_id=domain_id, db=db)
+
+    return ProcessingStatus(
+        message=f"Processing started for {len(files)} files.",
+        total_files=len(files),
+        processing_started=True,
+    )
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/domain_processing_status",
+    response_model=ProcessPipelineSchema,
+)
+async def get_domain_processing_status(
+    tenant_id: UUID,
+    domain_id: UUID,
+    db: Session = Depends(get_db),
+):
+    domain_processing = (
+        db.query(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id, ProcessingPipeline.domain_id == domain_id
+        )
+        .order_by(ProcessingPipeline.created_at.desc())
+        .first()
+    )
+
+    if not domain_processing:
+        raise HTTPException(status_code=404, detail="No domain processing found")
+
+    return domain_processing
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/processing_status",
+    response_model=ProcessingStatus,
+    summary="Get processing status for all files in a domain",
+)
+async def get_processing_status(
+    tenant_id: UUID,
+    domain_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """
+    Get the current processing status of all files in a domain.
+    """
+    # Validate domain exists and belongs to tenant
+    domain = (
+        db.query(Domain)
+        .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)
+        .first()
+    )
+    if not domain:
+        raise HTTPException(status_code=404, detail="Domain not found")
+
+    # Get all files and their processing status
+    files = db.query(FileModel).filter(FileModel.domain_id == domain_id).all()
+
+    if not files:
+        return ProcessingStatus(
+            message="No files found.", total_files=0, processing_started=False
+        )
+
+    # Count files in each status
+    total_files = len(files)
+    completed = sum(1 for f in files if f.processing_status == "completed")
+    failed = sum(1 for f in files if f.processing_status == "failed")
+    processing = sum(
+        1
+        for f in files
+        if f.processing_status in ["processing_pdf", "processing_entities", "queued"]
+    )
+
+    # Create detailed status message
+    status_details = {
+        "queued": sum(1 for f in files if f.processing_status == "queued"),
+        "processing_pdf": sum(
+            1 for f in files if f.processing_status == "processing_pdf"
+        ),
+        "processing_entities": sum(
+            1 for f in files if f.processing_status == "processing_entities"
+        ),
+        "completed": completed,
+        "failed": failed,
+    }
+
+    status_message = (
+        f"Processing status: {completed} completed, {failed} failed, "
+        f"{status_details['queued']} queued, "
+        f"{status_details['processing_pdf']} processing PDF, "
+        f"{status_details['processing_entities']} processing entities"
+    )
+
+    return ProcessingStatus(
+        message=status_message,
+        total_files=total_files,
+        files_completed=completed,
+        files_failed=failed,
+        files_processing=processing,
+        processing_started=True if processing > 0 else False,
+        file_statuses=[
+            FileStatus(
+                file_id=str(f.file_id),
+                filename=f.filename,
+                status=f.processing_status,
+                error=f.processing_error,
+                markdown_path=f.markdown_path,
+                entity_extraction_path=f.entity_extraction_path,
+                last_processed_at=f.last_processed_at,
+                processing_details=get_processing_details(f),
+            )
+            for f in files
+        ],
+    )
+
+
+def get_processing_details(file: FileModel) -> Dict:
+    """Get detailed processing information for a file."""
+    details = {
+        "current_stage": file.processing_status,
+        "has_markdown": bool(file.markdown_path),
+        "has_entity_extraction": bool(file.entity_extraction_path),
+    }
+
+    if file.processing_status == "completed":
+        details["completed_stages"] = ["pdf_processing", "entity_extraction"]
+    elif file.processing_status == "processing_entities":
+        details["completed_stages"] = ["pdf_processing"]
+    elif file.processing_status == "failed":
+        details["completed_stages"] = ["pdf_processing"] if file.markdown_path else []
+    else:
+        details["completed_stages"] = []
+
+    return details

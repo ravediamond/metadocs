@@ -8,9 +8,11 @@ from sqlalchemy import (
     TIMESTAMP,
     Integer,
     func,
+    ARRAY,
+    select,
 )
 from sqlalchemy.dialects.postgresql import UUID as UUIDType
-from sqlalchemy.orm import relationship, declared_attr
+from sqlalchemy.orm import relationship, declared_attr, Session
 from sqlalchemy.ext.declarative import declarative_base
 
 
@@ -195,7 +197,10 @@ class DomainVersion(Base):
     domain = relationship("Domain", back_populates="versions")
     tenant = relationship("Tenant")
     processing_pipeline = relationship(
-        "ProcessingPipeline", back_populates="domain_version", uselist=False
+        "ProcessingPipeline",
+        back_populates="domain_version",
+        single_parent=True,
+        uselist=False,  # One-to-one relationship
     )
 
 
@@ -348,22 +353,25 @@ class File(Base):
         nullable=True,
     )
     last_processed_at = Column(TIMESTAMP, nullable=True)
-
-    # Processing fields
     processing_status = Column(String(50), nullable=True)
     processing_error = Column(String(1024), nullable=True)
+
     markdown_path = Column(String(1024), nullable=True)
     entity_extraction_path = Column(String(1024), nullable=True)
     entity_grouping_path = Column(String(1024), nullable=True)
     ontology_path = Column(String(1024), nullable=True)
 
-    # Relationships
-    domain = relationship("Domain", back_populates="files")
-    uploader = relationship("User", back_populates="files")
+    # Add pipeline reference
+    pipeline_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("processing_pipeline.pipeline_id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # Relationships
     domain = relationship("Domain", back_populates="files")
     uploader = relationship("User", back_populates="files")
+    pipeline = relationship("ProcessingPipeline", back_populates="files")
 
 
 class ProcessingPipeline(Base):
@@ -378,7 +386,7 @@ class ProcessingPipeline(Base):
         nullable=False,
     )
 
-    # Current version references - make them nullable
+    # Current version references
     current_parse_id = Column(UUIDType(as_uuid=True), nullable=True)
     current_extract_id = Column(UUIDType(as_uuid=True), nullable=True)
     current_merge_id = Column(UUIDType(as_uuid=True), nullable=True)
@@ -390,7 +398,7 @@ class ProcessingPipeline(Base):
     error = Column(String(1024))
     created_at = Column(TIMESTAMP, default=func.now())
 
-    # Domain relationship
+    # Relationships
     domain = relationship("Domain", back_populates="processing_pipelines")
     domain_version = relationship(
         "DomainVersion", back_populates="processing_pipeline", uselist=False
@@ -403,90 +411,51 @@ class ProcessingPipeline(Base):
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
-
     extract_versions = relationship(
         "ExtractVersion",
         primaryjoin="ProcessingPipeline.pipeline_id == ExtractVersion.pipeline_id",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
-
     merge_versions = relationship(
         "MergeVersion",
         primaryjoin="ProcessingPipeline.pipeline_id == MergeVersion.pipeline_id",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
-
     group_versions = relationship(
         "GroupVersion",
         primaryjoin="ProcessingPipeline.pipeline_id == GroupVersion.pipeline_id",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
-
     ontology_versions = relationship(
         "OntologyVersion",
         primaryjoin="ProcessingPipeline.pipeline_id == OntologyVersion.pipeline_id",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
-
     graph_versions = relationship(
         "GraphVersion",
         primaryjoin="ProcessingPipeline.pipeline_id == GraphVersion.pipeline_id",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
+    files = relationship("File", back_populates="pipeline")
 
-    # Current version relationships with explicit join conditions
-    current_parse = relationship(
-        "ParseVersion",
-        primaryjoin="and_(ProcessingPipeline.current_parse_id == ParseVersion.version_id)",
-        foreign_keys=[current_parse_id],
-        post_update=True,
-        uselist=False,
-    )
+    def add_file(self, file: File) -> bool:
+        """Add a file to this pipeline's processing list"""
+        if file.domain_id != self.domain_id:
+            return False
+        file.pipeline_id = self.pipeline_id
+        return True
 
-    current_extract = relationship(
-        "ExtractVersion",
-        primaryjoin="and_(ProcessingPipeline.current_extract_id == ExtractVersion.version_id)",
-        foreign_keys=[current_extract_id],
-        post_update=True,
-        uselist=False,
-    )
-
-    current_merge = relationship(
-        "MergeVersion",
-        primaryjoin="and_(ProcessingPipeline.current_merge_id == MergeVersion.version_id)",
-        foreign_keys=[current_merge_id],
-        post_update=True,
-        uselist=False,
-    )
-
-    current_group = relationship(
-        "GroupVersion",
-        primaryjoin="and_(ProcessingPipeline.current_group_id == GroupVersion.version_id)",
-        foreign_keys=[current_group_id],
-        post_update=True,
-        uselist=False,
-    )
-
-    current_ontology = relationship(
-        "OntologyVersion",
-        primaryjoin="and_(ProcessingPipeline.current_ontology_id == OntologyVersion.version_id)",
-        foreign_keys=[current_ontology_id],
-        post_update=True,
-        uselist=False,
-    )
-
-    current_graph = relationship(
-        "GraphVersion",
-        primaryjoin="and_(ProcessingPipeline.current_graph_id == GraphVersion.version_id)",
-        foreign_keys=[current_graph_id],
-        post_update=True,
-        uselist=False,
-    )
+    def remove_file(self, file: File) -> bool:
+        """Remove a file from this pipeline's processing list"""
+        if file.pipeline_id != self.pipeline_id:
+            return False
+        file.pipeline_id = None
+        return True
 
 
 class ProcessingVersionMixin:

@@ -315,7 +315,7 @@ class ProcessingStatus(BaseModel):
         from_attributes = True
 
 
-class DomainProcessingSchema(BaseModel):
+class ProcessPipelineSchema(BaseModel):
     processing_id: UUID
     domain_id: UUID
     status: str

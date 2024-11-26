@@ -52,9 +52,7 @@ class GroupProcessor:
         return LLMFactory(llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
-        logger = logging.getLogger(
-            f"GroupProcessor_{self.domain_processing.processing_id}"
-        )
+        logger = logging.getLogger(f"GroupProcessor_{self.pipeline.pipeline_id}")
         logger.setLevel(logging.DEBUG)
         os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
 
@@ -96,14 +94,25 @@ class GroupProcessor:
     def process(self) -> ProcessingResult:
         try:
             self.logger.info(
-                f"Starting group analysis for domain processing: {self.domain_processing.processing_id}"
+                f"Starting group analysis for pipeline: {self.pipeline.pipeline_id}"
             )
             os.makedirs(self.output_dir, exist_ok=True)
 
             # Load merged entities results
-            with open(
-                self.pipeline.current_merge.output_path, "r", encoding="utf-8"
-            ) as f:
+            merge_version = next(
+                (
+                    v
+                    for v in self.pipeline.merge_versions
+                    if v.version_id == self.pipeline.current_merge_id
+                ),
+                None,
+            )
+
+            if not merge_version or not merge_version.output_path:
+                raise ValueError("No merged entities data available")
+
+            # Load merged entities results
+            with open(merge_version.output_path, "r", encoding="utf-8") as f:
                 merged_data = json.load(f)
 
             # Analyze groups
@@ -114,9 +123,6 @@ class GroupProcessor:
             with open(groups_path, "w", encoding="utf-8") as f:
                 json.dump(groups_analysis, f, indent=2, ensure_ascii=False)
 
-            self.domain_processing.entity_grouping_path = groups_path
-            self.domain_processing.status = "processing_ontology"
-
             return ProcessingResult(
                 success=True,
                 message="Group analysis completed successfully",
@@ -126,8 +132,6 @@ class GroupProcessor:
 
         except Exception as e:
             self.logger.error(f"Error during group analysis: {str(e)}", exc_info=True)
-            self.domain_processing.status = "failed"
-            self.domain_processing.error = str(e)
             return ProcessingResult(
                 success=False, message=f"Group analysis failed: {str(e)}"
             )

@@ -49,9 +49,7 @@ class OntologyProcessor:
         return LLMFactory(llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
-        logger = logging.getLogger(
-            f"OntologyProcessor_{self.domain_processing.processing_id}"
-        )
+        logger = logging.getLogger(f"OntologyProcessor_{self.pipeline.pipeline_id}")
         logger.setLevel(logging.DEBUG)
         os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
 
@@ -101,16 +99,33 @@ class OntologyProcessor:
             )
             os.makedirs(self.output_dir, exist_ok=True)
 
-            # Use current merge version path for entities
-            with open(
-                self.pipeline.current_merge.output_path, "r", encoding="utf-8"
-            ) as f:
+            merge_version = next(
+                (
+                    v
+                    for v in self.pipeline.merge_versions
+                    if v.version_id == self.pipeline.current_merge_id
+                ),
+                None,
+            )
+            if not merge_version or not merge_version.output_path:
+                raise ValueError("No merged entities data available")
+
+            group_version = next(
+                (
+                    v
+                    for v in self.pipeline.group_versions
+                    if v.version_id == self.pipeline.current_group_id
+                ),
+                None,
+            )
+            if not group_version or not group_version.output_path:
+                raise ValueError("No group data available")
+
+            # Load the data from the version outputs
+            with open(merge_version.output_path, "r", encoding="utf-8") as f:
                 entities_data = json.load(f)
 
-            # Use current group version path for groups
-            with open(
-                self.pipeline.current_group.output_path, "r", encoding="utf-8"
-            ) as f:
+            with open(group_version.output_path, "r", encoding="utf-8") as f:
                 groups_data = json.load(f)
 
             mermaid_diagram = self._generate_mermaid(entities_data, groups_data)
