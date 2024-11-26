@@ -187,15 +187,16 @@ class DomainVersion(Base):
     )
     version = Column(Integer, primary_key=True)
     created_at = Column(TIMESTAMP, default=func.now())
-    entity_grouping_path = Column(String(1024))
-    ontology_path = Column(String(1024))
-    processing_id = Column(
-        UUIDType(as_uuid=True), ForeignKey("domain_processing.processing_id")
+    pipeline_id = Column(
+        UUIDType(as_uuid=True), ForeignKey("processing_pipeline.pipeline_id")
     )
 
     # Relationships
     domain = relationship("Domain", back_populates="versions")
     tenant = relationship("Tenant")
+    processing_pipeline = relationship(
+        "ProcessingPipeline", back_populates="domain_version", uselist=False
+    )
 
 
 # DomainConfig Model
@@ -391,6 +392,9 @@ class ProcessingPipeline(Base):
 
     # Domain relationship
     domain = relationship("Domain", back_populates="processing_pipelines")
+    domain_version = relationship(
+        "DomainVersion", back_populates="processing_pipeline", uselist=False
+    )
 
     # Version relationships
     parse_versions = relationship(
