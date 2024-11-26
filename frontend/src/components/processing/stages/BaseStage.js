@@ -1,69 +1,76 @@
 import React from 'react';
 import {
-    Box,
-    Button,
     VStack,
     Text,
-    Heading,
-    HStack,
+    Button,
     Badge,
+    Box,
     Progress,
 } from '@chakra-ui/react';
 
 const BaseStage = ({
     title,
     description,
-    status,
+    status = 'pending', // pending, processing, completed, failed
     onStart,
     onRetry,
-    canProceed,
-    processing,
-    children,
+    processing = false,
+    children
 }) => {
+    // Helper function for badge color
+    const getBadgeColor = (status) => {
+        switch (status) {
+            case 'completed':
+                return 'green';
+            case 'processing':
+                return 'blue';
+            case 'failed':
+                return 'red';
+            default:
+                return 'gray';
+        }
+    };
+
     return (
         <VStack spacing={6} align="stretch">
+            {/* Header */}
             <Box>
-                <Heading size="md" mb={2}>{title}</Heading>
-                <Text color="gray.600">{description}</Text>
-            </Box>
-
-            <HStack>
-                <Badge
-                    colorScheme={
-                        status === 'completed'
-                            ? 'green'
-                            : status === 'processing'
-                                ? 'blue'
-                                : status === 'failed'
-                                    ? 'red'
-                                    : 'gray'
-                    }
-                >
+                <Text fontSize="xl" fontWeight="bold" mb={2}>{title}</Text>
+                <Text color="gray.600" mb={4}>{description}</Text>
+                <Badge colorScheme={getBadgeColor(status)}>
                     {status}
                 </Badge>
-            </HStack>
+            </Box>
 
-            {processing && <Progress size="sm" isIndeterminate />}
+            {/* Processing Progress */}
+            {processing && (
+                <Progress size="sm" isIndeterminate colorScheme="blue" />
+            )}
 
+            {/* Main Content */}
             <Box>{children}</Box>
 
-            <HStack spacing={4}>
+            {/* Actions */}
+            <Box>
                 <Button
                     colorScheme="blue"
-                    onClick={onStart}
+                    onClick={status === 'failed' ? onRetry : onStart}
                     isDisabled={processing || status === 'completed'}
+                    isLoading={processing}
                 >
                     {status === 'failed' ? 'Retry' : 'Start Processing'}
                 </Button>
+
                 {status === 'completed' && (
                     <Button
-                        colorScheme="green"
+                        ml={4}
+                        variant="outline"
                         onClick={onRetry}
                     >
                         Reprocess
                     </Button>
                 )}
-            </HStack>
+            </Box>
         </VStack>
     );
 };

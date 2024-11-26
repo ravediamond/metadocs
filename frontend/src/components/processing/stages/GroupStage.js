@@ -2,15 +2,18 @@ import React, { useState, useEffect } from 'react';
 import {
     VStack,
     Text,
-    List,
-    ListItem,
-    Flex,
-    Icon,
     Box,
+    Grid,
+    GridItem,
+    Progress,
     Badge,
-    SimpleGrid,
+    Accordion,
+    AccordionItem,
+    AccordionButton,
+    AccordionPanel,
+    AccordionIcon,
+    useToast,
 } from '@chakra-ui/react';
-import { CheckCircleIcon, WarningIcon } from '@chakra-ui/icons';
 import BaseStage from './BaseStage';
 
 const GroupStage = ({
@@ -21,51 +24,71 @@ const GroupStage = ({
     onPipelineCreate,
     processing,
     setProcessing,
+    token,
+    currentTenant
 }) => {
     const [status, setStatus] = useState('pending');
-    const [mergedEntities, setMergedEntities] = useState([]);
-    const [groups, setGroups] = useState([]);
-
-    useEffect(() => {
-        fetchMergedEntities();
-    }, [domainId]);
-
-    const fetchMergedEntities = async () => {
-        try {
-            const response = await fetch(`/api/domains/${domainId}/merged-entities`);
-            const data = await response.json();
-            setMergedEntities(data);
-        } catch (error) {
-            console.error('Error fetching merged entities:', error);
-        }
-    };
+    const [groupStats, setGroupStats] = useState({
+        totalGroups: 0,
+        totalEntities: 0,
+        groups: []
+    });
+    const toast = useToast();
 
     const handleStart = async () => {
         setProcessing(true);
         setStatus('processing');
 
         try {
-            const response = await fetch(
-                `/api/domains/${domainId}/group`,
+            // Create new pipeline
+            const pipelineResponse = await fetch(
+                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domainId}/pipelines`,
                 {
                     method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        stage: 'group',
+                        previousPipelineId: pipelineId
+                    })
                 }
             );
+
+            if (!pipelineResponse.ok) throw new Error('Failed to create pipeline');
+            const pipelineData = await pipelineResponse.json();
+            onPipelineCreate(pipelineData.pipeline_id);
+
+            // Generate groups
+            const response = await fetch(
+                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domainId}/groups/generate`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ pipeline_id: pipelineData.pipeline_id })
+                }
+            );
+
+            if (!response.ok) throw new Error('Failed to generate groups');
+
             const data = await response.json();
-
-            // Simulate groups
-            setGroups([
-                { name: 'Products', entityCount: 45, confidence: 0.9 },
-                { name: 'Processes', entityCount: 30, confidence: 0.85 },
-                { name: 'Stakeholders', entityCount: 25, confidence: 0.95 },
-                { name: 'Resources', entityCount: 20, confidence: 0.88 },
-            ]);
-
+            setGroupStats(data);
             setStatus('completed');
             onComplete();
         } catch (error) {
+            console.error('Error generating groups:', error);
             setStatus('failed');
-            console.error('Error during grouping:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to generate groups',
+                status: 'error',
+                duration: 5000,
+                isClosable: true,
+            });
         } finally {
             setProcessing(false);
         }
@@ -74,50 +97,71 @@ const GroupStage = ({
     return (
         <BaseStage
             title="Group Concepts"
-            description="Organize entities into meaningful groups based on their relationships and attributes"
+            description="Organize entities into meaningful groups"
             status={status}
             onStart={handleStart}
             onRetry={handleStart}
             processing={processing}
         >
-            <VStack spacing={4} align="stretch">
-                <Text fontWeight="bold">Current Entity Count:</Text>
-                <Badge colorScheme="blue" fontSize="md" p={2}>
-                    {mergedEntities.length} Entities Available for Grouping
-                </Badge>
+            <VStack spacing={6} align="stretch">
+                {/* Basic Stats */}
+                <Grid templateColumns="repeat(2, 1fr)" gap={4}>
+                    <GridItem>
+                        <Box p={4} bg="blue.50" rounded="lg">
+                            <Text fontSize="sm" color="gray.600">Total Groups</Text>
+                            <Text fontSize="2xl" fontWeight="bold">
+                                {groupStats.totalGroups}
+                            </Text>
+                        </Box>
+                    </GridItem>
+                    <GridItem>
+                        <Box p={4} bg="green.50" rounded="lg">
+                            <Text fontSize="sm" color="gray.600">Total Entities</Text>
+                            <Text fontSize="2xl" fontWeight="bold">
+                                {groupStats.totalEntities}
+                            </Text>
+                        </Box>
+                    </GridItem>
+                </Grid>
 
-                {groups.length > 0 && (
-                    <Box mt={4}>
-                        <Text fontWeight="bold" mb={4}>Generated Groups:</Text>
-                        <SimpleGrid columns={2} spacing={4}>
-                            {groups.map((group, index) => (
-                                <Box
-                                    key={index}
-                                    p={4}
-                                    borderRadius="md"
-                                    bg="white"
-                                    shadow="sm"
-                                    border="1px"
-                                    borderColor="gray.200"
-                                >
-                                    <Text fontWeight="bold" color="blue.600">
-                                        {group.name}
-                                    </Text>
-                                    <Flex justify="space-between" mt={2}>
-                                        <Text fontSize="sm">Entities:</Text>
-                                        <Badge colorScheme="green">
-                                            {group.entityCount}
-                                        </Badge>
-                                    </Flex>
-                                    <Flex justify="space-between" mt={1}>
-                                        <Text fontSize="sm">Confidence:</Text>
-                                        <Badge colorScheme={group.confidence > 0.8 ? "green" : "yellow"}>
-                                            {(group.confidence * 100).toFixed(1)}%
-                                        </Badge>
-                                    </Flex>
-                                </Box>
+                {/* Groups List */}
+                {groupStats.groups.length > 0 && (
+                    <Box>
+                        <Text fontWeight="bold" mb={3}>Generated Groups</Text>
+                        <Accordion allowMultiple>
+                            {groupStats.groups.map((group, index) => (
+                                <AccordionItem key={index}>
+                                    <h2>
+                                        <AccordionButton>
+                                            <Box flex="1" textAlign="left">
+                                                <Text fontWeight="medium">{group.name}</Text>
+                                            </Box>
+                                            <Badge colorScheme="blue" mr={2}>
+                                                {group.entities.length} entities
+                                            </Badge>
+                                            <AccordionIcon />
+                                        </AccordionButton>
+                                    </h2>
+                                    <AccordionPanel>
+                                        <VStack align="stretch" spacing={2}>
+                                            {group.entities.map((entity, entityIndex) => (
+                                                <Box
+                                                    key={entityIndex}
+                                                    p={2}
+                                                    bg="gray.50"
+                                                    rounded="md"
+                                                >
+                                                    <Text>{entity.name}</Text>
+                                                    <Badge size="sm" colorScheme="purple">
+                                                        {entity.type}
+                                                    </Badge>
+                                                </Box>
+                                            ))}
+                                        </VStack>
+                                    </AccordionPanel>
+                                </AccordionItem>
                             ))}
-                        </SimpleGrid>
+                        </Accordion>
                     </Box>
                 )}
             </VStack>

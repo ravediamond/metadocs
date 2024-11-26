@@ -2,14 +2,19 @@ import React, { useState, useEffect } from 'react';
 import {
     VStack,
     Text,
-    List,
-    ListItem,
-    Flex,
-    Icon,
-    Badge,
     Box,
+    Grid,
+    GridItem,
+    Progress,
+    Badge,
+    Table,
+    Thead,
+    Tbody,
+    Tr,
+    Th,
+    Td,
+    useToast,
 } from '@chakra-ui/react';
-import { CheckCircleIcon, WarningIcon } from '@chakra-ui/icons';
 import BaseStage from './BaseStage';
 
 const ExtractStage = ({
@@ -20,63 +25,51 @@ const ExtractStage = ({
     onPipelineCreate,
     processing,
     setProcessing,
+    token,
+    currentTenant
 }) => {
     const [status, setStatus] = useState('pending');
-    const [files, setFiles] = useState([]);
-    const [progress, setProgress] = useState({});
-    const [entities, setEntities] = useState([]);
-
-    useEffect(() => {
-        fetchParsedFiles();
-    }, [domainId]);
-
-    const fetchParsedFiles = async () => {
-        try {
-            const response = await fetch(`/api/domains/${domainId}/files?status=parsed`);
-            const data = await response.json();
-            setFiles(data);
-        } catch (error) {
-            console.error('Error fetching parsed files:', error);
+    const [extractionStats, setExtractionStats] = useState({
+        totalEntities: 0,
+        entitiesByType: {},
+        processingProgress: {
+            processed: 0,
+            total: 0
         }
-    };
+    });
+    const toast = useToast();
 
     const handleStart = async () => {
         setProcessing(true);
         setStatus('processing');
 
         try {
-            for (const file of files) {
-                const response = await fetch(
-                    `/api/domains/${domainId}/files/${file.id}/extract`,
-                    {
-                        method: 'POST',
-                    }
-                );
-                const data = await response.json();
+            const response = await fetch(
+                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domainId}/extract`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                    },
+                }
+            );
 
-                setProgress(prev => ({
-                    ...prev,
-                    [file.id]: {
-                        status: 'completed',
-                        pipeline: data.pipeline_id,
-                        entityCount: data.entityCount
-                    }
-                }));
+            if (!response.ok) throw new Error('Failed to start extraction');
 
-                // Simulate receiving extracted entities
-                setEntities(prev => [
-                    ...prev,
-                    { type: 'Product', count: Math.floor(Math.random() * 20) },
-                    { type: 'Process', count: Math.floor(Math.random() * 15) },
-                    { type: 'Stakeholder', count: Math.floor(Math.random() * 10) },
-                ]);
-            }
-
+            const data = await response.json();
+            setExtractionStats(data);
             setStatus('completed');
             onComplete();
         } catch (error) {
-            setStatus('failed');
             console.error('Error during extraction:', error);
+            setStatus('failed');
+            toast({
+                title: 'Error',
+                description: 'Failed to complete extraction',
+                status: 'error',
+                duration: 5000,
+                isClosable: true,
+            });
         } finally {
             setProcessing(false);
         }
@@ -85,50 +78,58 @@ const ExtractStage = ({
     return (
         <BaseStage
             title="Extract Entities"
-            description="Identify and extract domain-specific entities from processed documents"
+            description="Identify and extract domain-specific entities"
             status={status}
             onStart={handleStart}
             onRetry={handleStart}
             processing={processing}
         >
-            <VStack spacing={4} align="stretch">
-                <Text fontWeight="bold">Files for Entity Extraction:</Text>
-                <List spacing={3}>
-                    {files.map((file) => (
-                        <ListItem key={file.id}>
-                            <Flex justify="space-between" align="center">
-                                <Text>{file.name}</Text>
-                                <Flex align="center" gap={2}>
-                                    {progress[file.id]?.entityCount && (
-                                        <Badge colorScheme="blue">
-                                            {progress[file.id].entityCount} entities
-                                        </Badge>
-                                    )}
-                                    <Icon
-                                        as={progress[file.id]?.status === 'completed' ? CheckCircleIcon : WarningIcon}
-                                        color={progress[file.id]?.status === 'completed' ? 'green.500' : 'yellow.500'}
-                                    />
-                                </Flex>
-                            </Flex>
-                        </ListItem>
-                    ))}
-                </List>
+            <VStack spacing={6} align="stretch">
+                {/* Basic Stats */}
+                <Grid templateColumns="repeat(2, 1fr)" gap={4}>
+                    <GridItem>
+                        <Box p={4} bg="blue.50" rounded="lg">
+                            <Text fontSize="sm" color="gray.600">Total Entities</Text>
+                            <Text fontSize="2xl" fontWeight="bold">
+                                {extractionStats.totalEntities}
+                            </Text>
+                        </Box>
+                    </GridItem>
+                    <GridItem>
+                        <Box p={4} bg="green.50" rounded="lg">
+                            <Text fontSize="sm" color="gray.600">Progress</Text>
+                            <Progress
+                                value={(extractionStats.processingProgress.processed /
+                                    extractionStats.processingProgress.total) * 100}
+                                size="sm"
+                                colorScheme="green"
+                            />
+                        </Box>
+                    </GridItem>
+                </Grid>
 
-                {entities.length > 0 && (
-                    <Box mt={4}>
-                        <Text fontWeight="bold" mb={2}>Extracted Entities:</Text>
-                        <List spacing={2}>
-                            {entities.map((entity, index) => (
-                                <ListItem key={index}>
-                                    <Flex justify="space-between">
-                                        <Text>{entity.type}</Text>
-                                        <Badge colorScheme="green">{entity.count}</Badge>
-                                    </Flex>
-                                </ListItem>
+                {/* Entities Table */}
+                <Box>
+                    <Text fontWeight="bold" mb={3}>Extracted Entities by Type</Text>
+                    <Table variant="simple">
+                        <Thead>
+                            <Tr>
+                                <Th>Type</Th>
+                                <Th>Count</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
+                            {Object.entries(extractionStats.entitiesByType).map(([type, count]) => (
+                                <Tr key={type}>
+                                    <Td>{type}</Td>
+                                    <Td>
+                                        <Badge colorScheme="blue">{count}</Badge>
+                                    </Td>
+                                </Tr>
                             ))}
-                        </List>
-                    </Box>
-                )}
+                        </Tbody>
+                    </Table>
+                </Box>
             </VStack>
         </BaseStage>
     );

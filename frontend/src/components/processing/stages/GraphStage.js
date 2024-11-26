@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     VStack,
     Text,
@@ -7,19 +7,17 @@ import {
     GridItem,
     Button,
     Progress,
-    Badge,
-    Menu,
-    MenuButton,
-    MenuList,
-    MenuItem,
     useToast,
+    Tabs,
+    TabList,
+    TabPanels,
+    Tab,
+    TabPanel,
 } from '@chakra-ui/react';
-import { ChevronDown, Download } from 'lucide-react';
+import { Download, Eye } from 'lucide-react';
 import BaseStage from './BaseStage';
 
-const EXPORT_FORMATS = ['OWL', 'RDF', 'JSON-LD', 'TTL'];
-
-const OntologyStage = ({
+const GraphStage = ({
     domainId,
     version,
     pipelineId,
@@ -31,14 +29,10 @@ const OntologyStage = ({
     currentTenant
 }) => {
     const [status, setStatus] = useState('pending');
-    const [ontologyStats, setOntologyStats] = useState({
-        classes: 0,
-        properties: 0,
-        individuals: 0,
-        axioms: 0,
-        metrics: {
-            consistency: 0
-        }
+    const [graphStats, setGraphStats] = useState({
+        nodes: 0,
+        edges: 0,
+        clusters: 0
     });
     const toast = useToast();
 
@@ -57,7 +51,7 @@ const OntologyStage = ({
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        stage: 'ontology',
+                        stage: 'graph',
                         previousPipelineId: pipelineId
                     })
                 }
@@ -67,9 +61,9 @@ const OntologyStage = ({
             const pipelineData = await pipelineResponse.json();
             onPipelineCreate(pipelineData.pipeline_id);
 
-            // Generate ontology
+            // Generate graph
             const response = await fetch(
-                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domainId}/ontology/generate`,
+                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domainId}/graph/generate`,
                 {
                     method: 'POST',
                     headers: {
@@ -80,18 +74,18 @@ const OntologyStage = ({
                 }
             );
 
-            if (!response.ok) throw new Error('Failed to generate ontology');
+            if (!response.ok) throw new Error('Failed to generate graph');
 
             const data = await response.json();
-            setOntologyStats(data);
+            setGraphStats(data);
             setStatus('completed');
             onComplete();
         } catch (error) {
-            console.error('Error generating ontology:', error);
+            console.error('Error generating graph:', error);
             setStatus('failed');
             toast({
                 title: 'Error',
-                description: 'Failed to generate ontology',
+                description: 'Failed to generate knowledge graph',
                 status: 'error',
                 duration: 5000,
                 isClosable: true,
@@ -101,41 +95,33 @@ const OntologyStage = ({
         }
     };
 
-    const handleExport = async (format) => {
+    const handleDownload = async (format = 'json') => {
         try {
             const response = await fetch(
-                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domainId}/ontology/export?format=${format}`,
+                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domainId}/graph/export?format=${format}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                    }
+                    },
                 }
             );
 
-            if (!response.ok) throw new Error(`Failed to export ontology as ${format}`);
+            if (!response.ok) throw new Error('Failed to download graph');
 
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `ontology.${format.toLowerCase()}`;
+            a.download = `knowledge-graph.${format}`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
-
-            toast({
-                title: 'Export successful',
-                description: `Ontology exported as ${format}`,
-                status: 'success',
-                duration: 3000,
-                isClosable: true,
-            });
         } catch (error) {
-            console.error('Error exporting ontology:', error);
+            console.error('Error downloading graph:', error);
             toast({
-                title: 'Export failed',
-                description: `Failed to export ontology as ${format}`,
+                title: 'Error',
+                description: 'Failed to download graph',
                 status: 'error',
                 duration: 5000,
                 isClosable: true,
@@ -145,8 +131,8 @@ const OntologyStage = ({
 
     return (
         <BaseStage
-            title="Create Ontology"
-            description="Generate formal ontology structure"
+            title="Knowledge Graph"
+            description="Generate the final knowledge graph"
             status={status}
             onStart={handleStart}
             onRetry={handleStart}
@@ -154,74 +140,69 @@ const OntologyStage = ({
         >
             <VStack spacing={6} align="stretch">
                 {/* Basic Stats */}
-                <Grid templateColumns="repeat(4, 1fr)" gap={4}>
+                <Grid templateColumns="repeat(3, 1fr)" gap={4}>
                     <GridItem>
                         <Box p={4} bg="blue.50" rounded="lg">
-                            <Text fontSize="sm" color="gray.600">Classes</Text>
+                            <Text fontSize="sm" color="gray.600">Nodes</Text>
                             <Text fontSize="2xl" fontWeight="bold">
-                                {ontologyStats.classes}
+                                {graphStats.nodes.toLocaleString()}
                             </Text>
                         </Box>
                     </GridItem>
                     <GridItem>
                         <Box p={4} bg="green.50" rounded="lg">
-                            <Text fontSize="sm" color="gray.600">Properties</Text>
+                            <Text fontSize="sm" color="gray.600">Edges</Text>
                             <Text fontSize="2xl" fontWeight="bold">
-                                {ontologyStats.properties}
+                                {graphStats.edges.toLocaleString()}
                             </Text>
                         </Box>
                     </GridItem>
                     <GridItem>
                         <Box p={4} bg="purple.50" rounded="lg">
-                            <Text fontSize="sm" color="gray.600">Individuals</Text>
+                            <Text fontSize="sm" color="gray.600">Clusters</Text>
                             <Text fontSize="2xl" fontWeight="bold">
-                                {ontologyStats.individuals}
-                            </Text>
-                        </Box>
-                    </GridItem>
-                    <GridItem>
-                        <Box p={4} bg="orange.50" rounded="lg">
-                            <Text fontSize="sm" color="gray.600">Axioms</Text>
-                            <Text fontSize="2xl" fontWeight="bold">
-                                {ontologyStats.axioms}
+                                {graphStats.clusters.toLocaleString()}
                             </Text>
                         </Box>
                     </GridItem>
                 </Grid>
 
-                {/* Consistency Score */}
-                <Box>
-                    <Text mb={2}>Consistency Score</Text>
-                    <Progress
-                        value={ontologyStats.metrics.consistency * 100}
-                        size="sm"
-                        colorScheme="green"
-                    />
-                </Box>
-
-                {/* Export Options */}
                 {status === 'completed' && (
-                    <Box>
-                        <Menu>
-                            <MenuButton as={Button} rightIcon={<ChevronDown />} leftIcon={<Download />}>
-                                Export Ontology
-                            </MenuButton>
-                            <MenuList>
-                                {EXPORT_FORMATS.map(format => (
-                                    <MenuItem
-                                        key={format}
-                                        onClick={() => handleExport(format)}
-                                    >
-                                        Export as {format}
-                                    </MenuItem>
-                                ))}
-                            </MenuList>
-                        </Menu>
-                    </Box>
+                    <>
+                        {/* Graph View Area */}
+                        <Box
+                            height="400px"
+                            bg="gray.50"
+                            borderRadius="lg"
+                            display="flex"
+                            alignItems="center"
+                            justifyContent="center"
+                        >
+                            <Text color="gray.500">Graph Visualization Area</Text>
+                        </Box>
+
+                        {/* Actions */}
+                        <Box display="flex" gap={4}>
+                            <Button
+                                leftIcon={<Eye size={20} />}
+                                onClick={() => {
+                                    // Implement view functionality
+                                }}
+                            >
+                                View Graph
+                            </Button>
+                            <Button
+                                leftIcon={<Download size={20} />}
+                                onClick={() => handleDownload('json')}
+                            >
+                                Download Graph
+                            </Button>
+                        </Box>
+                    </>
                 )}
             </VStack>
         </BaseStage>
     );
 };
 
-export default OntologyStage;
+export default GraphStage;
