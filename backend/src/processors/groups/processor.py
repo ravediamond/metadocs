@@ -1,5 +1,3 @@
-# src/processors/groups/processor.py
-
 from dataclasses import dataclass
 from typing import Dict, Optional
 import json
