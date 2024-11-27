@@ -1,255 +1,210 @@
-import React, { useState, useEffect, useContext } from 'react';
-import {
-    Box,
-    Container,
-    Text,
-    Alert,
-    AlertIcon,
-    Button,
-    useToast,
-    Progress,
-    VStack,
-    HStack,
-    Icon,
-    Textarea,
-    Flex,
-    Badge,
-    Grid,
-    GridItem,
-    useColorModeValue,
-} from '@chakra-ui/react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useContext, useEffect } from 'react';
+import { Box, Container, Flex, Text, IconButton, useToast } from '@chakra-ui/react';
+import { Share2 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import ChatPanel from '../components/chat/ChatPanel';
+import StageNavigation from '../components/processing/StageNavigation';
+import VersionControl from '../components/processing/VersionControl';
+import { stages } from '../constants/stages';
 
-// Import stage components
-import ParseStage from '../components/processing/stages/ParseStage';
-import ExtractStage from '../components/processing/stages/ExtractStage';
-import MergeStage from '../components/processing/stages/MergeStage';
-import GroupStage from '../components/processing/stages/GroupStage';
-import OntologyStage from '../components/processing/stages/OntologyStage';
-import GraphStage from '../components/processing/stages/GraphStage';
+const StreamlinedWorkflow = () => {
+  const { token, currentTenant } = useContext(AuthContext);
+  const [currentStage, setCurrentStage] = useState('new-version');
+  const [loading, setLoading] = useState(false);
+  const [stageData, setStageData] = useState(null);
+  const [currentVersion, setCurrentVersion] = useState(null);
+  const [versions, setVersions] = useState([]);
+  const toast = useToast();
 
-const stages = [
-    {
-        id: 'version',
-        name: 'Version',
-        icon: '📋',
-        description: 'Manage document versions',
-        Component: () => (
-            <Box bg="white" p={6} rounded="xl" shadow="sm" borderWidth={1} borderColor="gray.100">
-                <Flex justify="space-between" align="center" mb={6}>
-                    <Text fontSize="lg" fontWeight="medium">Current Version</Text>
-                    <Badge colorScheme="blue" rounded="full" px={3}>Draft</Badge>
-                </Flex>
-                <VStack spacing={3}>
-                    <Box w="full" p={4} bg="gray.50" rounded="lg">
-                        <Flex justify="space-between" align="center">
-                            <Box>
-                                <Text fontWeight="medium">Gas Distribution v1.0</Text>
-                                <Text fontSize="sm" color="gray.500">Created: Nov 27, 2024</Text>
-                            </Box>
-                            <Button size="sm" variant="outline">View Changes</Button>
-                        </Flex>
-                    </Box>
-                </VStack>
-            </Box>
-        )
-    },
-    {
-        id: 'parse',
-        name: 'Parse',
-        icon: '📄',
-        description: 'Convert documents into processable text',
-        Component: ParseStage
-    },
-    {
-        id: 'extract',
-        name: 'Extract',
-        icon: '🔍',
-        description: 'Identify domain-specific entities',
-        Component: ExtractStage
-    },
-    {
-        id: 'merge',
-        name: 'Merge',
-        icon: '🔄',
-        description: 'Combine and deduplicate entities',
-        Component: MergeStage
-    },
-    {
-        id: 'group',
-        name: 'Group',
-        icon: '📊',
-        description: 'Organize entities into groups',
-        Component: GroupStage
-    },
-    {
-        id: 'ontology',
-        name: 'Ontology',
-        icon: '🌐',
-        description: 'Generate domain ontology',
-        Component: OntologyStage
-    },
-    {
-        id: 'graph',
-        name: 'Graph',
-        icon: '📈',
-        description: 'Generate final knowledge graph',
-        Component: GraphStage
+  const loadStageData = async () => {
+    if (!token || !currentTenant) {
+      toast({
+        title: 'Authentication Error',
+        description: 'Please log in to continue',
+        status: 'error',
+        duration: 3000,
+      });
+      return;
     }
-];
 
-const ProcessingWorkspacePage = () => {
-    const { domain_id } = useParams();
-    const { token, currentTenant } = useContext(AuthContext);
-    const navigate = useNavigate();
-    const toast = useToast();
-
-    const [selectedStage, setSelectedStage] = useState('version');
-    const [pipelineId, setPipelineId] = useState(null);
-    const [processing, setProcessing] = useState(false);
-    const [domainInfo, setDomainInfo] = useState(null);
-    const [error, setError] = useState(null);
-    const [loading, setLoading] = useState(true);
-
-    const borderColor = useColorModeValue('gray.200', 'gray.700');
-    const headerBg = useColorModeValue('white', 'gray.800');
-    const activeBorderColor = useColorModeValue('blue.500', 'blue.300');
-    const activeTextColor = useColorModeValue('blue.600', 'blue.300');
-
-    const fetchDomainInfo = async () => {
-        try {
-            const response = await fetch(
-                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                    },
-                }
-            );
-            if (!response.ok) throw new Error('Failed to fetch domain information');
-            const data = await response.json();
-            setDomainInfo(data);
-
-            if (data.latest_pipeline) {
-                setPipelineId(data.latest_pipeline.pipeline_id);
-            }
-        } catch (error) {
-            console.error('Error fetching domain info:', error);
-            setError(error.message);
-        } finally {
-            setLoading(false);
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `${process.env.REACT_APP_BACKEND_URL}/process/tenants/${currentTenant}/stages/${currentStage}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
         }
-    };
+      );
+      
+      if (!response.ok) throw new Error('Failed to fetch stage data');
+      const data = await response.json();
+      setStageData(data);
+    } catch (error) {
+      console.error('Error loading stage data:', error);
+      toast({
+        title: 'Error loading data',
+        description: error.message,
+        status: 'error',
+        duration: 3000,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    useEffect(() => {
-        if (domain_id && currentTenant && token) {
-            fetchDomainInfo();
+  const loadVersions = async () => {
+    try {
+      const response = await fetch(
+        `${process.env.REACT_APP_BACKEND_URL}/versions/tenants/${currentTenant}/versions`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
         }
-    }, [domain_id, currentTenant, token]);
-
-    if (error) {
-        return (
-            <Container maxW="container.xl" py={8}>
-                <Alert status="error" rounded="lg">
-                    <AlertIcon />
-                    {error}
-                </Alert>
-                <Button mt={4} onClick={() => navigate('/dashboard')}>
-                    Return to Dashboard
-                </Button>
-            </Container>
-        );
+      );
+      if (!response.ok) throw new Error('Failed to fetch versions');
+      const data = await response.json();
+      setVersions(data);
+    } catch (error) {
+      console.error('Error fetching versions:', error);
+      toast({
+        title: 'Error fetching versions',
+        description: error.message,
+        status: 'error',
+        duration: 3000,
+      });
     }
+  };
 
-    if (loading) {
-        return (
-            <Container maxW="container.xl" py={8}>
-                <VStack spacing={4}>
-                    <Text>Loading workspace...</Text>
-                    <Progress size="xs" isIndeterminate w="100%" />
-                </VStack>
-            </Container>
-        );
+  useEffect(() => {
+    if (token && currentTenant) {
+      loadVersions();
+      loadStageData();
     }
+  }, [currentStage, token, currentTenant]);
 
-    const CurrentStageComponent = stages.find(s => s.id === selectedStage)?.Component;
+  const handleCreateVersion = async () => {
+    try {
+      const response = await fetch(
+        `${process.env.REACT_APP_BACKEND_URL}/versions/tenants/${currentTenant}/versions`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: `Version ${versions.length + 1}`,
+            status: 'draft'
+          }),
+        }
+      );
+      
+      if (!response.ok) throw new Error('Failed to create version');
+      await loadVersions();
+      return response.json();
+    } catch (error) {
+      throw error;
+    }
+  };
 
-    return (
-        <Box h="100vh" display="flex" flexDirection="column">
-            {/* Header */}
-            <Box bg={headerBg} borderBottomWidth={1} borderColor={borderColor}>
-                <Container maxW="container.xl" px={6}>
-                    <Flex h="16" gap={8}>
-                        {stages.map(stage => (
-                            <Button
-                                key={stage.id}
-                                variant="ghost"
-                                height="full"
-                                px={1}
-                                onClick={() => setSelectedStage(stage.id)}
-                                position="relative"
-                                borderRadius={0}
-                                color={selectedStage === stage.id ? activeTextColor : 'gray.600'}
-                                _hover={{ color: 'gray.900' }}
-                                _after={{
-                                    content: '""',
-                                    position: 'absolute',
-                                    bottom: '-1px',
-                                    left: 0,
-                                    right: 0,
-                                    height: '2px',
-                                    bg: selectedStage === stage.id ? activeBorderColor : 'transparent'
-                                }}
-                            >
-                                <HStack spacing={2}>
-                                    <Text>{stage.icon}</Text>
-                                    <Text>{stage.name}</Text>
-                                </HStack>
-                            </Button>
-                        ))}
-                    </Flex>
-                </Container>
-            </Box>
+  const handleValidateVersion = async (versionId) => {
+    try {
+      const response = await fetch(
+        `${process.env.REACT_APP_BACKEND_URL}/versions/tenants/${currentTenant}/versions/${versionId}/validate`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      if (!response.ok) throw new Error('Failed to validate version');
+      await loadVersions();
+      return response.json();
+    } catch (error) {
+      throw error;
+    }
+  };
 
-            {/* Main Content */}
-            <Grid
-                flex={1}
-                templateColumns="1fr 1fr"
-                overflow="hidden"
-            >
-                {/* Chat Panel */}
-                <Box
-                    borderRightWidth={1}
-                    borderColor={borderColor}
-                    bg="white"
-                >
-                    <ChatPanel
-                        domainId={domain_id}
-                        currentStage={stages.find(s => s.id === selectedStage)}
-                    />
+  const handleStageChange = (stage) => {
+    if (!currentVersion && stage !== 'new-version') {
+      toast({
+        title: 'Version required',
+        description: 'Please create a version first',
+        status: 'warning',
+        duration: 3000,
+      });
+      return;
+    }
+    setCurrentStage(stage);
+  };
+
+  return (
+    <Box h="100vh" display="flex" flexDirection="column" bg="gray.50">
+      {/* Header */}
+      <Box bg="white" borderBottom="1px" borderColor="gray.200">
+        <Container maxW="container.xl" py={3}>
+          <Flex justify="space-between" align="center" mb={4}>
+            <Flex align="center" gap={4}>
+              <Text fontSize="xl" fontWeight="semibold">
+                Knowledge Graph Builder
+              </Text>
+              <StageNavigation 
+                currentStage={currentStage}
+                onStageChange={handleStageChange}
+                activeVersion={currentVersion}
+              />
+            </Flex>
+            <IconButton
+              icon={<Share2 size={20} />}
+              variant="ghost"
+              aria-label="Share"
+            />
+          </Flex>
+        </Container>
+      </Box>
+
+      {/* Main Content */}
+      <Flex flex={1}>
+        {/* Content Area */}
+        <Box flex={1} p={6} overflowY="auto">
+          <Box maxW="3xl" mx="auto">
+            <VersionControl
+              currentVersion={currentVersion}
+              versions={versions}
+              onCreateVersion={handleCreateVersion}
+              onSelectVersion={setCurrentVersion}
+              onValidateVersion={handleValidateVersion}
+            />
+            {loading ? (
+              <Text>Loading...</Text>
+            ) : (
+              stageData && (
+                <Box mt={4}>
+                  {/* Render stage-specific content here */}
+                  <pre>{JSON.stringify(stageData, null, 2)}</pre>
                 </Box>
-
-                {/* Content Area */}
-                <Box p={6} overflowY="auto">
-                    <Box maxW="3xl" mx="auto">
-                        {CurrentStageComponent && (
-                            <CurrentStageComponent
-                                domainId={domain_id}
-                                pipelineId={pipelineId}
-                                onPipelineCreate={setPipelineId}
-                                processing={processing}
-                                setProcessing={setProcessing}
-                                token={token}
-                                currentTenant={currentTenant}
-                            />
-                        )}
-                    </Box>
-                </Box>
-            </Grid>
+              )
+            )}
+          </Box>
         </Box>
-    );
+
+        {/* Chat Panel */}
+        <Box w="400px" borderLeft="1px" borderColor="gray.200">
+          <ChatPanel 
+            domainId={currentTenant}
+            currentStage={{ id: currentStage, name: stages.find(s => s.id === currentStage)?.name }}
+          />
+        </Box>
+      </Flex>
+    </Box>
+  );
 };
 
-export default ProcessingWorkspacePage;
+export default StreamlinedWorkflow;
