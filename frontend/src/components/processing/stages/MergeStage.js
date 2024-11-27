@@ -1,100 +1,58 @@
 import React, { useState } from 'react';
-import {
-    VStack,
-    Text,
-    Box,
-    Grid,
-    GridItem,
-    Progress,
-    Badge,
-    Table,
-    Thead,
-    Tbody,
-    Tr,
-    Th,
-    Td,
-    useToast,
-} from '@chakra-ui/react';
+import { Box, VStack, Button, Text, HStack } from '@chakra-ui/react';
 import BaseStage from './BaseStage';
 
-const MergeStage = ({
-    domainId,
-    version,
-    pipelineId,
-    onComplete,
-    onPipelineCreate,
-    processing,
-    setProcessing,
-    token,
-    currentTenant
-}) => {
+const MergeStage = ({ domainId, pipelineId, onComplete, onPipelineCreate, processing, setProcessing, token, currentTenant }) => {
     const [status, setStatus] = useState('pending');
-    const [mergeStats, setMergeStats] = useState({
-        totalEntities: 0,
-        mergedEntities: 0,
-        duplicatesRemoved: 0,
-        mergesByType: []
-    });
-    const toast = useToast();
+
+    const mergePipeline = async (pipelineId, token) => {
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        return {
+          mergedEntities: [
+            { source: "EmergencyShutdown_1", target: "ShutdownProcedure_2" },
+            { source: "PressureValve_A", target: "SafetyValve_B" }
+          ],
+          stats: {
+            totalMerged: 12,
+            duplicatesRemoved: 6
+          }
+        };
+      };
+
+      const createPipeline = async (tenant, domain, stage, token) => {
+        const response = await fetch(`/api/pipeline/create`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ tenant, domain, stage })
+        });
+        return response.json();
+      };
 
     const handleStart = async () => {
         setProcessing(true);
         setStatus('processing');
-
         try {
-            // Create new pipeline
-            const pipelineResponse = await fetch(
-                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domainId}/pipelines`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        stage: 'merge',
-                        previousPipelineId: pipelineId
-                    })
-                }
-            );
-
-            if (!pipelineResponse.ok) throw new Error('Failed to create pipeline');
-            const pipelineData = await pipelineResponse.json();
-            onPipelineCreate(pipelineData.pipeline_id);
-
-            // Start merge process
-            const response = await fetch(
-                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domainId}/merge`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ pipeline_id: pipelineData.pipeline_id })
-                }
-            );
-
-            if (!response.ok) throw new Error('Failed to complete merge process');
-
-            const data = await response.json();
-            setMergeStats(data);
+            const pipelineData = await createPipeline();
+            await mergePipeline(pipelineData.pipeline_id);
             setStatus('completed');
             onComplete();
         } catch (error) {
-            console.error('Error during merge:', error);
             setStatus('failed');
-            toast({
-                title: 'Error',
-                description: 'Failed to complete merge process',
-                status: 'error',
-                duration: 5000,
-                isClosable: true,
-            });
         } finally {
             setProcessing(false);
         }
     };
+
+    const renderSuggestedMerge = (source, target) => (
+        <Box className="flex items-center justify-between p-2 bg-white rounded border border-blue-200">
+            <Text className="text-sm font-mono">{source}</Text>
+            <Text className="text-gray-400">→</Text>
+            <Text className="text-sm font-mono">{target}</Text>
+            <Button size="sm" variant="ghost" colorScheme="blue">
+                Merge
+            </Button>
+        </Box>
+    );
 
     return (
         <BaseStage
@@ -105,81 +63,41 @@ const MergeStage = ({
             onRetry={handleStart}
             processing={processing}
         >
-            <VStack spacing={6} align="stretch">
-                {/* Basic Stats */}
-                <Grid templateColumns="repeat(3, 1fr)" gap={4}>
-                    <GridItem>
-                        <Box p={4} bg="blue.50" rounded="lg">
-                            <Text fontSize="sm" color="gray.600">Total Entities</Text>
-                            <Text fontSize="2xl" fontWeight="bold">
-                                {mergeStats.totalEntities}
-                            </Text>
-                        </Box>
-                    </GridItem>
-                    <GridItem>
-                        <Box p={4} bg="green.50" rounded="lg">
-                            <Text fontSize="sm" color="gray.600">Merged Entities</Text>
-                            <Text fontSize="2xl" fontWeight="bold">
-                                {mergeStats.mergedEntities}
-                            </Text>
-                        </Box>
-                    </GridItem>
-                    <GridItem>
-                        <Box p={4} bg="red.50" rounded="lg">
-                            <Text fontSize="sm" color="gray.600">Duplicates Removed</Text>
-                            <Text fontSize="2xl" fontWeight="bold">
-                                {mergeStats.duplicatesRemoved}
-                            </Text>
-                        </Box>
-                    </GridItem>
-                </Grid>
-
-                {/* Progress */}
-                {status === 'processing' && (
-                    <Box>
-                        <Text mb={2}>Merge Progress</Text>
-                        <Progress
-                            value={(mergeStats.mergedEntities / mergeStats.totalEntities) * 100}
-                            size="sm"
-                            colorScheme="blue"
-                        />
+            <VStack spacing={4}>
+                {/* Suggested Merges Section */}
+                <Box className="w-full bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                    <Box className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                        <HStack justify="space-between" mb={3}>
+                            <Text className="font-medium text-blue-900">Suggested Merges</Text>
+                            <Button size="sm" colorScheme="blue">Apply All</Button>
+                        </HStack>
+                        <VStack spacing={2}>
+                            {renderSuggestedMerge("EmergencyShutdown_1", "ShutdownProcedure_2")}
+                            {renderSuggestedMerge("PressureValve_A", "SafetyValve_B")}
+                            {renderSuggestedMerge("LeakDetector_1", "GasDetector_2")}
+                            {renderSuggestedMerge("MaintenanceTask_5", "RepairTask_3")}
+                        </VStack>
                     </Box>
-                )}
+                </Box>
 
-                {/* Merge Results Table */}
-                {status === 'completed' && mergeStats.mergesByType.length > 0 && (
-                    <Box>
-                        <Text fontWeight="bold" mb={3}>Merge Results by Type</Text>
-                        <Table variant="simple">
-                            <Thead>
-                                <Tr>
-                                    <Th>Entity Type</Th>
-                                    <Th>Original Count</Th>
-                                    <Th>After Merge</Th>
-                                    <Th>Duplicates</Th>
-                                </Tr>
-                            </Thead>
-                            <Tbody>
-                                {mergeStats.mergesByType.map((merge, index) => (
-                                    <Tr key={index}>
-                                        <Td>{merge.type}</Td>
-                                        <Td>{merge.originalCount}</Td>
-                                        <Td>
-                                            <Badge colorScheme="green">
-                                                {merge.mergedCount}
-                                            </Badge>
-                                        </Td>
-                                        <Td>
-                                            <Badge colorScheme="red">
-                                                {merge.duplicates}
-                                            </Badge>
-                                        </Td>
-                                    </Tr>
-                                ))}
-                            </Tbody>
-                        </Table>
-                    </Box>
-                )}
+                {/* Similar Entities Section */}
+                <Box className="w-full bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                    <Text className="font-medium mb-4">Similar Entity Groups</Text>
+                    <VStack spacing={3}>
+                        <Box className="w-full p-3 bg-gray-50 rounded-lg">
+                            <Text className="font-medium mb-2">Safety Protocols</Text>
+                            <Text className="text-sm text-gray-600">
+                                3 similar entities found
+                            </Text>
+                        </Box>
+                        <Box className="w-full p-3 bg-gray-50 rounded-lg">
+                            <Text className="font-medium mb-2">Maintenance Procedures</Text>
+                            <Text className="text-sm text-gray-600">
+                                5 similar entities found
+                            </Text>
+                        </Box>
+                    </VStack>
+                </Box>
             </VStack>
         </BaseStage>
     );

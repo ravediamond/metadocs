@@ -1,77 +1,101 @@
 import React from 'react';
 import {
-    VStack,
-    Text,
-    Button,
-    Badge,
     Box,
+    Text,
+    VStack,
+    Heading,
+    Badge,
+    Button,
     Progress,
+    HStack,
+    IconButton,
+    useColorModeValue
 } from '@chakra-ui/react';
+import { RepeatIcon, CopyIcon } from '@chakra-ui/icons';
 
 const BaseStage = ({
     title,
     description,
-    status = 'pending', // pending, processing, completed, failed
+    status = 'pending',
     onStart,
     onRetry,
     processing = false,
     children
 }) => {
-    // Helper function for badge color
+    const bgColor = useColorModeValue('white', 'gray.800');
+    const borderColor = useColorModeValue('gray.100', 'gray.700');
+
     const getBadgeColor = (status) => {
         switch (status) {
-            case 'completed':
-                return 'green';
-            case 'processing':
-                return 'blue';
-            case 'failed':
-                return 'red';
-            default:
-                return 'gray';
+            case 'completed': return 'green';
+            case 'processing': return 'blue';
+            case 'failed': return 'red';
+            default: return 'gray';
         }
     };
 
     return (
-        <VStack spacing={6} align="stretch">
-            {/* Header */}
-            <Box>
-                <Text fontSize="xl" fontWeight="bold" mb={2}>{title}</Text>
-                <Text color="gray.600" mb={4}>{description}</Text>
-                <Badge colorScheme={getBadgeColor(status)}>
-                    {status}
-                </Badge>
-            </Box>
-
-            {/* Processing Progress */}
+        <Box bg={bgColor} rounded="xl" shadow="sm" borderWidth={1} borderColor={borderColor}>
             {processing && (
-                <Progress size="sm" isIndeterminate colorScheme="blue" />
-            )}
-
-            {/* Main Content */}
-            <Box>{children}</Box>
-
-            {/* Actions */}
-            <Box>
-                <Button
+                <Progress 
+                    size="xs" 
+                    isIndeterminate 
                     colorScheme="blue"
-                    onClick={status === 'failed' ? onRetry : onStart}
-                    isDisabled={processing || status === 'completed'}
-                    isLoading={processing}
-                >
-                    {status === 'failed' ? 'Retry' : 'Start Processing'}
-                </Button>
+                    rounded="xl"
+                />
+            )}
+            
+            <Box p={6}>
+                <VStack spacing={6} align="stretch">
+                    {/* Header */}
+                    <HStack justify="space-between">
+                        <VStack align="start" spacing={1}>
+                            <Heading size="md">{title}</Heading>
+                            <Text color="gray.600" fontSize="sm">{description}</Text>
+                        </VStack>
+                        <Badge 
+                            colorScheme={getBadgeColor(status)}
+                            px={3}
+                            py={1}
+                            rounded="full"
+                        >
+                            {status}
+                        </Badge>
+                    </HStack>
 
-                {status === 'completed' && (
-                    <Button
-                        ml={4}
-                        variant="outline"
-                        onClick={onRetry}
-                    >
-                        Reprocess
-                    </Button>
-                )}
+                    {/* Content */}
+                    <Box>{children}</Box>
+
+                    {/* Actions */}
+                    <HStack justify="space-between">
+                        <HStack spacing={2}>
+                            <IconButton
+                                icon={<RepeatIcon />}
+                                aria-label="Retry"
+                                variant="ghost"
+                                isDisabled={processing}
+                                onClick={onRetry}
+                            />
+                            <IconButton
+                                icon={<CopyIcon />}
+                                aria-label="Copy"
+                                variant="ghost"
+                            />
+                        </HStack>
+                        
+                        <Button
+                            colorScheme="blue"
+                            onClick={status === 'failed' ? onRetry : onStart}
+                            isDisabled={processing || status === 'completed'}
+                            isLoading={processing}
+                            rounded="xl"
+                        >
+                            {status === 'failed' ? 'Retry' : 'Start Processing'}
+                        </Button>
+                    </HStack>
+                </VStack>
             </Box>
-        </VStack>
+        </Box>
     );
 };
 

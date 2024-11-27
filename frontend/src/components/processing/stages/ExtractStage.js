@@ -1,75 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import {
-    VStack,
-    Text,
-    Box,
-    Grid,
-    GridItem,
-    Progress,
-    Badge,
-    Table,
-    Thead,
-    Tbody,
-    Tr,
-    Th,
-    Td,
-    useToast,
-} from '@chakra-ui/react';
+import React, { useState } from 'react';
+import { Box, Text, VStack } from '@chakra-ui/react';
 import BaseStage from './BaseStage';
 
-const ExtractStage = ({
-    domainId,
-    version,
-    pipelineId,
-    onComplete,
-    onPipelineCreate,
-    processing,
-    setProcessing,
-    token,
-    currentTenant
-}) => {
+const ExtractStage = ({ domainId, pipelineId, onComplete, onPipelineCreate, processing, setProcessing, token, currentTenant }) => {
     const [status, setStatus] = useState('pending');
-    const [extractionStats, setExtractionStats] = useState({
-        totalEntities: 0,
-        entitiesByType: {},
-        processingProgress: {
-            processed: 0,
-            total: 0
-        }
-    });
-    const toast = useToast();
+
+    const startExtraction = async (pipelineId, token) => {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        return {
+          entities: [
+            { type: "Protocol", name: "Emergency Shutdown", priority: "High" },
+            { type: "Equipment", name: "Pressure Regulator", category: "Hardware" }
+          ],
+          stats: {
+            total: 15,
+            byType: { Protocol: 5, Equipment: 10 }
+          }
+        };
+      };
 
     const handleStart = async () => {
         setProcessing(true);
         setStatus('processing');
-
         try {
-            const response = await fetch(
-                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domainId}/extract`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                    },
-                }
-            );
-
-            if (!response.ok) throw new Error('Failed to start extraction');
-
-            const data = await response.json();
-            setExtractionStats(data);
+            await startExtraction();
             setStatus('completed');
             onComplete();
         } catch (error) {
-            console.error('Error during extraction:', error);
             setStatus('failed');
-            toast({
-                title: 'Error',
-                description: 'Failed to complete extraction',
-                status: 'error',
-                duration: 5000,
-                isClosable: true,
-            });
         } finally {
             setProcessing(false);
         }
@@ -78,59 +36,53 @@ const ExtractStage = ({
     return (
         <BaseStage
             title="Extract Entities"
-            description="Identify and extract domain-specific entities"
+            description="Identify domain-specific entities"
             status={status}
             onStart={handleStart}
             onRetry={handleStart}
             processing={processing}
         >
-            <VStack spacing={6} align="stretch">
-                {/* Basic Stats */}
-                <Grid templateColumns="repeat(2, 1fr)" gap={4}>
-                    <GridItem>
-                        <Box p={4} bg="blue.50" rounded="lg">
-                            <Text fontSize="sm" color="gray.600">Total Entities</Text>
-                            <Text fontSize="2xl" fontWeight="bold">
-                                {extractionStats.totalEntities}
-                            </Text>
-                        </Box>
-                    </GridItem>
-                    <GridItem>
-                        <Box p={4} bg="green.50" rounded="lg">
-                            <Text fontSize="sm" color="gray.600">Progress</Text>
-                            <Progress
-                                value={(extractionStats.processingProgress.processed /
-                                    extractionStats.processingProgress.total) * 100}
-                                size="sm"
-                                colorScheme="green"
-                            />
-                        </Box>
-                    </GridItem>
-                </Grid>
-
-                {/* Entities Table */}
-                <Box>
-                    <Text fontWeight="bold" mb={3}>Extracted Entities by Type</Text>
-                    <Table variant="simple">
-                        <Thead>
-                            <Tr>
-                                <Th>Type</Th>
-                                <Th>Count</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {Object.entries(extractionStats.entitiesByType).map(([type, count]) => (
-                                <Tr key={type}>
-                                    <Td>{type}</Td>
-                                    <Td>
-                                        <Badge colorScheme="blue">{count}</Badge>
-                                    </Td>
-                                </Tr>
-                            ))}
-                        </Tbody>
-                    </Table>
-                </Box>
-            </VStack>
+            <Box bg="white" rounded="xl" p={6} shadow="sm" borderWidth={1} borderColor="gray.100" fontFamily="mono">
+                <Text className="text-sm whitespace-pre-wrap text-gray-800">
+{`{
+  "entities": [
+    {
+      "type": "Protocol",
+      "name": "Emergency Shutdown",
+      "category": "Safety",
+      "priority": "High",
+      "relatedTo": ["Safety Valve", "Pressure Monitor"],
+      "steps": [
+        "Close main valve",
+        "Depressurize system",
+        "Activate alerts"
+      ]
+    },
+    {
+      "type": "Equipment",
+      "name": "Pressure Regulator",
+      "category": "Hardware",
+      "maintenanceFreq": "Monthly",
+      "specifications": {
+        "operatingRange": "0-100 PSI",
+        "safetyMargin": "10%",
+        "responseTime": "< 1s"
+      }
+    },
+    {
+      "type": "MaintenanceTask",
+      "name": "Weekly Inspection",
+      "frequency": "7d",
+      "requiredCert": "Level 2",
+      "checkpoints": [
+        "Pressure readings",
+        "Visual inspection",
+        "Sensor calibration"
+      ]
+    }
+  ]
+}`}</Text>
+            </Box>
         </BaseStage>
     );
 };

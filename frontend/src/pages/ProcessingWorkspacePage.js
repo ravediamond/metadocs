@@ -9,13 +9,18 @@ import {
     useToast,
     Progress,
     VStack,
+    HStack,
+    Icon,
+    Textarea,
+    Flex,
+    Badge,
     Grid,
     GridItem,
-    HStack,
-    Badge,
+    useColorModeValue,
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
+import ChatPanel from '../components/chat/ChatPanel';
 
 // Import stage components
 import ParseStage from '../components/processing/stages/ParseStage';
@@ -24,43 +29,72 @@ import MergeStage from '../components/processing/stages/MergeStage';
 import GroupStage from '../components/processing/stages/GroupStage';
 import OntologyStage from '../components/processing/stages/OntologyStage';
 import GraphStage from '../components/processing/stages/GraphStage';
-import ChatPanel from '../components/chat/ChatPanel';
-
 
 const stages = [
     {
+        id: 'version',
+        name: 'Version',
+        icon: '📋',
+        description: 'Manage document versions',
+        Component: () => (
+            <Box bg="white" p={6} rounded="xl" shadow="sm" borderWidth={1} borderColor="gray.100">
+                <Flex justify="space-between" align="center" mb={6}>
+                    <Text fontSize="lg" fontWeight="medium">Current Version</Text>
+                    <Badge colorScheme="blue" rounded="full" px={3}>Draft</Badge>
+                </Flex>
+                <VStack spacing={3}>
+                    <Box w="full" p={4} bg="gray.50" rounded="lg">
+                        <Flex justify="space-between" align="center">
+                            <Box>
+                                <Text fontWeight="medium">Gas Distribution v1.0</Text>
+                                <Text fontSize="sm" color="gray.500">Created: Nov 27, 2024</Text>
+                            </Box>
+                            <Button size="sm" variant="outline">View Changes</Button>
+                        </Flex>
+                    </Box>
+                </VStack>
+            </Box>
+        )
+    },
+    {
         id: 'parse',
-        title: 'Parse Documents',
+        name: 'Parse',
+        icon: '📄',
         description: 'Convert documents into processable text',
         Component: ParseStage
     },
     {
         id: 'extract',
-        title: 'Extract Entities',
+        name: 'Extract',
+        icon: '🔍',
         description: 'Identify domain-specific entities',
         Component: ExtractStage
     },
     {
         id: 'merge',
-        title: 'Merge Entities',
+        name: 'Merge',
+        icon: '🔄',
         description: 'Combine and deduplicate entities',
         Component: MergeStage
     },
     {
         id: 'group',
-        title: 'Group Concepts',
+        name: 'Group',
+        icon: '📊',
         description: 'Organize entities into groups',
         Component: GroupStage
     },
     {
         id: 'ontology',
-        title: 'Create Ontology',
+        name: 'Ontology',
+        icon: '🌐',
         description: 'Generate domain ontology',
         Component: OntologyStage
     },
     {
         id: 'graph',
-        title: 'Knowledge Graph',
+        name: 'Graph',
+        icon: '📈',
         description: 'Generate final knowledge graph',
         Component: GraphStage
     }
@@ -72,12 +106,17 @@ const ProcessingWorkspacePage = () => {
     const navigate = useNavigate();
     const toast = useToast();
 
-    const [currentStage, setCurrentStage] = useState(0);
+    const [selectedStage, setSelectedStage] = useState('version');
     const [pipelineId, setPipelineId] = useState(null);
     const [processing, setProcessing] = useState(false);
     const [domainInfo, setDomainInfo] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
+
+    const borderColor = useColorModeValue('gray.200', 'gray.700');
+    const headerBg = useColorModeValue('white', 'gray.800');
+    const activeBorderColor = useColorModeValue('blue.500', 'blue.300');
+    const activeTextColor = useColorModeValue('blue.600', 'blue.300');
 
     const fetchDomainInfo = async () => {
         try {
@@ -98,42 +137,22 @@ const ProcessingWorkspacePage = () => {
             }
         } catch (error) {
             console.error('Error fetching domain info:', error);
-            throw error;
+            setError(error.message);
+        } finally {
+            setLoading(false);
         }
     };
 
     useEffect(() => {
         if (domain_id && currentTenant && token) {
             fetchDomainInfo();
-            setLoading(false);
         }
     }, [domain_id, currentTenant, token]);
-
-    const handleStageComplete = async () => {
-        if (currentStage < stages.length - 1) {
-            setCurrentStage(currentStage + 1);
-            toast({
-                title: `${stages[currentStage].title} completed`,
-                description: 'Moving to next stage',
-                status: 'success',
-                duration: 3000,
-                isClosable: true,
-            });
-        } else {
-            toast({
-                title: 'Processing completed',
-                description: 'All stages have been completed successfully',
-                status: 'success',
-                duration: 3000,
-                isClosable: true,
-            });
-        }
-    };
 
     if (error) {
         return (
             <Container maxW="container.xl" py={8}>
-                <Alert status="error" borderRadius="lg">
+                <Alert status="error" rounded="lg">
                     <AlertIcon />
                     {error}
                 </Alert>
@@ -155,104 +174,80 @@ const ProcessingWorkspacePage = () => {
         );
     }
 
-    const CurrentStage = stages[currentStage].Component;
+    const CurrentStageComponent = stages.find(s => s.id === selectedStage)?.Component;
 
     return (
-        <Box minH="100vh" bg="gray.50" p={8}>
-            <Container maxW="container.xl">
-                {/* Header */}
-                <HStack justify="space-between" mb={8}>
-                    <VStack align="start" spacing={1}>
-                        <Text fontSize="2xl" fontWeight="bold">
-                            {domainInfo?.domain_name || 'Domain Processing'}
-                        </Text>
-                        <Text color="gray.600">
-                            {domainInfo?.description}
-                        </Text>
-                    </VStack>
-                    <Button variant="outline" onClick={() => navigate('/dashboard')}>
-                        Back to Dashboard
-                    </Button>
-                </HStack>
+        <Box h="100vh" display="flex" flexDirection="column">
+            {/* Header */}
+            <Box bg={headerBg} borderBottomWidth={1} borderColor={borderColor}>
+                <Container maxW="container.xl" px={6}>
+                    <Flex h="16" gap={8}>
+                        {stages.map(stage => (
+                            <Button
+                                key={stage.id}
+                                variant="ghost"
+                                height="full"
+                                px={1}
+                                onClick={() => setSelectedStage(stage.id)}
+                                position="relative"
+                                borderRadius={0}
+                                color={selectedStage === stage.id ? activeTextColor : 'gray.600'}
+                                _hover={{ color: 'gray.900' }}
+                                _after={{
+                                    content: '""',
+                                    position: 'absolute',
+                                    bottom: '-1px',
+                                    left: 0,
+                                    right: 0,
+                                    height: '2px',
+                                    bg: selectedStage === stage.id ? activeBorderColor : 'transparent'
+                                }}
+                            >
+                                <HStack spacing={2}>
+                                    <Text>{stage.icon}</Text>
+                                    <Text>{stage.name}</Text>
+                                </HStack>
+                            </Button>
+                        ))}
+                    </Flex>
+                </Container>
+            </Box>
 
-                {/* Main Content + Chat Layout */}
-                <Grid templateColumns="1fr 400px" gap={8}>
-                    {/* Main Content */}
-                    <GridItem>
-                        <VStack spacing={8} align="stretch">
-                            {/* Stage Progress */}
-                            <Box bg="white" p={6} rounded="lg" shadow="sm">
-                                <Box mb={6}>
-                                    <HStack spacing={8} mb={4}>
-                                        {stages.map((stage, index) => (
-                                            <VStack
-                                                key={stage.id}
-                                                spacing={2}
-                                                cursor={index <= currentStage ? "pointer" : "not-allowed"}
-                                                opacity={index <= currentStage ? 1 : 0.5}
-                                                onClick={() => {
-                                                    if (index <= currentStage) {
-                                                        setCurrentStage(index);
-                                                    }
-                                                }}
-                                            >
-                                                <Box
-                                                    w="10"
-                                                    h="10"
-                                                    rounded="full"
-                                                    bg={index === currentStage ? "blue.500" : "gray.200"}
-                                                    color={index === currentStage ? "white" : "gray.500"}
-                                                    display="flex"
-                                                    alignItems="center"
-                                                    justifyContent="center"
-                                                    fontWeight="bold"
-                                                >
-                                                    {index + 1}
-                                                </Box>
-                                                <Text
-                                                    fontSize="sm"
-                                                    fontWeight={index === currentStage ? "bold" : "normal"}
-                                                    color={index === currentStage ? "blue.500" : "gray.500"}
-                                                >
-                                                    {stage.title}
-                                                </Text>
-                                            </VStack>
-                                        ))}
-                                    </HStack>
-                                    <Progress
-                                        value={((currentStage + 1) / stages.length) * 100}
-                                        size="sm"
-                                        colorScheme="blue"
-                                        rounded="full"
-                                    />
-                                </Box>
-                            </Box>
+            {/* Main Content */}
+            <Grid
+                flex={1}
+                templateColumns="1fr 1fr"
+                overflow="hidden"
+            >
+                {/* Chat Panel */}
+                <Box
+                    borderRightWidth={1}
+                    borderColor={borderColor}
+                    bg="white"
+                >
+                    <ChatPanel
+                        domainId={domain_id}
+                        currentStage={stages.find(s => s.id === selectedStage)}
+                    />
+                </Box>
 
-                            {/* Current Stage */}
-                            <Box bg="white" p={6} rounded="lg" shadow="sm">
-                                <CurrentStage
-                                    domainId={domain_id}
-                                    pipelineId={pipelineId}
-                                    onComplete={handleStageComplete}
-                                    onPipelineCreate={setPipelineId}
-                                    processing={processing}
-                                    setProcessing={setProcessing}
-                                    token={token}
-                                    currentTenant={currentTenant}
-                                />
-                            </Box>
-                        </VStack>
-                    </GridItem>
-
-                    {/* Chat Panel */}
-                    <GridItem>
-                        <ChatPanel
-                            domainId={domain_id}
-                            currentStage={stages[currentStage]}
-                        />
-                    </GridItem>
-                </Grid>
-            </Container>
+                {/* Content Area */}
+                <Box p={6} overflowY="auto">
+                    <Box maxW="3xl" mx="auto">
+                        {CurrentStageComponent && (
+                            <CurrentStageComponent
+                                domainId={domain_id}
+                                pipelineId={pipelineId}
+                                onPipelineCreate={setPipelineId}
+                                processing={processing}
+                                setProcessing={setProcessing}
+                                token={token}
+                                currentTenant={currentTenant}
+                            />
+                        )}
+                    </Box>
+                </Box>
+            </Grid>
         </Box>
     );
 };
