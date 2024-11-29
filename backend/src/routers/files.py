@@ -12,7 +12,7 @@ from ..models.models import (
     User,
     ProcessingPipeline,
 )
-from ..models.schemas import FileResponse
+from ..models.schemas import FileResponse, FileVersionResponse, FileWithVersionsResponse
 from ..core.database import get_db
 from ..core.security import get_current_user
 from ..core.config import ConfigManager
@@ -23,18 +23,25 @@ router = APIRouter()
 
 def get_file_response(file: FileModel) -> FileResponse:
     """Convert File model to FileResponse schema"""
+    # Get latest file version
+    latest_version = (
+        max(file.versions, key=lambda v: v.version) if file.versions else None
+    )
+
     return FileResponse(
         file_id=file.file_id,
         domain_id=file.domain_id,
+        tenant_id=file.tenant_id,
         filename=file.filename,
-        filepath=file.filepath,
+        file_type=file.file_type,
+        file_size=file.file_size,
+        original_path=file.original_path,
         uploaded_at=file.uploaded_at,
         uploaded_by=file.uploaded_by,
-        last_processed_at=file.last_processed_at,
-        processing_status=file.processing_status,
-        processing_error=file.processing_error,
-        markdown_path=file.markdown_path,
-        entity_extraction_path=file.entity_extraction_path,
+        created_at=file.created_at,
+        versions=(
+            [version.version for version in file.versions] if file.versions else []
+        ),
     )
 
 
@@ -198,3 +205,51 @@ def list_files(
 
     files = db.query(FileModel).filter(FileModel.domain_id == domain_id).all()
     return [get_file_response(file) for file in files]
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/files",
+    response_model=List[FileWithVersionsResponse],
+)
+def get_domain_files_with_versions(
+    tenant_id: UUID,
+    domain_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Get all files and their versions for a domain"""
+    domain = (
+        db.query(Domain)
+        .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)
+        .first()
+    )
+    if not domain:
+        raise HTTPException(status_code=404, detail="Domain not found")
+
+    # Query files with their versions using joined loading
+    files = db.query(FileModel).filter(FileModel.domain_id == domain_id).all()
+
+    return [
+        FileWithVersionsResponse(
+            file_id=file.file_id,
+            domain_id=file.domain_id,
+            tenant_id=file.tenant_id,
+            filename=file.filename,
+            file_type=file.file_type,
+            file_size=file.file_size,
+            original_path=file.original_path,
+            uploaded_at=file.uploaded_at,
+            uploaded_by=file.uploaded_by,
+            created_at=file.created_at,
+            versions=[
+                FileVersionResponse(
+                    file_version_id=version.file_version_id,
+                    file_id=version.file_id,
+                    version=version.version,
+                    filepath=version.filepath,
+                    created_at=version.created_at,
+                )
+                for version in file.versions
+            ],
+        )
+        for file in files
+    ]

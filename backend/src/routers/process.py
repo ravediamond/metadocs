@@ -4,30 +4,45 @@ from uuid import UUID
 from datetime import datetime
 from typing import List, Optional
 import logging
+import os
+
 
 from ..models.models import (
     Domain,
-    File as FileModel,
+    File,
     ProcessingPipeline,
     ParseVersion,
     ExtractVersion,
     MergeVersion,
     GroupVersion,
     OntologyVersion,
+    DomainVersion,
+    DomainVersionStatus,
+    FileVersion,
 )
 from ..models.schemas import (
     ProcessingStatus,
     FileStatus,
     ProcessPipelineSchema,
     ProcessingVersionBase,
+    MergeRequest,
+)
+from ..processors.prompts.document_prompts import (
+    SYSTEM_PROMPT,
+    CHECK_READABILITY_PROMPT,
+    CONVERT_TO_MARKDOWN_PROMPT,
+    INITIAL_ENTITY_EXTRACTION_PROMPT,
+    ITERATIVE_ENTITY_EXTRACTION_PROMPT,
+    ENTITY_DETAILS_PROMPT,
+    ENTITY_MERGE_PROMPT,
 )
 from ..core.database import get_db
-from ..processors.pdf.processor import PDFProcessor
-from ..processors.entity.processor import EntityProcessor
+from ..processors.parse.processor import ParseProcessor
+from ..processors.extract.processor import ExtractProcessor
 from ..processors.groups.processor import GroupProcessor
 from ..processors.ontology.processor import OntologyProcessor
-from ..processors.merger.processor import EntityMerger
-from ..core.config import ConfigManager
+from ..processors.merger.processor import MergeProcessor
+from ..core.config import ConfigManager, FILE_SYSTEM
 from .version_manager import VersionManager
 
 logger = logging.getLogger(__name__)
@@ -36,132 +51,101 @@ router = APIRouter()
 
 # Processing Functions
 async def process_parse(
-    file: FileModel, pipeline: ProcessingPipeline, config: ConfigManager, db: Session
+    file_version: FileVersion,
+    parse_version: ParseVersion,
+    config: ConfigManager,
+    db: Session,
 ) -> bool:
-    """Process a single file through PDF parsing stage"""
-    version_manager = VersionManager(pipeline.pipeline_id, db)
-
+    """Process a single file version through PDF parsing stage"""
     try:
-        parse_version = version_manager.create_parse_version(file.filepath)
-        pipeline.current_parse_id = parse_version.version_id
-        db.commit()
 
-        pdf_processor = PDFProcessor(file, pipeline, config)
-        pdf_result = pdf_processor.process()
+        # Process PDF with base prompt from parse version
+        parse_processor = ParseProcessor(file_version, parse_version, config)
+        parse_result = parse_processor.process()
 
-        if not pdf_result.success:
+        if not parse_result.success:
             parse_version.status = "failed"
-            parse_version.error = f"PDF processing failed: {pdf_result.message}"
-            file.processing_status = "failed"
-            file.processing_error = parse_version.error
+            parse_version.error = parse_result.error
             db.commit()
             return False
 
-        parse_version.output_path = pdf_result.markdown_path
-        parse_version.status = "completed"
-        file.markdown_path = pdf_result.markdown_path
-        file.processing_status = "completed"
+        # Update parse version with output information
+        parse_version.status = parse_processor.status
         db.commit()
         return True
 
     except Exception as e:
-        logger.error(f"Error in parse processing for file {file.file_id}: {str(e)}")
+        logger.error(
+            f"Error in parse processing for file version {file_version.file_version_id}: {str(e)}"
+        )
         parse_version.status = "failed"
         parse_version.error = str(e)
-        file.processing_status = "failed"
-        file.processing_error = str(e)
         db.commit()
         return False
 
 
 async def process_extract(
-    file: FileModel, pipeline: ProcessingPipeline, config: ConfigManager, db: Session
+    parse_version: ParseVersion,
+    extract_version: ExtractVersion,
+    config: ConfigManager,
+    db: Session,
 ) -> bool:
     """Process a single file through entity extraction stage"""
-    version_manager = VersionManager(pipeline.pipeline_id, db)
-
     try:
-        if not file.markdown_path:
-            raise ValueError("No markdown file available for extraction")
+        # Process entities with base prompt from extract version
+        extract_processor = ExtractProcessor(parse_version, extract_version, config)
+        extract_result = extract_processor.process()
 
-        extract_version = version_manager.create_extract_version(file.markdown_path)
-        pipeline.current_extract_id = extract_version.version_id
-        db.commit()
-
-        entity_processor = EntityProcessor(pipeline, config)
-        entity_result = entity_processor.process()
-
-        if not entity_result.success:
-            extract_version.status = "failed"
-            extract_version.error = f"Entity extraction failed: {entity_result.message}"
-            file.processing_status = "failed"
-            file.processing_error = extract_version.error
+        if not extract_result.success:
+            extract_version.status = extract_result.status
+            extract_version.error = extract_result.error
             db.commit()
             return False
 
-        extract_version.output_path = entity_result.analysis_path
-        extract_version.status = "completed"
-        file.entity_extraction_path = entity_result.analysis_path
-        file.processing_status = "completed"
+        # Update extract version with output information
+        extract_version.status = extract_result.status
         db.commit()
         return True
 
     except Exception as e:
-        logger.error(f"Error in extract processing for file {file.file_id}: {str(e)}")
+        logger.error(
+            f"Error in extract processing for parse version {parse_version.version_id}: {str(e)}"
+        )
         extract_version.status = "failed"
         extract_version.error = str(e)
-        file.processing_status = "failed"
-        file.processing_error = str(e)
         db.commit()
         return False
 
 
 async def process_merge(
-    pipeline: ProcessingPipeline,
-    files: List[FileModel],
+    extract_versions: List[ExtractVersion],
+    merge_version: MergeVersion,
     config: ConfigManager,
     db: Session,
 ) -> bool:
-    """Process entity merging stage"""
-    version_manager = VersionManager(pipeline.pipeline_id, db)
-
+    """process multiple extract version through merging stage"""
     try:
-        entity_paths = [
-            f.entity_extraction_path
-            for f in files
-            if f.processing_status == "completed" and f.entity_extraction_path
-        ]
-
-        if not entity_paths:
-            raise ValueError("No entity extraction files available for merging")
-
-        merge_version = version_manager.create_merge_version(entity_paths)
-        pipeline.current_merge_id = merge_version.version_id
-        db.commit()
-
-        merger = EntityMerger(pipeline, config)
-        merge_result = merger.process()
+        # Process entities with base prompt from extract version
+        merge_processor = MergeProcessor(extract_versions, merge_version, config)
+        merge_result = merge_processor.process()
 
         if not merge_result.success:
-            merge_version.status = "failed"
-            merge_version.error = f"Entity merging failed: {merge_result.message}"
-            pipeline.status = "failed"
-            pipeline.error = merge_version.error
+            merge_version.status = merge_result.status
+            merge_version.error = merge_result.error
             db.commit()
             return False
 
-        merge_version.output_path = merge_result.merged_path
-        merge_version.status = "completed"
-        pipeline.merged_entities_path = merge_result.merged_path
+        # Update extract version with output information
+        merge_version.status = merge_result.status
         db.commit()
         return True
 
     except Exception as e:
-        logger.error(f"Error in merge processing: {str(e)}")
+        logger.error(
+            f"Error in extract processing for parse version {merge_result.version_id}: {str(e)}"
+        )
         merge_version.status = "failed"
         merge_version.error = str(e)
-        pipeline.status = "failed"
-        pipeline.error = str(e)
         db.commit()
         return False
 
@@ -280,122 +264,294 @@ async def process_ontology(
 
 # API Endpoints
 @router.post(
-    "/tenants/{tenant_id}/domains/{domain_id}/files/{file_id}/parse",
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/files/{file_version_id}/parse",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def start_parse_processing(
     tenant_id: UUID,
     domain_id: UUID,
-    file_id: UUID,
+    domain_version: int,
+    file_version_id: UUID,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Start PDF parsing for a single file"""
-    file = (
-        db.query(FileModel)
+    """Start PDF parsing for a single file version"""
+    # Check domain version exists and is in DRAFT
+    domain_version_obj = (
+        db.query(DomainVersion)
         .join(Domain)
         .filter(
             Domain.tenant_id == tenant_id,
-            FileModel.domain_id == domain_id,
-            FileModel.file_id == file_id,
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version == domain_version,
         )
         .first()
     )
 
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    if not domain_version_obj:
+        raise HTTPException(status_code=404, detail="Domain version not found")
 
-    pipeline = ProcessingPipeline(domain_id=domain_id, status="processing")
-    db.add(pipeline)
+    if domain_version_obj.status != DomainVersionStatus.DRAFT:
+        raise HTTPException(
+            status_code=400,
+            detail="Can only parse files for domain versions in DRAFT status",
+        )
+
+    # Check file version exists
+    file_version = (
+        db.query(FileVersion)
+        .join(File)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            Domain.domain_id == domain_id,
+            FileVersion.file_version_id == file_version_id,
+        )
+        .first()
+    )
+
+    if not file_version:
+        raise HTTPException(status_code=404, detail="File version not found")
+
+    # Get or create processing pipeline for this domain version
+    pipeline = domain_version_obj.processing_pipeline
+    if not pipeline:
+        pipeline = ProcessingPipeline(domain_id=domain_id)
+        domain_version_obj.processing_pipeline = pipeline
+        db.add(pipeline)
+        db.commit()
+
+    # Create parse version
+    parse_version = ParseVersion(
+        pipeline_id=pipeline.pipeline_id,
+        version_number=len(pipeline.parse_versions) + 1,
+        system_prompt=SYSTEM_PROMPT,
+        readability_prompt=CHECK_READABILITY_PROMPT,
+        convert_prompt=CONVERT_TO_MARKDOWN_PROMPT,
+        input_file_version_id=file_version_id,
+        output_dir="",
+        output_path="",
+        status="processing",
+    )
+    db.add(parse_version)
     db.commit()
 
-    file.processing_status = "processing_pdf"
+    output_dir = os.path.join(
+        config.get("processing_dir", "processing_output"),
+        str(pipeline.domain_id),
+        str(pipeline.domain_version.version),
+        "parsing",
+        str(parse_version.version),
+        str(parse_version.input_file_version_id),
+    )
+    parse_version.output_dir = output_dir
+    parse_version.output_path = f"{output_dir}/output.md"
     db.commit()
 
+    # Start processing
     config = ConfigManager(db, str(tenant_id), str(domain_id))
-    background_tasks.add_task(process_parse, file, pipeline, config, db)
+    background_tasks.add_task(process_parse, file_version, parse_version, config, db)
 
-    return {"message": "PDF parsing started", "pipeline_id": pipeline.pipeline_id}
+    return {
+        "message": "PDF parsing started",
+        "pipeline_id": pipeline.pipeline_id,
+        "parse_version_id": parse_version.version_id,
+    }
 
 
 @router.post(
-    "/tenants/{tenant_id}/domains/{domain_id}/files/{file_id}/extract",
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/parse/{parse_version_id}/extract",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def start_extract_processing(
     tenant_id: UUID,
     domain_id: UUID,
-    file_id: UUID,
+    domain_version: int,
+    parse_version_id: UUID,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Start entity extraction for a single file"""
-    file = (
-        db.query(FileModel)
+    """Start entity extraction from parse output"""
+    # Check domain version exists and is in DRAFT
+    domain_version_obj = (
+        db.query(DomainVersion)
         .join(Domain)
         .filter(
             Domain.tenant_id == tenant_id,
-            FileModel.domain_id == domain_id,
-            FileModel.file_id == file_id,
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version == domain_version,
         )
         .first()
     )
 
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    if not domain_version_obj:
+        raise HTTPException(status_code=404, detail="Domain version not found")
 
-    if not file.markdown_path:
-        raise HTTPException(status_code=400, detail="File has not been parsed yet")
+    if domain_version_obj.status != DomainVersionStatus.DRAFT:
+        raise HTTPException(
+            status_code=400,
+            detail="Can only extract entities for domain versions in DRAFT status",
+        )
 
-    pipeline = ProcessingPipeline(domain_id=domain_id, status="processing")
-    db.add(pipeline)
+    # Check parse version exists and completed
+    parse_version = (
+        db.query(ParseVersion)
+        .filter(
+            ParseVersion.version_id == parse_version_id,
+            ParseVersion.status == "completed",
+        )
+        .first()
+    )
+
+    if not parse_version:
+        raise HTTPException(
+            status_code=404, detail="Parse version not found or not completed"
+        )
+
+    # Get pipeline
+    pipeline = domain_version_obj.processing_pipeline
+    if not pipeline:
+        raise HTTPException(
+            status_code=404,
+            detail="No processing pipeline found for this domain version",
+        )
+
+    # Create extract version
+    extract_version = ExtractVersion(
+        pipeline_id=pipeline.pipeline_id,
+        version_number=len(pipeline.extract_versions) + 1,
+        input_parse_version_id=parse_version_id,
+        system_prompt=SYSTEM_PROMPT,
+        initial_entity_extraction_prompt=INITIAL_ENTITY_EXTRACTION_PROMPT,
+        iterative_extract_entities_prompt=ITERATIVE_ENTITY_EXTRACTION_PROMPT,
+        entity_details_prompt=ENTITY_DETAILS_PROMPT,
+        output_dir="",
+        output_path="",
+        status="processing",
+    )
+    db.add(extract_version)
     db.commit()
 
-    file.processing_status = "processing_entities"
+    output_dir = os.path.join(
+        config.get("processing_dir", "processing_output"),
+        str(pipeline.domain_id),
+        str(pipeline.domain_version.version),
+        "entity_extraction",
+        str(extract_version.version),
+    )
+    extract_version.output_dir = output_dir
+    extract_version.output_path = f"{output_dir}/output.md"
     db.commit()
 
+    # Start processing
     config = ConfigManager(db, str(tenant_id), str(domain_id))
-    background_tasks.add_task(process_extract, file, pipeline, config, db)
+    background_tasks.add_task(
+        process_extract, parse_version, pipeline, extract_version, config, db
+    )
 
-    return {"message": "Entity extraction started", "pipeline_id": pipeline.pipeline_id}
+    return {
+        "message": "Entity extraction started",
+        "pipeline_id": pipeline.pipeline_id,
+        "extract_version_id": extract_version.version_id,
+    }
 
 
 @router.post(
-    "/tenants/{tenant_id}/domains/{domain_id}/merge",
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/merge",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def start_merge_processing(
     tenant_id: UUID,
     domain_id: UUID,
+    domain_version: int,
+    merge_request: MergeRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Start merging entities from all processed files in the domain"""
-    files = (
-        db.query(FileModel)
+    """Start merging entities from specified extract versions"""
+    # Check domain version exists and is in DRAFT
+    domain_version_obj = (
+        db.query(DomainVersion)
         .join(Domain)
         .filter(
             Domain.tenant_id == tenant_id,
-            FileModel.domain_id == domain_id,
-            FileModel.processing_status == "completed",
-            FileModel.entity_extraction_path.isnot(None),
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version == domain_version,
+        )
+        .first()
+    )
+
+    if not domain_version_obj:
+        raise HTTPException(status_code=404, detail="Domain version not found")
+
+    if domain_version_obj.status != DomainVersionStatus.DRAFT:
+        raise HTTPException(
+            status_code=400,
+            detail="Can only merge entities for domain versions in DRAFT status",
+        )
+
+    # Get pipeline
+    pipeline = domain_version_obj.processing_pipeline
+    if not pipeline:
+        raise HTTPException(
+            status_code=404,
+            detail="No processing pipeline found for this domain version",
+        )
+
+    # Verify all extract versions exist and are completed
+    extract_versions = (
+        db.query(ExtractVersion)
+        .filter(
+            ExtractVersion.version_id.in_(merge_request.extract_version_ids),
+            ExtractVersion.status == "completed",
         )
         .all()
     )
 
-    if not files:
+    if len(extract_versions) != len(merge_request.extract_version_ids):
         raise HTTPException(
-            status_code=400, detail="No completed files available for merging"
+            status_code=404,
+            detail="One or more extract versions not found or not completed",
         )
 
-    pipeline = ProcessingPipeline(domain_id=domain_id, status="processing")
-    db.add(pipeline)
+    # Create merge version
+    merge_version = MergeVersion(
+        pipeline_id=pipeline.pipeline_id,
+        version_number=len(pipeline.merge_versions) + 1,
+        input_extraction_version_id=merge_request.extract_version_ids,
+        system_prompt=SYSTEM_PROMPT,
+        entity_merge_prompt=ENTITY_MERGE_PROMPT,
+        entity_details_prompt=ENTITY_DETAILS_PROMPT,
+        output_dir="",
+        output_path="",
+        status="processing",
+    )
+    db.add(merge_version)
     db.commit()
 
-    config = ConfigManager(db, str(tenant_id), str(domain_id))
-    background_tasks.add_task(process_merge, pipeline, files, config, db)
+    output_dir = os.path.join(
+        config.get("processing_dir", "processing_output"),
+        str(pipeline.domain_id),
+        str(pipeline.domain_version.version),
+        "merge",
+        str(merge_version.version),
+    )
+    merge_version.output_dir = output_dir
+    merge_version.output_path = f"{output_dir}/output.md"
+    db.commit()
 
-    return {"message": "Entity merging started", "pipeline_id": pipeline.pipeline_id}
+    # Start processing
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
+    background_tasks.add_task(
+        process_merge, extract_versions, pipeline, merge_version, config, db
+    )
+
+    return {
+        "message": "Entity merging started",
+        "pipeline_id": pipeline.pipeline_id,
+        "merge_version_id": merge_version.version_id,
+        "extract_version_ids": [str(ev.version_id) for ev in extract_versions],
+    }
 
 
 @router.post(
@@ -733,3 +889,50 @@ async def get_latest_versions(
         )
         for stage, version in latest_versions.items()
     }
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/parse/{version_id}/status"
+)
+async def get_parse_status(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    version_id: UUID,
+    db: Session = Depends(get_db),
+) -> ProcessingStatus:
+    """Get parse processing status for a specific version"""
+    parse_version = (
+        db.query(ParseVersion)
+        .join(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            ParseVersion.version_id == version_id,
+        )
+        .first()
+    )
+
+    if not parse_version:
+        raise HTTPException(status_code=404, detail="Parse version not found")
+
+    total_files = len(parse_version.file_versions_id)
+    completed = sum(
+        1 for status in parse_version.file_statuses if status == "completed"
+    )
+    failed = sum(1 for status in parse_version.file_statuses if status == "failed")
+    processing = sum(
+        1 for status in parse_version.file_statuses if status == "processing"
+    )
+
+    return ProcessingStatus(
+        message=f"Processing {completed}/{total_files} files",
+        total_files=total_files,
+        files_completed=completed,
+        files_failed=failed,
+        files_processing=processing,
+        processing_started=True,
+        parse_status=parse_version.global_status,
+    )

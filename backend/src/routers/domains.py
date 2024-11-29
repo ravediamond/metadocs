@@ -370,3 +370,38 @@ def get_domain_versions(
     )
 
     return versions
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{version}",
+    response_model=DomainVersionSchema,
+)
+async def get_domain_version(
+    tenant_id: UUID,
+    domain_id: UUID,
+    version: int,
+    db: Session = Depends(get_db),
+) -> DomainVersionSchema:
+    """Get specific domain version with its file versions"""
+    domain_version = (
+        db.query(DomainVersion)
+        .filter(
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.tenant_id == tenant_id,
+            DomainVersion.version == version,
+        )
+        .first()
+    )
+
+    if not domain_version:
+        raise HTTPException(status_code=404, detail="Domain version not found")
+
+    return DomainVersionSchema(
+        domain_id=domain_version.domain_id,
+        tenant_id=domain_version.tenant_id,
+        version=domain_version.version,
+        created_at=domain_version.created_at,
+        status=domain_version.status,
+        pipeline_id=domain_version.pipeline_id,
+        file_versions=domain_version.file_versions,
+    )

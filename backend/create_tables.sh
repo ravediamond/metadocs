@@ -132,42 +132,70 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
-  CREATE TABLE files (
+CREATE TABLE files (
     file_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
+    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE NOT NULL,
+    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE NOT NULL,
     filename VARCHAR(255) NOT NULL,
-    filepath TEXT NOT NULL,
+    file_type VARCHAR(50) NOT NULL,
+    file_size BIGINT NOT NULL,
+    original_path VARCHAR(1024) NOT NULL,
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_processed_at TIMESTAMP,
     uploaded_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
-    processing_status VARCHAR(50),
-    processing_error VARCHAR(1024),
-    pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE SET NULL,
-    markdown_path VARCHAR(1024),
-    entity_extraction_path VARCHAR(1024),
-    entity_grouping_path VARCHAR(1024),
-    ontology_path VARCHAR(1024)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE file_versions (
+    file_version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id UUID REFERENCES files(file_id) ON DELETE CASCADE NOT NULL,
+    version INT NOT NULL,
+    filepath VARCHAR(1024) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE domain_version_files (
+    domain_id UUID,
+    domain_version INT,
+    file_version_id UUID REFERENCES file_versions(file_version_id) ON DELETE CASCADE,
+    status VARCHAR(50),
+    error VARCHAR(1024),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (domain_id, domain_version) REFERENCES domain_versions(domain_id, version) ON DELETE CASCADE,
+    PRIMARY KEY (domain_id, domain_version, file_version_id)
+);
+
+  -- Create enum type for domain version status
+  CREATE TYPE domain_version_status AS ENUM (
+      'DRAFT',
+      'TO_BE_VALIDATED',
+      'PUBLISHED',
+      'PENDING_SUSPENSION',
+      'SUSPENDED',
+      'PENDING_DELETE',
+      'DELETED'
   );
 
   CREATE TABLE domain_versions (
-    domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
-    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-    version INT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    entity_grouping_path VARCHAR(1024),
-    ontology_path VARCHAR(1024),
-    pipeline_id UUID REFERENCES processing_pipeline(pipeline_id),
-    PRIMARY KEY (domain_id, version)
+      domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
+      tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE NOT NULL,
+      version INT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      status domain_version_status NOT NULL DEFAULT 'DRAFT',
+      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id),
+      PRIMARY KEY (domain_id, version)
   );
 
   CREATE TABLE parse_versions (
       version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
       version_number INTEGER NOT NULL,
-      input_path VARCHAR(1024),
-      output_path VARCHAR(1024),
-      status VARCHAR(50),
-      error VARCHAR(1024),
+      base_prompt TEXT NOT NULL,
+      file_versions_id UUID[] NOT NULL,
+      custom_instructions TEXT[] NOT NULL,
+      file_statuses VARCHAR(50)[] NOT NULL,
+      output_paths VARCHAR(1024)[] NOT NULL,
+      errors VARCHAR(1024)[],
+      global_status VARCHAR(50) NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -175,10 +203,13 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
       version_number INTEGER NOT NULL,
-      input_path VARCHAR(1024),
-      output_path VARCHAR(1024),
-      status VARCHAR(50),
-      error VARCHAR(1024),
+      base_prompt TEXT NOT NULL,
+      file_versions_id UUID[] NOT NULL,
+      custom_instructions TEXT[] NOT NULL,
+      file_statuses VARCHAR(50)[] NOT NULL,
+      output_paths VARCHAR(1024)[] NOT NULL,
+      errors VARCHAR(1024)[],
+      global_status VARCHAR(50) NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -186,6 +217,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
       version_number INTEGER NOT NULL,
+      base_prompt TEXT NOT NULL,
       input_path VARCHAR(1024),
       output_path VARCHAR(1024),
       status VARCHAR(50),
@@ -197,6 +229,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
       version_number INTEGER NOT NULL,
+      base_prompt TEXT NOT NULL,
       input_path VARCHAR(1024),
       output_path VARCHAR(1024),
       status VARCHAR(50),
@@ -208,6 +241,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
       version_number INTEGER NOT NULL,
+      base_prompt TEXT NOT NULL,
       input_path VARCHAR(1024),
       output_path VARCHAR(1024),
       status VARCHAR(50),
@@ -216,15 +250,16 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   );
 
   CREATE TABLE graph_versions (
-      version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
-      version_number INTEGER NOT NULL,
-      input_path VARCHAR(1024),
-      output_path VARCHAR(1024),
-      status VARCHAR(50),
-      error VARCHAR(1024),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
+    version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
+    version_number INTEGER NOT NULL,
+    base_prompt TEXT NOT NULL,
+    input_path VARCHAR(1024),
+    output_path VARCHAR(1024),
+    status VARCHAR(50),
+    error VARCHAR(1024),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
   -- Indexes
   CREATE INDEX idx_files_domain_id ON files(domain_id);

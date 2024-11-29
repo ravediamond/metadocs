@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
+from .models import DomainVersionStatus
 
 
 # Tenant Schemas
@@ -170,19 +171,6 @@ class DomainDataSchema(BaseModel):
         from_attributes = True
 
 
-class DomainVersionSchema(BaseModel):
-    domain_id: UUID
-    tenant_id: UUID
-    version: int
-    created_at: datetime
-    entity_grouping_path: str
-    ontology_path: str
-    file_id: UUID
-
-    class Config:
-        from_attributes = True
-
-
 # Role Schemas
 class RoleBase(BaseModel):
     role_name: str
@@ -261,55 +249,112 @@ class InvitationResponse(InvitationBase):
 
 class FileBase(BaseModel):
     filename: str
+    domain_id: UUID
+    tenant_id: UUID
+    file_type: str
+    file_size: int
+    original_path: str
+
+
+class FileVersion(BaseModel):
+    file_version_id: UUID
+    file_id: UUID
+    version: int
+    filepath: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class File(FileBase):
+    file_id: UUID
+    uploaded_at: datetime
+    uploaded_by: Optional[UUID]
+    created_at: datetime
+    versions: List[FileVersion]
+
+    class Config:
+        from_attributes = True
 
 
 class FileCreate(FileBase):
     pass
 
 
-class FileResponse(BaseModel):
+class FileResponse(FileBase):
     file_id: UUID
-    domain_id: UUID
-    filename: str
-    filepath: str
     uploaded_at: datetime
-    uploaded_by: Optional[UUID] = None
-    last_processed_at: Optional[datetime] = None
-    processing_status: Optional[str] = None
-    processing_error: Optional[str] = None
-    markdown_path: Optional[str] = None
-    entity_extraction_path: Optional[str] = None
-    ontology_path: Optional[str] = None
+    uploaded_by: Optional[UUID]
+    created_at: datetime
 
     class Config:
         from_attributes = True
 
 
-class FileStatus(BaseModel):
-    file_id: str
+class FileVersionResponse(BaseModel):
+    file_version_id: UUID
+    file_id: UUID
+    version: int
+    filepath: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FileWithVersionsResponse(BaseModel):
+    file_id: UUID
+    domain_id: UUID
+    tenant_id: UUID
     filename: str
-    status: (
-        str  # "queued", "processing_pdf", "processing_entities", "completed", "failed"
-    )
-    error: Optional[str] = None
-    markdown_path: Optional[str] = None
-    entity_extraction_path: Optional[str] = None
-    ontology_path: Optional[str] = None
-    last_processed_at: Optional[datetime] = None
-    processing_details: Dict[str, Any]
+    file_type: str
+    file_size: int
+    original_path: str
+    uploaded_at: datetime
+    uploaded_by: Optional[UUID]
+    created_at: datetime
+    versions: List[FileVersionResponse]
+
+    class Config:
+        from_attributes = True
+
+
+class DomainVersionFile(BaseModel):
+    domain_id: UUID
+    domain_version: int
+    file_version_id: UUID
+    status: Optional[str]
+    error: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class DomainVersionSchema(BaseModel):
+    domain_id: UUID
+    tenant_id: UUID
+    version: int
+    created_at: datetime
+    status: DomainVersionStatus
+    pipeline_id: Optional[UUID]
+    file_versions: List[DomainVersionFile]
 
     class Config:
         from_attributes = True
 
 
 class ProcessingStatus(BaseModel):
+    """Processing status that references current ParseVersion status"""
+
     message: str
     total_files: int
     files_completed: Optional[int] = 0
     files_failed: Optional[int] = 0
     files_processing: Optional[int] = 0
     processing_started: bool
-    file_statuses: Optional[List[FileStatus]] = None
+    parse_status: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -335,10 +380,6 @@ class ProcessingVersionBase(BaseModel):
     version_id: UUID
     pipeline_id: UUID
     version_number: int
-    input_path: Optional[str]
-    output_path: Optional[str]
-    status: str
-    error: Optional[str]
     created_at: datetime
 
     class Config:
@@ -348,37 +389,65 @@ class ProcessingVersionBase(BaseModel):
 class ParseVersion(ProcessingVersionBase):
     """Version info for PDF parsing stage"""
 
-    pass
+    base_prompt: str
+    file_versions_id: List[UUID]
+    custom_instructions: List[str]
+    file_statuses: List[str]
+    output_paths: List[str]
+    errors: Optional[List[str]]
+    global_status: str
 
 
 class ExtractVersion(ProcessingVersionBase):
     """Version info for entity extraction stage"""
 
-    pass
+    base_prompt: str
+    file_versions_id: List[UUID]
+    custom_instructions: List[str]
+    file_statuses: List[str]
+    output_paths: List[str]
+    errors: Optional[List[str]]
+    global_status: str
 
 
 class MergeVersion(ProcessingVersionBase):
     """Version info for entity merging stage"""
 
-    pass
+    base_prompt: str
+    input_path: Optional[str]
+    output_path: Optional[str]
+    status: str
+    error: Optional[str]
 
 
 class GroupVersion(ProcessingVersionBase):
     """Version info for entity grouping stage"""
 
-    pass
+    base_prompt: str
+    input_path: Optional[str]
+    output_path: Optional[str]
+    status: str
+    error: Optional[str]
 
 
 class OntologyVersion(ProcessingVersionBase):
     """Version info for ontology generation stage"""
 
-    pass
+    base_prompt: str
+    input_path: Optional[str]
+    output_path: Optional[str]
+    status: str
+    error: Optional[str]
 
 
 class GraphVersion(ProcessingVersionBase):
     """Version info for graph generation stage"""
 
-    pass
+    base_prompt: str
+    input_path: Optional[str]
+    output_path: Optional[str]
+    status: str
+    error: Optional[str]
 
 
 class ProcessingPipeline(BaseModel):
@@ -412,3 +481,6 @@ class DomainBasicResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class MergeRequest(BaseModel):
+    extract_version_ids: List[UUID]

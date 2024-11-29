@@ -8,11 +8,6 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 from ...models.models import ProcessingPipeline
-from ..prompts.merger_prompts import (
-    SYSTEM_PROMPT,
-    ENTITY_MERGE_PROMPT,
-    ENTITY_DETAILS_PROMPT,
-)
 from ...llm.llm_factory import LLMConfig, LLMFactory
 from ...core.config import ConfigManager
 
@@ -25,7 +20,7 @@ class MergeResult:
     merged_path: Optional[str] = None
 
 
-class EntityMerger:
+class MergeProcessor:
     def __init__(self, pipeline: ProcessingPipeline, config: ConfigManager):
         self.pipeline = pipeline
         self.domain_id = pipeline.domain_id

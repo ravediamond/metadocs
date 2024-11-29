@@ -1,5 +1,6 @@
 import uuid
 import secrets
+from enum import Enum
 from sqlalchemy import (
     Column,
     String,
@@ -10,6 +11,8 @@ from sqlalchemy import (
     func,
     ARRAY,
     select,
+    Enum as SQLAlchemyEnum,
+    BigInteger,
 )
 from sqlalchemy.dialects.postgresql import UUID as UUIDType
 from sqlalchemy.orm import relationship, declared_attr, Session
@@ -173,6 +176,16 @@ class Domain(Base):
     )
 
 
+class DomainVersionStatus(str, Enum):
+    DRAFT = "DRAFT"
+    TO_BE_VALIDATED = "TO_BE_VALIDATED"
+    PUBLISHED = "PUBLISHED"
+    PENDING_SUSPENSION = "PENDING_SUSPENSION"
+    SUSPENDED = "SUSPENDED"
+    PENDING_DELETE = "PENDING_DELETE"
+    DELETED = "DELETED"
+
+
 # DomainVersion Model
 class DomainVersion(Base):
     __tablename__ = "domain_versions"
@@ -189,6 +202,11 @@ class DomainVersion(Base):
     )
     version = Column(Integer, primary_key=True)
     created_at = Column(TIMESTAMP, default=func.now())
+    status = Column(
+        SQLAlchemyEnum(DomainVersionStatus, name="domain_version_status"),
+        nullable=False,
+        default=DomainVersionStatus.DRAFT,
+    )
     pipeline_id = Column(
         UUIDType(as_uuid=True), ForeignKey("processing_pipeline.pipeline_id")
     )
@@ -202,6 +220,7 @@ class DomainVersion(Base):
         single_parent=True,
         uselist=False,  # One-to-one relationship
     )
+    file_versions = relationship("DomainVersionFile", back_populates="domain_version")
 
 
 # DomainConfig Model
@@ -344,34 +363,67 @@ class File(Base):
         ForeignKey("domains.domain_id", ondelete="CASCADE"),
         nullable=False,
     )
+    tenant_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     filename = Column(String(255), nullable=False)
-    filepath = Column(String(1024), nullable=False)
+    file_type = Column(String(50), nullable=False)
+    original_path = Column(String(1024), nullable=False)
     uploaded_at = Column(TIMESTAMP, default=func.now())
     uploaded_by = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("users.user_id", ondelete="SET NULL"),
-        nullable=True,
+        UUIDType(as_uuid=True), ForeignKey("users.user_id", ondelete="SET NULL")
     )
-    last_processed_at = Column(TIMESTAMP, nullable=True)
-    processing_status = Column(String(50), nullable=True)
-    processing_error = Column(String(1024), nullable=True)
-
-    markdown_path = Column(String(1024), nullable=True)
-    entity_extraction_path = Column(String(1024), nullable=True)
-    entity_grouping_path = Column(String(1024), nullable=True)
-    ontology_path = Column(String(1024), nullable=True)
-
-    # Add pipeline reference
-    pipeline_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("processing_pipeline.pipeline_id", ondelete="SET NULL"),
-        nullable=True,
-    )
+    created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationships
     domain = relationship("Domain", back_populates="files")
+    tenant = relationship("Tenant")
     uploader = relationship("User", back_populates="files")
-    pipeline = relationship("ProcessingPipeline", back_populates="files")
+    versions = relationship(
+        "FileVersion", back_populates="file", cascade="all, delete-orphan"
+    )
+
+
+class FileVersion(Base):
+    __tablename__ = "file_versions"
+
+    file_version_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
+    )
+    file_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("files.file_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version = Column(Integer, nullable=False)
+    filepath = Column(String(1024), nullable=False)
+    file_size = Column(BigInteger, nullable=False)
+    created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationships
+    file = relationship("File", back_populates="versions")
+    domain_versions = relationship("DomainVersionFile", back_populates="file_version")
+
+
+class DomainVersionFile(Base):
+    __tablename__ = "domain_version_files"
+
+    domain_id = Column(UUIDType(as_uuid=True), primary_key=True)
+    domain_version = Column(Integer, primary_key=True)
+    file_version_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("file_versions.file_version_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    status = Column(String(50))
+    error = Column(String(1024))
+    created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationships
+    domain_version = relationship("DomainVersion", back_populates="file_versions")
+    file_version = relationship("FileVersion", back_populates="domain_versions")
 
 
 class ProcessingPipeline(Base):
@@ -385,15 +437,6 @@ class ProcessingPipeline(Base):
         ForeignKey("domains.domain_id", ondelete="CASCADE"),
         nullable=False,
     )
-
-    # Current version references
-    current_parse_id = Column(UUIDType(as_uuid=True), nullable=True)
-    current_extract_id = Column(UUIDType(as_uuid=True), nullable=True)
-    current_merge_id = Column(UUIDType(as_uuid=True), nullable=True)
-    current_group_id = Column(UUIDType(as_uuid=True), nullable=True)
-    current_ontology_id = Column(UUIDType(as_uuid=True), nullable=True)
-    current_graph_id = Column(UUIDType(as_uuid=True), nullable=True)
-
     status = Column(String(50))
     error = Column(String(1024))
     created_at = Column(TIMESTAMP, default=func.now())
@@ -407,139 +450,236 @@ class ProcessingPipeline(Base):
     # Version relationships
     parse_versions = relationship(
         "ParseVersion",
-        primaryjoin="ProcessingPipeline.pipeline_id == ParseVersion.pipeline_id",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
     extract_versions = relationship(
         "ExtractVersion",
-        primaryjoin="ProcessingPipeline.pipeline_id == ExtractVersion.pipeline_id",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
     merge_versions = relationship(
         "MergeVersion",
-        primaryjoin="ProcessingPipeline.pipeline_id == MergeVersion.pipeline_id",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
     group_versions = relationship(
         "GroupVersion",
-        primaryjoin="ProcessingPipeline.pipeline_id == GroupVersion.pipeline_id",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
     ontology_versions = relationship(
         "OntologyVersion",
-        primaryjoin="ProcessingPipeline.pipeline_id == OntologyVersion.pipeline_id",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
     graph_versions = relationship(
         "GraphVersion",
-        primaryjoin="ProcessingPipeline.pipeline_id == GraphVersion.pipeline_id",
         back_populates="pipeline",
         cascade="all, delete-orphan",
     )
-    files = relationship("File", back_populates="pipeline")
-
-    def add_file(self, file: File) -> bool:
-        """Add a file to this pipeline's processing list"""
-        if file.domain_id != self.domain_id:
-            return False
-        file.pipeline_id = self.pipeline_id
-        return True
-
-    def remove_file(self, file: File) -> bool:
-        """Remove a file from this pipeline's processing list"""
-        if file.pipeline_id != self.pipeline_id:
-            return False
-        file.pipeline_id = None
-        return True
 
 
-class ProcessingVersionMixin:
-    """Mixin for version tracking tables with proper declarative attributes"""
+class ParseVersion(Base):
+    __tablename__ = "parse_versions"
 
-    @declared_attr
-    def __tablename__(cls):
-        return cls.__name__.lower()
-
-    @declared_attr
-    def version_id(cls):
-        return Column(UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid)
-
-    @declared_attr
-    def pipeline_id(cls):
-        return Column(
-            UUIDType(as_uuid=True),
-            ForeignKey("processing_pipeline.pipeline_id", ondelete="CASCADE"),
-            nullable=False,
-        )
-
+    version_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
+    )
+    pipeline_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("processing_pipeline.pipeline_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     version_number = Column(Integer, nullable=False)
-    input_path = Column(String(1024))
+    system_prompt = Column(Text, nullable=False)
+    readability_prompt = Column(Text, nullable=False)
+    convert_prompt = Column(Text, nullable=False)
+    input_file_version_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("file_versions.file_version_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    custom_instructions = Column(ARRAY(Text), nullable=False)
+    status = Column(ARRAY(String(50)), nullable=False)
+    output_dir = Column(ARRAY(String(1024)), nullable=False)
+    output_path = Column(ARRAY(String(1024)), nullable=False)
+    errors = Column(ARRAY(String(1024)))
+    created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationship
+    pipeline = relationship("ProcessingPipeline", back_populates="parse_versions")
+    input_file_version = relationship("FileVersion")
+    extract_versions = relationship("ExtractVersion", back_populates="parse_version")
+
+
+class ExtractVersion(Base):
+    __tablename__ = "extract_versions"
+
+    version_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
+    )
+    pipeline_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("processing_pipeline.pipeline_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version_number = Column(Integer, nullable=False)
+    system_prompt = Column(Text, nullable=False)
+    initial_entity_extraction_prompt = Column(Text, nullable=False)
+    iterative_extract_entities_prompt = Column(Text, nullable=False)
+    entity_details_prompt = Column(Text, nullable=False)
+    input_extraction_version_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("parse_versions.version_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    custom_instructions = Column(ARRAY(Text), nullable=False)
+    status = Column(ARRAY(String(50)), nullable=False)
+    output_dir = Column(ARRAY(String(1024)), nullable=False)
+    output_path = Column(ARRAY(String(1024)), nullable=False)
+    errors = Column(ARRAY(String(1024)))
+    created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationship
+    pipeline = relationship("ProcessingPipeline", back_populates="extract_versions")
+    parse_version = relationship("ParseVersion", back_populates="extract_versions")
+
+
+class MergeVersion(Base):
+    __tablename__ = "merge_versions"
+
+    version_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
+    )
+    pipeline_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("processing_pipeline.pipeline_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version_number = Column(Integer, nullable=False)
+    system_prompt = Column(Text, nullable=False)
+    entity_details_prompt = Column(Text, nullable=False)
+    entity_merge_prompt = Column(Text, nullable=False)
+    input_extract_version_ids = Column(ARRAY(UUIDType(as_uuid=True)), nullable=False)
+    output_dir = Column(ARRAY(String(1024)), nullable=False)
     output_path = Column(String(1024))
     status = Column(String(50))
     error = Column(String(1024))
     created_at = Column(TIMESTAMP, default=func.now())
 
-
-class ParseVersion(Base, ProcessingVersionMixin):
-    __tablename__ = "parse_versions"
-
-    pipeline = relationship(
-        "ProcessingPipeline",
-        primaryjoin="ParseVersion.pipeline_id == ProcessingPipeline.pipeline_id",
-        back_populates="parse_versions",
-    )
+    # Relationship
+    pipeline = relationship("ProcessingPipeline", back_populates="merge_versions")
+    group_versions = relationship("GroupVersion", back_populates="merge_version")
+    ontology_versions = relationship("OntologyVersion", back_populates="merge_version")
+    graph_versions = relationship("GraphVersion", back_populates="input_merge_version")
 
 
-class ExtractVersion(Base, ProcessingVersionMixin):
-    __tablename__ = "extract_versions"
-
-    pipeline = relationship(
-        "ProcessingPipeline",
-        primaryjoin="ExtractVersion.pipeline_id == ProcessingPipeline.pipeline_id",
-        back_populates="extract_versions",
-    )
-
-
-class MergeVersion(Base, ProcessingVersionMixin):
-    __tablename__ = "merge_versions"
-
-    pipeline = relationship(
-        "ProcessingPipeline",
-        primaryjoin="MergeVersion.pipeline_id == ProcessingPipeline.pipeline_id",
-        back_populates="merge_versions",
-    )
-
-
-class GroupVersion(Base, ProcessingVersionMixin):
+class GroupVersion(Base):
     __tablename__ = "group_versions"
 
-    pipeline = relationship(
-        "ProcessingPipeline",
-        primaryjoin="GroupVersion.pipeline_id == ProcessingPipeline.pipeline_id",
-        back_populates="group_versions",
+    version_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
     )
+    pipeline_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("processing_pipeline.pipeline_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version_number = Column(Integer, nullable=False)
+    base_prompt = Column(Text, nullable=False)
+    input_merge_version_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("merge_versions.version_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    output_dir = Column(ARRAY(String(1024)), nullable=False)
+    output_path = Column(String(1024))
+    status = Column(String(50))
+    error = Column(String(1024))
+    created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationship
+    pipeline = relationship("ProcessingPipeline", back_populates="group_versions")
+    merge_version = relationship("MergeVersion", back_populates="group_versions")
+    ontology_versions = relationship("OntologyVersion", back_populates="group_version")
+    graph_versions = relationship("GraphVersion", back_populates="input_merge_version")
 
 
-class OntologyVersion(Base, ProcessingVersionMixin):
+class OntologyVersion(Base):
     __tablename__ = "ontology_versions"
 
-    pipeline = relationship(
-        "ProcessingPipeline",
-        primaryjoin="OntologyVersion.pipeline_id == ProcessingPipeline.pipeline_id",
-        back_populates="ontology_versions",
+    version_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
     )
+    pipeline_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("processing_pipeline.pipeline_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version_number = Column(Integer, nullable=False)
+    base_prompt = Column(Text, nullable=False)
+    input_group_version_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("group_versions.version_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    input_merge_version_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("merge_versions.version_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    output_dir = Column(ARRAY(String(1024)), nullable=False)
+    output_path = Column(String(1024))
+    status = Column(String(50))
+    error = Column(String(1024))
+    created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationship
+    pipeline = relationship("ProcessingPipeline", back_populates="ontology_versions")
+    group_version = relationship("GroupVersion", back_populates="ontology_versions")
+    merge_version = relationship("MergeVersion", back_populates="ontology_versions")
+    graph_versions = relationship("GraphVersion", back_populates="input_merge_version")
 
 
-class GraphVersion(Base, ProcessingVersionMixin):
+class GraphVersion(Base):
     __tablename__ = "graph_versions"
 
-    pipeline = relationship(
-        "ProcessingPipeline",
-        primaryjoin="GraphVersion.pipeline_id == ProcessingPipeline.pipeline_id",
-        back_populates="graph_versions",
+    version_id = Column(
+        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
+    )
+    pipeline_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("processing_pipeline.pipeline_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version_number = Column(Integer, nullable=False)
+    base_prompt = Column(Text, nullable=False)
+    input_group_version_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("group_versions.version_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    input_merge_version_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("merge_versions.version_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    input_ontology_version_id = Column(
+        UUIDType(as_uuid=True),
+        ForeignKey("ontology_versions.version_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    output_dir = Column(ARRAY(String(1024)), nullable=False)
+    output_path = Column(String(1024))
+    status = Column(String(50))
+    error = Column(String(1024))
+    created_at = Column(TIMESTAMP, default=func.now())
+
+    # Relationship
+    pipeline = relationship("ProcessingPipeline", back_populates="graph_versions")
+    input_merge_version = relationship("MergeVersion", back_populates="graph_versions")
+    input_group_version = relationship("GroupVersion", back_populates="graph_versions")
+    input_ontology_version = relationship(
+        "OntologyVersion", back_populates="graph_versions"
     )

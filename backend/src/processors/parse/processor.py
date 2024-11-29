@@ -4,7 +4,7 @@ import base64
 from io import BytesIO
 import os
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import List, Dict
 import json
 import logging
 from datetime import datetime
@@ -13,38 +13,41 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ...models.models import File as FileModel, ProcessingPipeline
-from ..prompts.document_prompts import (
-    SYSTEM_PROMPT,
-    CHECK_READABILITY_PROMPT,
-    CONVERT_TO_MARKDOWN_PROMPT,
+from ...models.models import (
+    ParseVersion,
+    FileVersion,
 )
 from ...llm.llm_factory import LLMConfig, LLMFactory
+from ...core.config import FILE_SYSTEM
 
 
+# TODO: Implement quality score and improvement message
 @dataclass
 class ProcessingResult:
     success: bool
+    status: str
     message: str
-    data: Optional[Dict] = None
-    markdown_path: Optional[str] = None
+    error: str
 
 
-class PDFProcessor:
+class ParseProcessor:
     def __init__(
-        self, file_model: FileModel, pipeline: ProcessingPipeline, config_manager
+        self,
+        file_version: FileVersion,
+        parse_version: ParseVersion,
+        config_manager,
     ):
-        self.file_model = file_model
-        self.pipeline = pipeline
+        self.file_version = file_version
+        self.parse_version = parse_version
+        self.system_prompt = self.parse_version.system_prompt
+        self.readability_prompt = self.parse_version.readability_prompt
+        self.convert_prompt = self.parse_version.convert_prompt
+        # TODO: Implement custom instructions
+        self.custom_instructions = self.parse_version.custom_instructions
         self.config = config_manager
-        self.output_dir = os.path.join(
-            self.config.get("processing_dir", "processing_output"),
-            str(self.file_model.domain_id),
-            str(self.pipeline.pipeline_id),
-            str(self.file_model.file_id),
-        )
         self.logger = self._setup_logger()
         self.model = self._setup_model()
+        self._setup_directories()
 
     def _setup_model(self) -> ChatBedrock:
         """Initialize the LLM model"""
@@ -63,12 +66,13 @@ class PDFProcessor:
 
     def _setup_logger(self) -> logging.Logger:
         """Setup logging for the processor."""
-        logger = logging.getLogger(f"PDFProcessor_{self.file_model.file_id}")
+        logger = logging.getLogger(
+            f"ParseProcessor_{self.file_version.file_version_id}"
+        )
         logger.setLevel(logging.DEBUG)
 
         # Create logs directory
-        logs_dir = os.path.join(self.output_dir, "logs")
-        os.makedirs(logs_dir, exist_ok=True)
+        logs_dir = os.path.join(self.parse_version.output_dir, "logs")
 
         # File handler
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -86,8 +90,14 @@ class PDFProcessor:
 
     def _setup_directories(self):
         """Create necessary directories for processing."""
-        os.makedirs(self.output_dir, exist_ok=True)
-        os.makedirs(os.path.join(self.output_dir, "images"), exist_ok=True)
+        # TODO: implement file storage manager for local and cloud
+        if FILE_SYSTEM == "local":
+            os.makedirs(
+                os.path.join(self.parse_version.output_dir, "images"), exist_ok=True
+            )
+            os.makedirs(
+                os.path.join(self.parse_version.output_dir, "logs"), exist_ok=True
+            )
 
     def _convert_page_to_image(self, page: fitz.Page) -> Image.Image:
         """Convert PDF page to PIL Image."""
@@ -105,7 +115,9 @@ class PDFProcessor:
 
     def _save_image(self, image: Image.Image, page_num: int):
         """Save the image to the output directory."""
-        image_path = os.path.join(self.output_dir, "images", f"page_{page_num + 1}.png")
+        image_path = os.path.join(
+            self.parse_version.output_dir, "images", f"page_{page_num + 1}.png"
+        )
         image.save(image_path, "PNG", quality=95)
         return image_path
 
@@ -123,10 +135,10 @@ class PDFProcessor:
                     },
                 }
             )
-        content.append({"type": "text", "text": CHECK_READABILITY_PROMPT})
+        content.append({"type": "text", "text": self.readability_prompt})
 
         prompt = ChatPromptTemplate.from_messages(
-            [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=content)]
+            [SystemMessage(content=self.system_prompt), HumanMessage(content=content)]
         )
 
         chain = prompt | self.model
@@ -149,11 +161,14 @@ class PDFProcessor:
                     "url": f"data:image/png;base64,{self._encode_image(image)}"
                 },
             },
-            {"type": "text", "text": CONVERT_TO_MARKDOWN_PROMPT},
+            {
+                "type": "text",
+                "text": self.convert_prompt,
+            },  # Using the base_prompt passed in constructor
         ]
 
         prompt = ChatPromptTemplate.from_messages(
-            [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=content)]
+            [SystemMessage(content=self.system_prompt), HumanMessage(content=content)]
         )
 
         chain = prompt | self.model
@@ -161,7 +176,9 @@ class PDFProcessor:
         markdown = response.content
 
         # Save individual page markdown
-        page_path = os.path.join(self.output_dir, f"page_{page_num + 1}.md")
+        page_path = os.path.join(
+            self.parse_version.output_dir, f"page_{page_num + 1}.md"
+        )
         with open(page_path, "w", encoding="utf-8") as f:
             f.write(markdown)
 
@@ -171,18 +188,16 @@ class PDFProcessor:
             "markdown_path": page_path,
         }
 
-    def process(self, batch_size: Optional[int] = None) -> ProcessingResult:
+    def process(self) -> ProcessingResult:
         """Process the PDF file and return results."""
         try:
-            self.pipeline.add_file(self.file_model)
-            batch_size = batch_size or int(self.config.get("processing_batch_size", 5))
+            batch_size = int(self.config.get("processing_batch_size", 5))
             self.logger.info(
-                f"Starting processing for file: {self.file_model.filename}"
+                f"Starting processing for file: {self.file_version.file_id}"
             )
-            self._setup_directories()
 
             # Open PDF
-            doc = fitz.open(self.file_model.filepath)
+            doc = fitz.open(self.file_version.filepath)
             self.logger.info(f"PDF opened successfully. Total pages: {len(doc)}")
 
             # Check quality of first few pages
@@ -192,12 +207,17 @@ class PDFProcessor:
             quality_result = self._check_quality(first_pages)
 
             if quality_result["confidence"] < 75:
+                self.parse_version.status = "failed"
+                self.parse_version.error = (
+                    f"Quality check failed: {quality_result['problem']}"
+                )
                 self.logger.warning(
                     f"Quality check failed: {quality_result['problem']}"
                 )
                 return ProcessingResult(
                     success=False,
                     message=f"Quality check failed: {quality_result['problem']}",
+                    quality_score=quality_result["confidence"],
                 )
 
             # Process pages in parallel
@@ -223,39 +243,24 @@ class PDFProcessor:
 
             # Sort results by page number and combine markdown
             all_results.sort(key=lambda x: x[0])
-            combined_path = os.path.join(self.output_dir, "combined.md")
+            combined_path = os.path.join(self.parse_version.output_dir, "output.md")
             with open(combined_path, "w", encoding="utf-8") as f:
                 f.write(
                     "\n\n---\n\n".join(result["markdown"] for _, result in all_results)
                 )
 
-            self.file_model.last_processed_at = datetime.now()
-            self.file_model.processing_status = "completed"
-
             self.logger.info("Processing completed successfully")
             return ProcessingResult(
                 success=True,
+                status="completed",
                 message="PDF processed successfully",
-                data={
-                    "total_pages": len(doc),
-                    "output_dir": self.output_dir,
-                    "pipeline_id": str(self.pipeline.pipeline_id),
-                    "page_results": [
-                        {
-                            "page_num": page_num + 1,
-                            "image_path": result["image_path"],
-                            "markdown_path": result["markdown_path"],
-                        }
-                        for page_num, result in all_results
-                    ],
-                },
-                markdown_path=combined_path,
             )
 
         except Exception as e:
-            self.file_model.processing_status = "failed"
-            self.file_model.processing_error = str(e)
             self.logger.error(f"Error processing PDF: {str(e)}", exc_info=True)
             return ProcessingResult(
-                success=False, message=f"Processing failed: {str(e)}"
+                success=False,
+                status="failed",
+                message=f"Processing failed: {str(e)}",
+                error=str(e),
             )
