@@ -1,5 +1,3 @@
-# src/processors/groups/processor.py
-
 from dataclasses import dataclass
 from typing import Dict, Optional
 import json
@@ -10,7 +8,8 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ...models.models import DomainProcessing
+from ...models.models import ProcessingPipeline
+from ...core.config import ConfigManager
 from ..prompts.group_prompts import SYSTEM_PROMPT, GROUP_ANALYSIS_PROMPT
 from ...llm.llm_factory import LLMConfig, LLMFactory
 
@@ -24,13 +23,13 @@ class ProcessingResult:
 
 
 class GroupProcessor:
-    def __init__(self, domain_processing: DomainProcessing, config_manager):
-        self.domain_processing = domain_processing
-        self.config = config_manager
+    def __init__(self, pipeline: ProcessingPipeline, config: ConfigManager):
+        self.pipeline = pipeline
+        self.config = config
         self.output_dir = os.path.join(
             self.config.get("processing_dir", "processing_output"),
-            str(self.domain_processing.domain_id),
-            "groups_analysis",
+            str(self.pipeline.domain_id),
+            "groups",
         )
         self.logger = self._setup_logger()
         self.model = self._setup_model()
@@ -51,9 +50,7 @@ class GroupProcessor:
         return LLMFactory(llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
-        logger = logging.getLogger(
-            f"GroupProcessor_{self.domain_processing.processing_id}"
-        )
+        logger = logging.getLogger(f"GroupProcessor_{self.pipeline.pipeline_id}")
         logger.setLevel(logging.DEBUG)
         os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
 
@@ -95,26 +92,34 @@ class GroupProcessor:
     def process(self) -> ProcessingResult:
         try:
             self.logger.info(
-                f"Starting group analysis for domain processing: {self.domain_processing.processing_id}"
+                f"Starting group analysis for pipeline: {self.pipeline.pipeline_id}"
             )
             os.makedirs(self.output_dir, exist_ok=True)
 
             # Load merged entities results
-            with open(
-                self.domain_processing.merged_entities_path, "r", encoding="utf-8"
-            ) as f:
-                entities_data = json.load(f)
+            merge_version = next(
+                (
+                    v
+                    for v in self.pipeline.merge_versions
+                    if v.version_id == self.pipeline.current_merge_id
+                ),
+                None,
+            )
+
+            if not merge_version or not merge_version.output_path:
+                raise ValueError("No merged entities data available")
+
+            # Load merged entities results
+            with open(merge_version.output_path, "r", encoding="utf-8") as f:
+                merged_data = json.load(f)
 
             # Analyze groups
-            groups_analysis = self._analyze_groups(entities_data)
+            groups_analysis = self._analyze_groups(merged_data)
 
             # Save analysis results
-            groups_path = os.path.join(self.output_dir, "groups_analysis.json")
+            groups_path = os.path.join(self.output_dir, "groups.json")
             with open(groups_path, "w", encoding="utf-8") as f:
                 json.dump(groups_analysis, f, indent=2, ensure_ascii=False)
-
-            self.domain_processing.entity_grouping_path = groups_path
-            self.domain_processing.status = "processing_ontology"
 
             return ProcessingResult(
                 success=True,
@@ -125,8 +130,6 @@ class GroupProcessor:
 
         except Exception as e:
             self.logger.error(f"Error during group analysis: {str(e)}", exc_info=True)
-            self.domain_processing.status = "failed"
-            self.domain_processing.error = str(e)
             return ProcessingResult(
                 success=False, message=f"Group analysis failed: {str(e)}"
             )

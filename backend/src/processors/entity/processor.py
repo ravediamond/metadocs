@@ -9,7 +9,7 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 import concurrent.futures
 
-from ...models.models import File as FileModel
+from ...models.models import ProcessingPipeline
 from ..prompts.entity_prompts import (
     SYSTEM_PROMPT,
     INITIAL_ENTITY_EXTRACTION_PROMPT,
@@ -40,13 +40,13 @@ class ProcessingResult:
 
 
 class EntityProcessor:
-    def __init__(self, file_model: FileModel, config_manager):
-        self.file_model = file_model
+    def __init__(self, pipeline: ProcessingPipeline, config_manager):
+        """Initialize with pipeline instead of single file"""
+        self.pipeline = pipeline
         self.config = config_manager
         self.output_dir = os.path.join(
             self.config.get("processing_dir", "processing_output"),
-            str(self.file_model.domain_id),
-            str(self.file_model.file_id),
+            str(self.pipeline.domain_id),
             "entity_extraction",
         )
         self.logger = self._setup_logger()
@@ -69,7 +69,7 @@ class EntityProcessor:
 
     def _setup_logger(self) -> logging.Logger:
         """Setup logging for the processor."""
-        logger = logging.getLogger(f"EntityProcessor_{self.file_model.file_id}")
+        logger = logging.getLogger(f"EntityProcessor_{self.pipeline.pipeline_id}")
         logger.setLevel(logging.DEBUG)
 
         os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
@@ -194,20 +194,48 @@ class EntityProcessor:
             raise
 
     def process(self, iterations: Optional[int] = None) -> ProcessingResult:
-        """Process the file and extract entities and relationships."""
+        """Process all files in the pipeline and extract entities and relationships."""
         try:
             iterations = iterations or int(self.config.get("entity_max_iterations", 3))
             self.logger.info(
-                f"Starting entity extraction for file: {self.file_model.filename}"
+                f"Starting entity extraction for pipeline: {self.pipeline.pipeline_id}"
             )
             os.makedirs(self.output_dir, exist_ok=True)
 
-            # Read the markdown content
-            with open(self.file_model.markdown_path, "r", encoding="utf-8") as f:
-                content = f.read()
+            all_content = []
+            file_metadata = []
+
+            pipeline_files = self.pipeline.files
+
+            if not pipeline_files:
+                return ProcessingResult(
+                    success=False, message="No files found for processing"
+                )
+
+            # Process each file in the pipeline
+            for file in pipeline_files:
+                try:
+                    with open(file.markdown_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        all_content.append(content)
+                        file_metadata.append(
+                            {"file_id": str(file.file_id), "filename": file.filename}
+                        )
+                except Exception as e:
+                    self.logger.error(f"Error reading file {file.filename}: {str(e)}")
+                    continue
+
+            if not all_content:
+                return ProcessingResult(
+                    success=False,
+                    message="No files could be processed",
+                )
+
+            # Combine all content with clear separators
+            combined_content = "\n\n---\n\n".join(all_content)
 
             # Initial extraction
-            all_entities, all_relationships = self._initial_extraction(content)
+            all_entities, all_relationships = self._initial_extraction(combined_content)
             relationship_keys = {
                 (r["source"], r["target"], r["type"]) for r in all_relationships
             }
@@ -246,30 +274,35 @@ class EntityProcessor:
                         self.logger.error(f"Error processing entity {entity}: {str(e)}")
 
             # Prepare final analysis
-            analysis = {
+            extraction = {
                 "entities": entity_details,
                 "relationships": all_relationships,
                 "metadata": {
-                    "file_id": str(self.file_model.file_id),
-                    "filename": self.file_model.filename,
+                    "pipeline_id": str(self.pipeline.pipeline_id),
+                    "domain_id": str(self.pipeline.domain_id),
+                    "processed_files": file_metadata,
                     "iterations": iterations,
-                    "total_entities": len(all_entities),
+                    "total_entities_attempted": len(all_entities),
+                    "total_entities_processed": len(entity_details),
                     "total_unique_relationships": len(relationship_keys),
                     "analysis_timestamp": datetime.now().isoformat(),
+                    "failed_entities": [
+                        e for e in all_entities if e not in entity_details
+                    ],
                 },
             }
 
-            # Save analysis to file
-            analysis_path = os.path.join(self.output_dir, "entity_extraction.json")
-            with open(analysis_path, "w", encoding="utf-8") as f:
-                json.dump(analysis, f, indent=2, ensure_ascii=False)
+            # Save extraction to file
+            extraction_path = os.path.join(self.output_dir, "entity_extraction.json")
+            with open(extraction_path, "w", encoding="utf-8") as f:
+                json.dump(extraction, f, indent=2, ensure_ascii=False)
 
             self.logger.info("Entity extraction completed successfully")
             return ProcessingResult(
                 success=True,
                 message="Entity extraction completed successfully",
-                data=analysis,
-                analysis_path=analysis_path,
+                data=extraction,
+                analysis_path=extraction_path,
             )
 
         except Exception as e:

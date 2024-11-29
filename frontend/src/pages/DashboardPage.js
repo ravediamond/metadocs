@@ -10,10 +10,22 @@ import {
   Flex,
   Spinner,
   HStack,
+  VStack,
+  Divider,
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
+import {
+  FaFile,
+  FaCog,
+  FaProjectDiagram,
+  FaNetworkWired,
+  FaHistory,
+  FaUserCog,
+  FaPlus,
+} from 'react-icons/fa';
 import AuthContext from '../context/AuthContext';
+
 
 const DashboardPage = () => {
   const { user, token, currentTenant } = useContext(AuthContext);
@@ -126,33 +138,92 @@ const DashboardPage = () => {
 };
 
 // DomainCard component for displaying each domain
-const DomainCard = ({ domain, onClick }) => (
-  <Box
-    p={8}
-    border="1px solid"
-    borderColor="gray.200"
-    borderRadius="lg"
-    bg="white"
-    shadow="sm"
-    transition="all 0.3s"
-    _hover={{ shadow: "lg", transform: "scale(1.02)" }}
-    textAlign="left"
-    onClick={onClick}
-    cursor="pointer"
-  >
-    <Heading as="h3" size="md" mb={2} color="blue.600">
-      {domain.domain_name}
-    </Heading>
-    <Text fontSize="md" color="gray.600" mb={4}>
-      {domain.description || 'No description available'}
-    </Text>
-    <Text fontSize="xs" color="gray.500">
-      Created at: {domain.created_at ? new Date(domain.created_at).toLocaleDateString() : 'N/A'}
-    </Text>
-  </Box>
-);
+const DomainCard = ({ domain }) => {
+  const navigate = useNavigate(); // Add useNavigate hook
 
-// PropTypes for DomainCard
+  return (
+    <Box
+      p={8}
+      border="1px solid"
+      borderColor="gray.200"
+      borderRadius="lg"
+      bg="white"
+      shadow="sm"
+      transition="all 0.3s"
+      _hover={{ shadow: "lg" }}
+      textAlign="left"
+    >
+      <VStack align="stretch" spacing={4}>
+        <Box onClick={() => navigate(`/domain/${domain.domain_id}`)} cursor="pointer">
+          <Heading as="h3" size="md" mb={2} color="blue.600">
+            {domain.domain_name}
+          </Heading>
+          <Text fontSize="md" color="gray.600" mb={4}>
+            {domain.description || 'No description available'}
+          </Text>
+          <Text fontSize="xs" color="gray.500">
+            Created at: {domain.created_at ? new Date(domain.created_at).toLocaleDateString() : 'N/A'}
+          </Text>
+        </Box>
+
+        <Divider />
+
+        <SimpleGrid columns={2} spacing={3}>
+          <Button
+            size="sm"
+            leftIcon={<FaFile />}
+            variant="outline"
+            onClick={() => navigate(`/domains/${domain.domain_id}/files`)}
+          >
+            Files
+          </Button>
+
+          <Button
+            size="sm"
+            leftIcon={<FaCog />}
+            variant="outline"
+            onClick={() => navigate(`/domains/${domain.domain_id}/config`)}
+          >
+            Settings
+          </Button>
+
+          <Button
+            size="sm"
+            leftIcon={<FaProjectDiagram />}
+            colorScheme="blue"
+            variant="outline"
+            onClick={() => navigate(`/domains/${domain.domain_id}/process`)}
+          >
+            Process
+          </Button>
+
+          <Button
+            size="sm"
+            leftIcon={<FaNetworkWired />}
+            colorScheme="green"
+            variant="outline"
+            onClick={() => navigate(`/domains/${domain.domain_id}/graph`)}
+          >
+            Graph
+          </Button>
+
+          <Button
+            size="sm"
+            leftIcon={<FaHistory />}
+            colorScheme="purple"
+            variant="outline"
+            onClick={() => navigate(`/domains/${domain.domain_id}/versions`)}
+            gridColumn="span 2"
+          >
+            Versions
+          </Button>
+        </SimpleGrid>
+      </VStack>
+    </Box>
+  );
+};
+
+// Update PropTypes
 DomainCard.propTypes = {
   domain: PropTypes.shape({
     domain_id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
@@ -160,7 +231,6 @@ DomainCard.propTypes = {
     description: PropTypes.string,
     created_at: PropTypes.string,
   }).isRequired,
-  onClick: PropTypes.func.isRequired,
 };
 
 export default DashboardPage;

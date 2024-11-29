@@ -10,8 +10,7 @@ from ..models.models import (
     Domain,
     File as FileModel,
     User,
-    DomainProcessing,
-    DomainProcessingFiles,
+    ProcessingPipeline,
 )
 from ..models.schemas import FileResponse
 from ..core.database import get_db
@@ -23,6 +22,7 @@ router = APIRouter()
 
 
 def get_file_response(file: FileModel) -> FileResponse:
+    """Convert File model to FileResponse schema"""
     return FileResponse(
         file_id=file.file_id,
         domain_id=file.domain_id,
@@ -35,16 +35,39 @@ def get_file_response(file: FileModel) -> FileResponse:
         processing_error=file.processing_error,
         markdown_path=file.markdown_path,
         entity_extraction_path=file.entity_extraction_path,
-        entity_grouping_path=file.entity_grouping_path,
-        ontology_path=file.ontology_path,
     )
 
 
 def get_file_storage_path(config: ConfigManager, domain_id: UUID, filename: str) -> str:
+    """Generate storage path for uploaded files"""
     processing_dir = config.get("processing_dir", "processing_output")
     domain_path = os.path.join(processing_dir, str(domain_id))
     os.makedirs(domain_path, exist_ok=True)
     return os.path.join(domain_path, filename)
+
+
+def cleanup_pipeline_files(pipeline: ProcessingPipeline):
+    """Clean up files associated with a processing pipeline"""
+    if not pipeline:
+        return
+
+    # Get all version objects that might have output files
+    versions = [
+        pipeline.current_parse,
+        pipeline.current_extract,
+        pipeline.current_merge,
+        pipeline.current_group,
+        pipeline.current_ontology,
+        pipeline.current_graph,
+    ]
+
+    # Clean up output files from all versions
+    for version in versions:
+        if version and version.output_path and os.path.exists(version.output_path):
+            try:
+                os.remove(version.output_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove version output file: {e}")
 
 
 @router.post(
@@ -59,6 +82,7 @@ def upload_file(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Upload a new file to a domain"""
     domain = (
         db.query(Domain)
         .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)
@@ -109,6 +133,7 @@ def delete_file(
     file_id: UUID,
     db: Session = Depends(get_db),
 ):
+    """Delete a file and its associated processing data"""
     file = (
         db.query(FileModel)
         .join(Domain)
@@ -128,8 +153,6 @@ def delete_file(
         file.filepath,
         file.markdown_path,
         file.entity_extraction_path,
-        file.entity_grouping_path,
-        file.ontology_path,
     ]
 
     for path in paths_to_remove:
@@ -139,22 +162,16 @@ def delete_file(
             except Exception as e:
                 logger.warning(f"Failed to remove file {path}: {e}")
 
-    # Also check domain processing that uses this file
-    domain_processings = (
-        db.query(DomainProcessing)
-        .join(DomainProcessingFiles)
-        .filter(DomainProcessingFiles.file_id == file_id)
+    # Get all pipelines that might be affected by this file's deletion
+    pipelines = (
+        db.query(ProcessingPipeline)
+        .filter(ProcessingPipeline.domain_id == domain_id)
         .all()
     )
 
-    for processing in domain_processings:
-        if processing.merged_entities_path and os.path.exists(
-            processing.merged_entities_path
-        ):
-            try:
-                os.remove(processing.merged_entities_path)
-            except Exception as e:
-                logger.warning(f"Failed to remove merged entities file: {e}")
+    # Clean up pipeline files if needed
+    for pipeline in pipelines:
+        cleanup_pipeline_files(pipeline)
 
     db.delete(file)
     db.commit()
@@ -170,6 +187,7 @@ def list_files(
     domain_id: UUID,
     db: Session = Depends(get_db),
 ):
+    """List all files in a domain"""
     domain = (
         db.query(Domain)
         .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)

@@ -13,7 +13,7 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ...models.models import File as FileModel
+from ...models.models import File as FileModel, ProcessingPipeline
 from ..prompts.document_prompts import (
     SYSTEM_PROMPT,
     CHECK_READABILITY_PROMPT,
@@ -31,12 +31,16 @@ class ProcessingResult:
 
 
 class PDFProcessor:
-    def __init__(self, file_model: FileModel, config_manager):
+    def __init__(
+        self, file_model: FileModel, pipeline: ProcessingPipeline, config_manager
+    ):
         self.file_model = file_model
+        self.pipeline = pipeline
         self.config = config_manager
         self.output_dir = os.path.join(
             self.config.get("processing_dir", "processing_output"),
             str(self.file_model.domain_id),
+            str(self.pipeline.pipeline_id),
             str(self.file_model.file_id),
         )
         self.logger = self._setup_logger()
@@ -170,6 +174,7 @@ class PDFProcessor:
     def process(self, batch_size: Optional[int] = None) -> ProcessingResult:
         """Process the PDF file and return results."""
         try:
+            self.pipeline.add_file(self.file_model)
             batch_size = batch_size or int(self.config.get("processing_batch_size", 5))
             self.logger.info(
                 f"Starting processing for file: {self.file_model.filename}"
@@ -224,6 +229,9 @@ class PDFProcessor:
                     "\n\n---\n\n".join(result["markdown"] for _, result in all_results)
                 )
 
+            self.file_model.last_processed_at = datetime.now()
+            self.file_model.processing_status = "completed"
+
             self.logger.info("Processing completed successfully")
             return ProcessingResult(
                 success=True,
@@ -231,6 +239,7 @@ class PDFProcessor:
                 data={
                     "total_pages": len(doc),
                     "output_dir": self.output_dir,
+                    "pipeline_id": str(self.pipeline.pipeline_id),
                     "page_results": [
                         {
                             "page_num": page_num + 1,
@@ -244,6 +253,8 @@ class PDFProcessor:
             )
 
         except Exception as e:
+            self.file_model.processing_status = "failed"
+            self.file_model.processing_error = str(e)
             self.logger.error(f"Error processing PDF: {str(e)}", exc_info=True)
             return ProcessingResult(
                 success=False, message=f"Processing failed: {str(e)}"
