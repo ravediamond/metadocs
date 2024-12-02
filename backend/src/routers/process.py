@@ -22,22 +22,34 @@ from ..models.models import (
 )
 from ..models.schemas import (
     ProcessingStatus,
-    FileStatus,
     ProcessPipelineSchema,
     ProcessingVersionBase,
     MergeRequest,
     OntologyRequest,
 )
-from ..processors.prompts.document_prompts import (
-    SYSTEM_PROMPT,
+from ..processors.prompts.parse_prompts import (
+    SYSTEM_PROMPT as PARSE_SYSTEM_PROMPT,
     CHECK_READABILITY_PROMPT,
     CONVERT_TO_MARKDOWN_PROMPT,
+)
+from ..processors.prompts.extract_prompts import (
+    SYSTEM_PROMPT as EXTRACT_SYSTEM_PROMPT,
     INITIAL_ENTITY_EXTRACTION_PROMPT,
     ITERATIVE_ENTITY_EXTRACTION_PROMPT,
-    ENTITY_DETAILS_PROMPT,
+    ENTITY_DETAILS_PROMPT as EXTRACT_ENTITY_DETAILS_PROMPT,
+)
+from ..processors.prompts.merge_prompts import (
+    SYSTEM_PROMPT as MERGE_SYSTEM_PROMPT,
+    ENTITY_DETAILS_PROMPT as MERGE_ENTITY_DETAILS_PROMPT,
     ENTITY_MERGE_PROMPT,
+)
+from ..processors.prompts.group_prompts import (
+    SYSTEM_PROMPT as GROUP_SYSTEM_PROMPT,
     GROUP_PROMPT,
-    MERMAID_GENERATION_PROMPT,
+)
+from ..processors.prompts.ontology_prompts import (
+    SYSTEM_PROMPT as ONTOLOGY_SYSTEM_PROMPT,
+    ONTOLOGY_PROMPT,
 )
 from ..core.database import get_db
 from ..processors.parse.processor import ParseProcessor
@@ -284,7 +296,7 @@ async def start_parse_processing(
     parse_version = ParseVersion(
         pipeline_id=pipeline.pipeline_id,
         version_number=len(pipeline.parse_versions) + 1,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=PARSE_SYSTEM_PROMPT,
         readability_prompt=CHECK_READABILITY_PROMPT,
         convert_prompt=CONVERT_TO_MARKDOWN_PROMPT,
         input_file_version_id=file_version_id,
@@ -380,10 +392,10 @@ async def start_extract_processing(
         pipeline_id=pipeline.pipeline_id,
         version_number=len(pipeline.extract_versions) + 1,
         input_parse_version_id=parse_version_id,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=EXTRACT_SYSTEM_PROMPT,
         initial_entity_extraction_prompt=INITIAL_ENTITY_EXTRACTION_PROMPT,
         iterative_extract_entities_prompt=ITERATIVE_ENTITY_EXTRACTION_PROMPT,
-        entity_details_prompt=ENTITY_DETAILS_PROMPT,
+        entity_details_prompt=EXTRACT_ENTITY_DETAILS_PROMPT,
         output_dir="",
         output_path="",
         status="processing",
@@ -478,9 +490,9 @@ async def start_merge_processing(
         pipeline_id=pipeline.pipeline_id,
         version_number=len(pipeline.merge_versions) + 1,
         input_extraction_version_id=merge_request.extract_version_ids,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=MERGE_SYSTEM_PROMPT,
         entity_merge_prompt=ENTITY_MERGE_PROMPT,
-        entity_details_prompt=ENTITY_DETAILS_PROMPT,
+        entity_details_prompt=MERGE_ENTITY_DETAILS_PROMPT,
         output_dir="",
         output_path="",
         status="processing",
@@ -566,7 +578,7 @@ async def start_group_processing(
         pipeline_id=pipeline.pipeline_id,
         version_number=len(pipeline.group_versions) + 1,
         input_merge_version_id=merge_version_id,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=GROUP_SYSTEM_PROMPT,
         entity_group_prompt=GROUP_PROMPT,
         output_dir="",
         output_path="",
@@ -674,8 +686,8 @@ async def start_ontology_processing(
         version_number=len(pipeline.ontology_versions) + 1,
         input_group_version_id=ontology_request.group_version_id,
         input_merge_version_id=ontology_request.merge_version_id,
-        system_prompt=SYSTEM_PROMPT,
-        ontology_prompt=MERMAID_GENERATION_PROMPT,
+        system_prompt=ONTOLOGY_SYSTEM_PROMPT,
+        ontology_prompt=ONTOLOGY_PROMPT,
         output_dir="",
         output_path="",
         status="processing",

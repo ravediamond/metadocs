@@ -1,6 +1,6 @@
 SYSTEM_PROMPT = """You are an expert system specialized in generating Mermaid diagrams to represent ontological relationships and hierarchies."""
 
-MERMAID_GENERATION_PROMPT = """Generate a JSON object containing Mermaid class diagram code representing the ontology of entities and their groups. The output should be a JSON object with a single key called "ontology" whose value is the Mermaid diagram code.
+ONTOLOGY_PROMPT = """Generate a JSON object containing Mermaid class diagram code representing the ontology of entities and their groups. The output should be a JSON object with a single key called "ontology" whose value is the Mermaid diagram code.
 
 Rules:
 1. Use classes for entities and groups

@@ -13,6 +13,7 @@ from sqlalchemy import (
     select,
     Enum as SQLAlchemyEnum,
     BigInteger,
+    ForeignKeyConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID as UUIDType
 from sqlalchemy.orm import relationship, declared_attr, Session
@@ -220,7 +221,12 @@ class DomainVersion(Base):
         single_parent=True,
         uselist=False,  # One-to-one relationship
     )
-    file_versions = relationship("DomainVersionFile", back_populates="domain_version")
+    file_versions = relationship(
+        "DomainVersionFile",
+        back_populates="domain_version_ref",
+        primaryjoin="and_(DomainVersion.domain_id==DomainVersionFile.domain_id, "
+        "DomainVersion.version==DomainVersionFile.domain_version)",
+    )
 
 
 # DomainConfig Model
@@ -422,8 +428,20 @@ class DomainVersionFile(Base):
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationships
-    domain_version = relationship("DomainVersion", back_populates="file_versions")
+    domain_version_ref = relationship(
+        "DomainVersion",
+        foreign_keys=[domain_id, domain_version],
+        back_populates="file_versions",
+    )
     file_version = relationship("FileVersion", back_populates="domain_versions")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["domain_id", "domain_version"],
+            ["domain_versions.domain_id", "domain_versions.version"],
+            ondelete="CASCADE",
+        ),
+    )
 
 
 class ProcessingPipeline(Base):
@@ -606,7 +624,7 @@ class GroupVersion(Base):
     pipeline = relationship("ProcessingPipeline", back_populates="group_versions")
     merge_version = relationship("MergeVersion", back_populates="group_versions")
     ontology_versions = relationship("OntologyVersion", back_populates="group_version")
-    graph_versions = relationship("GraphVersion", back_populates="input_merge_version")
+    graph_versions = relationship("GraphVersion", back_populates="input_group_version")
 
 
 class OntologyVersion(Base):
@@ -644,7 +662,9 @@ class OntologyVersion(Base):
     pipeline = relationship("ProcessingPipeline", back_populates="ontology_versions")
     group_version = relationship("GroupVersion", back_populates="ontology_versions")
     merge_version = relationship("MergeVersion", back_populates="ontology_versions")
-    graph_versions = relationship("GraphVersion", back_populates="input_merge_version")
+    graph_versions = relationship(
+        "GraphVersion", back_populates="input_ontology_version"
+    )
 
 
 class GraphVersion(Base):
@@ -659,7 +679,6 @@ class GraphVersion(Base):
         nullable=False,
     )
     version_number = Column(Integer, nullable=False)
-    base_prompt = Column(Text, nullable=False)
     input_group_version_id = Column(
         UUIDType(as_uuid=True),
         ForeignKey("group_versions.version_id", ondelete="CASCADE"),
@@ -683,8 +702,18 @@ class GraphVersion(Base):
 
     # Relationship
     pipeline = relationship("ProcessingPipeline", back_populates="graph_versions")
-    input_merge_version = relationship("MergeVersion", back_populates="graph_versions")
-    input_group_version = relationship("GroupVersion", back_populates="graph_versions")
+    input_merge_version = relationship(
+        "MergeVersion",
+        back_populates="graph_versions",
+        foreign_keys=[input_merge_version_id],
+    )
+    input_group_version = relationship(
+        "GroupVersion",
+        back_populates="graph_versions",
+        foreign_keys=[input_group_version_id],
+    )
     input_ontology_version = relationship(
-        "OntologyVersion", back_populates="graph_versions"
+        "OntologyVersion",
+        back_populates="graph_versions",
+        foreign_keys=[input_ontology_version_id],
     )

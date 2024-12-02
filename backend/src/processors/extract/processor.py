@@ -34,7 +34,7 @@ class ProcessingResult:
     error: str
 
 
-class EntityProcessor:
+class ExtractProcessor:
     def __init__(
         self,
         parse_version: ParseVersion,
