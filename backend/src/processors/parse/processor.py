@@ -18,7 +18,7 @@ from ...models.models import (
     FileVersion,
 )
 from ...llm.llm_factory import LLMConfig, LLMFactory
-from ...core.config import FILE_SYSTEM
+from ...core.config import FILE_SYSTEM, ConfigManager
 
 
 # TODO: Implement quality score and improvement message
@@ -35,7 +35,7 @@ class ParseProcessor:
         self,
         file_version: FileVersion,
         parse_version: ParseVersion,
-        config_manager,
+        config_manager: ConfigManager,
     ):
         self.file_version = file_version
         self.parse_version = parse_version

@@ -9,14 +9,9 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 import concurrent.futures
 
-from ...models.models import ProcessingPipeline
-from ..prompts.entity_prompts import (
-    SYSTEM_PROMPT,
-    INITIAL_ENTITY_EXTRACTION_PROMPT,
-    ITERATIVE_ENTITY_EXTRACTION_PROMPT,
-    ENTITY_DETAILS_PROMPT,
-)
+from ...models.models import ParseVersion, ExtractVersion
 from ...llm.llm_factory import LLMConfig, LLMFactory
+from ...core.config import ConfigManager, FILE_SYSTEM
 
 
 @dataclass
@@ -34,23 +29,34 @@ class Entity:
 @dataclass
 class ProcessingResult:
     success: bool
+    status: str
     message: str
-    data: Optional[Dict] = None
-    analysis_path: Optional[str] = None
+    error: str
 
 
 class EntityProcessor:
-    def __init__(self, pipeline: ProcessingPipeline, config_manager):
-        """Initialize with pipeline instead of single file"""
-        self.pipeline = pipeline
-        self.config = config_manager
-        self.output_dir = os.path.join(
-            self.config.get("processing_dir", "processing_output"),
-            str(self.pipeline.domain_id),
-            "entity_extraction",
+    def __init__(
+        self,
+        parse_version: ParseVersion,
+        extract_version: ExtractVersion,
+        config_manager: ConfigManager,
+    ):
+        self.parse_version = parse_version
+        self.extract_version = extract_version
+        self.system_prompt = self.extract_version.system_prompt
+        self.initial_entity_extraction_prompt = (
+            self.extract_version.initial_entity_extraction_prompt
         )
+        self.iterative_extract_entities_prompt = (
+            self.extract_version.iterative_extract_entities_prompt
+        )
+        self.entity_details_prompt = self.extract_version.entity_details_prompt
+        # TODO: Implement custom instructions
+        self.custom_instructions = self.extract_version.custom_instructions
+        self.config = config_manager
         self.logger = self._setup_logger()
         self.model = self._setup_model()
+        self._setup_directories()
 
     def _setup_model(self) -> ChatBedrock:
         """Initialize the LLM model"""
@@ -69,7 +75,9 @@ class EntityProcessor:
 
     def _setup_logger(self) -> logging.Logger:
         """Setup logging for the processor."""
-        logger = logging.getLogger(f"EntityProcessor_{self.pipeline.pipeline_id}")
+        logger = logging.getLogger(
+            f"EntityProcessor_{self.extract_version.pipeline_id}"
+        )
         logger.setLevel(logging.DEBUG)
 
         os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
@@ -90,6 +98,14 @@ class EntityProcessor:
 
         return logger
 
+    def _setup_directories(self):
+        """Create necessary directories for processing."""
+        # TODO: implement file storage manager for local and cloud
+        if FILE_SYSTEM == "local":
+            os.makedirs(
+                os.path.join(self.parse_version.output_dir, "logs"), exist_ok=True
+            )
+
     def _initial_extraction(self, content: str) -> tuple[List[str], List[Dict]]:
         """Perform initial extraction of entities and relationships."""
         self.logger.info("Performing initial entity extraction")
@@ -97,12 +113,12 @@ class EntityProcessor:
         try:
             prompt_content = [
                 {"type": "text", "text": content},
-                {"type": "text", "text": INITIAL_ENTITY_EXTRACTION_PROMPT},
+                {"type": "text", "text": self.initial_entity_extraction_prompt},
             ]
 
             prompt = ChatPromptTemplate.from_messages(
                 [
-                    SystemMessage(content=SYSTEM_PROMPT),
+                    SystemMessage(content=self.system_prompt),
                     HumanMessage(content=prompt_content),
                 ]
             )
@@ -140,7 +156,7 @@ class EntityProcessor:
                 {"type": "text", "text": content},
                 {
                     "type": "text",
-                    "text": ITERATIVE_ENTITY_EXTRACTION_PROMPT.format(
+                    "text": self.iterative_extract_entities_prompt.format(
                         previous_entities="\n".join(
                             f"- {entity}" for entity in previous_entities
                         ),
@@ -151,7 +167,7 @@ class EntityProcessor:
 
             prompt = ChatPromptTemplate.from_messages(
                 [
-                    SystemMessage(content=SYSTEM_PROMPT),
+                    SystemMessage(content=self.system_prompt),
                     HumanMessage(content=prompt_content),
                 ]
             )
@@ -173,12 +189,15 @@ class EntityProcessor:
         try:
             prompt_content = [
                 {"type": "text", "text": content},
-                {"type": "text", "text": ENTITY_DETAILS_PROMPT.format(entity=entity)},
+                {
+                    "type": "text",
+                    "text": self.entity_details_prompt.format(entity=entity),
+                },
             ]
 
             prompt = ChatPromptTemplate.from_messages(
                 [
-                    SystemMessage(content=SYSTEM_PROMPT),
+                    SystemMessage(content=self.system_prompt),
                     HumanMessage(content=prompt_content),
                 ]
             )
@@ -198,44 +217,14 @@ class EntityProcessor:
         try:
             iterations = iterations or int(self.config.get("entity_max_iterations", 3))
             self.logger.info(
-                f"Starting entity extraction for pipeline: {self.pipeline.pipeline_id}"
+                f"Starting entity extraction for pipeline: {self.extract_version.pipeline_id}"
             )
-            os.makedirs(self.output_dir, exist_ok=True)
 
-            all_content = []
-            file_metadata = []
-
-            pipeline_files = self.pipeline.files
-
-            if not pipeline_files:
-                return ProcessingResult(
-                    success=False, message="No files found for processing"
-                )
-
-            # Process each file in the pipeline
-            for file in pipeline_files:
-                try:
-                    with open(file.markdown_path, "r", encoding="utf-8") as f:
-                        content = f.read()
-                        all_content.append(content)
-                        file_metadata.append(
-                            {"file_id": str(file.file_id), "filename": file.filename}
-                        )
-                except Exception as e:
-                    self.logger.error(f"Error reading file {file.filename}: {str(e)}")
-                    continue
-
-            if not all_content:
-                return ProcessingResult(
-                    success=False,
-                    message="No files could be processed",
-                )
-
-            # Combine all content with clear separators
-            combined_content = "\n\n---\n\n".join(all_content)
+            with open(self.parse_version.output_path, "r", encoding="utf-8") as f:
+                content = f.read()
 
             # Initial extraction
-            all_entities, all_relationships = self._initial_extraction(combined_content)
+            all_entities, all_relationships = self._initial_extraction(content)
             relationship_keys = {
                 (r["source"], r["target"], r["type"]) for r in all_relationships
             }
@@ -277,29 +266,17 @@ class EntityProcessor:
             extraction = {
                 "entities": entity_details,
                 "relationships": all_relationships,
-                "metadata": {
-                    "pipeline_id": str(self.pipeline.pipeline_id),
-                    "domain_id": str(self.pipeline.domain_id),
-                    "processed_files": file_metadata,
-                    "iterations": iterations,
-                    "total_entities_attempted": len(all_entities),
-                    "total_entities_processed": len(entity_details),
-                    "total_unique_relationships": len(relationship_keys),
-                    "analysis_timestamp": datetime.now().isoformat(),
-                    "failed_entities": [
-                        e for e in all_entities if e not in entity_details
-                    ],
-                },
             }
 
             # Save extraction to file
-            extraction_path = os.path.join(self.output_dir, "entity_extraction.json")
+            extraction_path = os.path.join(self.output_dir, "output.json")
             with open(extraction_path, "w", encoding="utf-8") as f:
                 json.dump(extraction, f, indent=2, ensure_ascii=False)
 
             self.logger.info("Entity extraction completed successfully")
             return ProcessingResult(
                 success=True,
+                status="completed",
                 message="Entity extraction completed successfully",
                 data=extraction,
                 analysis_path=extraction_path,
@@ -310,5 +287,8 @@ class EntityProcessor:
                 f"Error during entity extraction: {str(e)}", exc_info=True
             )
             return ProcessingResult(
-                success=False, message=f"Entity extraction failed: {str(e)}"
+                success=False,
+                status="failed",
+                message=f"Entity extraction failed: {str(e)}",
+                error=str(e),
             )

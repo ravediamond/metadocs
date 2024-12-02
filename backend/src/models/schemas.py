@@ -482,5 +482,11 @@ class DomainBasicResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class MergeRequest(BaseModel):
     extract_version_ids: List[UUID]
+
+
+class OntologyRequest(BaseModel):
+    merge_version_id: UUID
+    group_version_id: UUID

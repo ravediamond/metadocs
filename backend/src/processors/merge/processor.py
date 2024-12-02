@@ -7,34 +7,37 @@ from datetime import datetime
 from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
-from ...models.models import ProcessingPipeline
+from ...models.models import ExtractVersion, MergeVersion
 from ...llm.llm_factory import LLMConfig, LLMFactory
-from ...core.config import ConfigManager
+from ...core.config import FILE_SYSTEM, ConfigManager
 
 
 @dataclass
-class MergeResult:
+class ProcessingResult:
     success: bool
+    status: str
     message: str
-    data: Optional[Dict] = None
-    merged_path: Optional[str] = None
+    error: str
 
 
 class MergeProcessor:
-    def __init__(self, pipeline: ProcessingPipeline, config: ConfigManager):
-        self.pipeline = pipeline
-        self.domain_id = pipeline.domain_id
-        self.file_models = [
-            file for file in pipeline.files if file.processing_status == "completed"
-        ]
-        self.config = config
-        self.output_dir = os.path.join(
-            self.config.get("processing_dir", "processing_output"),
-            str(self.domain_id),
-            "merged",
-        )
+    def __init__(
+        self,
+        extract_versions: List[ExtractVersion],
+        merge_version: MergeVersion,
+        config_manager: ConfigManager,
+    ):
+        self.extract_versions = extract_versions
+        self.merge_version = merge_version
+        self.system_prompt = self.merge_version.system_prompt
+        self.entity_details_prompt = self.merge_version.entity_details_prompt
+        self.entity_merge_prompt = self.merge_version.entity_merge_prompt
+        # TODO: Implement custom instructions
+        self.custom_instructions = self.merge_version.custom_instructions
+        self.config = config_manager
         self.logger = self._setup_logger()
         self.model = self._setup_model()
+        self._setup_directories()
 
     def _setup_model(self) -> ChatBedrock:
         """Initialize the LLM model based on domain configuration"""
@@ -61,7 +64,7 @@ class MergeProcessor:
         file_handler = logging.FileHandler(
             os.path.join(
                 log_dir,
-                f"entity_merger_processor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+                f"merge_processor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
             )
         )
         file_handler.setLevel(logging.DEBUG)
@@ -71,13 +74,21 @@ class MergeProcessor:
         logger.addHandler(file_handler)
         return logger
 
+    def _setup_directories(self):
+        """Create necessary directories for processing."""
+        # TODO: implement file storage manager for local and cloud
+        if FILE_SYSTEM == "local":
+            os.makedirs(
+                os.path.join(self.parse_version.output_dir, "logs"), exist_ok=True
+            )
+
     def _merge_batch(self, entities_batch: List[Dict]) -> Dict:
         content = [
             {"type": "text", "text": json.dumps(entities_batch)},
-            {"type": "text", "text": ENTITY_MERGE_PROMPT},
+            {"type": "text", "text": self.entity_merge_prompt},
         ]
         prompt = ChatPromptTemplate.from_messages(
-            [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=content)]
+            [SystemMessage(content=self.system_prompt), HumanMessage(content=content)]
         )
         chain = prompt | self.model
         response = chain.invoke({})
@@ -93,44 +104,43 @@ class MergeProcessor:
                     {"merged_ids": merged_ids, "entities": all_entities}
                 ),
             },
-            {"type": "text", "text": ENTITY_DETAILS_PROMPT},
+            {"type": "text", "text": self.entity_details_prompt},
         ]
         prompt = ChatPromptTemplate.from_messages(
-            [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=content)]
+            [SystemMessage(content=self.system_prompt), HumanMessage(content=content)]
         )
         chain = prompt | self.model
         response = chain.invoke({})
         return json.loads(response.content)
 
-    def process(self) -> MergeResult:
+    def process(self) -> ProcessingResult:
         try:
             self.logger.info(f"Starting entity merging for domain {self.domain_id}")
             os.makedirs(self.output_dir, exist_ok=True)
 
-            if len(self.file_models) == 1:
+            if len(self.extract_versions) == 1:
                 self.logger.info(
                     "Single file detected, returning entities without merging"
                 )
-                with open(self.file_models[0].entity_extraction_path, "r") as f:
+                with open(self.extract_versions[0].output_path, "r") as f:
                     entities_data = json.load(f)
                     # Check if 'entities' key exists and get its value, otherwise use the whole data
                     entities_to_return = entities_data.get("entities", entities_data)
 
-                merged_path = os.path.join(self.output_dir, "merged_entities.json")
+                merged_path = os.path.join(self.output_dir, "output.json")
                 with open(merged_path, "w") as f:
                     json.dump({"entities": entities_to_return}, f, indent=2)
 
-                return MergeResult(
+                return ProcessingResult(
                     success=True,
+                    status="completed",
                     message="Single file processed without merging",
-                    data={"entities": entities_to_return},
-                    merged_path=merged_path,
                 )
 
             # Collect all entities
             all_entities = {}
-            for file in self.file_models:
-                with open(file.entity_extraction_path, "r") as f:
+            for extract in self.extract_versions:
+                with open(extract.output_path, "r") as f:
                     data = json.load(f)
                     all_entities.update(data.get("entities", {}))
 
@@ -150,19 +160,21 @@ class MergeProcessor:
                 merged_entity_ids, all_entities
             )
 
-            merged_path = os.path.join(self.output_dir, "merged_entities.json")
+            merged_path = os.path.join(self.output_dir, "output.json")
             with open(merged_path, "w") as f:
                 json.dump(final_entities, f, indent=2)
 
-            return MergeResult(
+            return ProcessingResult(
                 success=True,
+                status="completed",
                 message="Entity merging completed",
-                data=final_entities,
-                merged_path=merged_path,
             )
 
         except Exception as e:
             self.logger.error(f"Error during entity merging: {str(e)}", exc_info=True)
-            return MergeResult(
-                success=False, message=f"Entity merging failed: {str(e)}"
+            return ProcessingResult(
+                success=False,
+                status="failed",
+                message=f"Entity merging failed: {str(e)}",
+                error=str(e),
             )

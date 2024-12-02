@@ -8,31 +8,36 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ...models.models import ProcessingPipeline
-from ...core.config import ConfigManager
-from ..prompts.group_prompts import SYSTEM_PROMPT, GROUP_ANALYSIS_PROMPT
+from ...models.models import MergeVersion, GroupVersion
+from ...core.config import ConfigManager, FILE_SYSTEM
 from ...llm.llm_factory import LLMConfig, LLMFactory
 
 
 @dataclass
 class ProcessingResult:
     success: bool
+    status: str
     message: str
-    data: Optional[Dict] = None
-    groups_path: Optional[str] = None
+    error: str
 
 
 class GroupProcessor:
-    def __init__(self, pipeline: ProcessingPipeline, config: ConfigManager):
-        self.pipeline = pipeline
-        self.config = config
-        self.output_dir = os.path.join(
-            self.config.get("processing_dir", "processing_output"),
-            str(self.pipeline.domain_id),
-            "groups",
-        )
+    def __init__(
+        self,
+        merge_version: MergeVersion,
+        group_version: GroupVersion,
+        config_manager: ConfigManager,
+    ):
+        self.merge_version = merge_version
+        self.group_version = group_version
+        self.system_prompt = self.group_version.system_prompt
+        self.entity_group_prompt = self.group_version.entity_group_prompt
+        # TODO: Implement custom instructions
+        self.custom_instructions = self.group_version.custom_instructions
+        self.config = config_manager
         self.logger = self._setup_logger()
         self.model = self._setup_model()
+        self._setup_directories()
 
     def _setup_model(self) -> ChatBedrock:
         """Initialize the LLM model"""
@@ -50,7 +55,7 @@ class GroupProcessor:
         return LLMFactory(llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
-        logger = logging.getLogger(f"GroupProcessor_{self.pipeline.pipeline_id}")
+        logger = logging.getLogger(f"GroupProcessor_{self.group_version.pipeline_id}")
         logger.setLevel(logging.DEBUG)
         os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
 
@@ -69,16 +74,27 @@ class GroupProcessor:
         logger.addHandler(file_handler)
         return logger
 
+    def _setup_directories(self):
+        """Create necessary directories for processing."""
+        # TODO: implement file storage manager for local and cloud
+        if FILE_SYSTEM == "local":
+            os.makedirs(
+                os.path.join(self.parse_version.output_dir, "logs"), exist_ok=True
+            )
+
     def _analyze_groups(self, entities_data: Dict) -> Dict:
         self.logger.info("Analyzing entity groups")
         try:
             content = [
                 {"type": "text", "text": json.dumps(entities_data)},
-                {"type": "text", "text": GROUP_ANALYSIS_PROMPT},
+                {"type": "text", "text": self.entity_group_prompt},
             ]
 
             prompt = ChatPromptTemplate.from_messages(
-                [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=content)]
+                [
+                    SystemMessage(content=self.system_prompt),
+                    HumanMessage(content=content),
+                ]
             )
 
             chain = prompt | self.model
@@ -92,7 +108,7 @@ class GroupProcessor:
     def process(self) -> ProcessingResult:
         try:
             self.logger.info(
-                f"Starting group analysis for pipeline: {self.pipeline.pipeline_id}"
+                f"Starting group analysis for pipeline: {self.group_version.pipeline_id}"
             )
             os.makedirs(self.output_dir, exist_ok=True)
 
@@ -100,8 +116,8 @@ class GroupProcessor:
             merge_version = next(
                 (
                     v
-                    for v in self.pipeline.merge_versions
-                    if v.version_id == self.pipeline.current_merge_id
+                    for v in self.group_version.merge_versions
+                    if v.version_id == self.group_version.current_merge_id
                 ),
                 None,
             )
@@ -117,19 +133,21 @@ class GroupProcessor:
             groups_analysis = self._analyze_groups(merged_data)
 
             # Save analysis results
-            groups_path = os.path.join(self.output_dir, "groups.json")
+            groups_path = os.path.join(self.output_dir, "output.json")
             with open(groups_path, "w", encoding="utf-8") as f:
                 json.dump(groups_analysis, f, indent=2, ensure_ascii=False)
 
             return ProcessingResult(
                 success=True,
+                status="completed",
                 message="Group analysis completed successfully",
-                data=groups_analysis,
-                groups_path=groups_path,
             )
 
         except Exception as e:
             self.logger.error(f"Error during group analysis: {str(e)}", exc_info=True)
             return ProcessingResult(
-                success=False, message=f"Group analysis failed: {str(e)}"
+                success=False,
+                status="failed",
+                message=f"Group analysis failed: {str(e)}",
+                error=str(e),
             )

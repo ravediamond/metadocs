@@ -8,30 +8,37 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ...models.models import ProcessingPipeline
-from ..prompts.ontology_prompts import SYSTEM_PROMPT, MERMAID_GENERATION_PROMPT
+from ...models.models import MergeVersion, GroupVersion
 from ...llm.llm_factory import LLMConfig, LLMFactory
+from ...core.config import ConfigManager, FILE_SYSTEM
 
 
 @dataclass
 class ProcessingResult:
     success: bool
+    status: str
     message: str
-    data: Optional[Dict] = None
-    diagram_path: Optional[str] = None
+    error: str
 
 
 class OntologyProcessor:
-    def __init__(self, pipeline: ProcessingPipeline, config_manager):
-        self.pipeline = pipeline
+    def __init__(
+        self,
+        merge_version: MergeVersion,
+        group_version: GroupVersion,
+        ontology_version: GroupVersion,
+        config_manager: ConfigManager,
+    ):
+        self.merge_version = merge_version
+        self.group_version = group_version
+        self.system_prompt = self.ontology_version.system_prompt
+        self.ontology_prompt = self.ontology_version.ontology_prompt
+        # TODO: Implement custom instructions
+        self.custom_instructions = self.ontology_version.custom_instructions
         self.config = config_manager
-        self.output_dir = os.path.join(
-            self.config.get("processing_dir", "processing_output"),
-            str(self.pipeline.domain_id),
-            "ontology",
-        )
         self.logger = self._setup_logger()
         self.model = self._setup_model()
+        self._setup_directories()
 
     def _setup_model(self) -> ChatBedrock:
         """Initialize the LLM model"""
@@ -49,7 +56,9 @@ class OntologyProcessor:
         return LLMFactory(llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
-        logger = logging.getLogger(f"OntologyProcessor_{self.pipeline.pipeline_id}")
+        logger = logging.getLogger(
+            f"OntologyProcessor_{self.ontology_version.pipeline_id}"
+        )
         logger.setLevel(logging.DEBUG)
         os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
 
@@ -67,6 +76,14 @@ class OntologyProcessor:
         logger.addHandler(file_handler)
         return logger
 
+    def _setup_directories(self):
+        """Create necessary directories for processing."""
+        # TODO: implement file storage manager for local and cloud
+        if FILE_SYSTEM == "local":
+            os.makedirs(
+                os.path.join(self.parse_version.output_dir, "logs"), exist_ok=True
+            )
+
     def _generate_mermaid(self, entities_data: Dict, groups_data: Dict) -> str:
         self.logger.info("Generating Mermaid diagram")
         try:
@@ -77,11 +94,14 @@ class OntologyProcessor:
                         {"entities": entities_data, "groups": groups_data}
                     ),
                 },
-                {"type": "text", "text": MERMAID_GENERATION_PROMPT},
+                {"type": "text", "text": self.ontology_prompt},
             ]
 
             prompt = ChatPromptTemplate.from_messages(
-                [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=content)]
+                [
+                    SystemMessage(content=self.system_prompt),
+                    HumanMessage(content=content),
+                ]
             )
 
             chain = prompt | self.model
@@ -95,15 +115,15 @@ class OntologyProcessor:
     def process(self) -> ProcessingResult:
         try:
             self.logger.info(
-                f"Starting ontology generation for pipeline: {self.pipeline.pipeline_id}"
+                f"Starting ontology generation for pipeline: {self.ontology_version.pipeline_id}"
             )
             os.makedirs(self.output_dir, exist_ok=True)
 
             merge_version = next(
                 (
                     v
-                    for v in self.pipeline.merge_versions
-                    if v.version_id == self.pipeline.current_merge_id
+                    for v in self.ontology_version.merge_versions
+                    if v.version_id == self.ontology_version.current_merge_id
                 ),
                 None,
             )
@@ -113,8 +133,8 @@ class OntologyProcessor:
             group_version = next(
                 (
                     v
-                    for v in self.pipeline.group_versions
-                    if v.version_id == self.pipeline.current_group_id
+                    for v in self.ontology_version.group_versions
+                    if v.version_id == self.ontology_version.current_group_id
                 ),
                 None,
             )
@@ -136,6 +156,7 @@ class OntologyProcessor:
 
             return ProcessingResult(
                 success=True,
+                status="completed",
                 message="Ontology diagram generated successfully",
                 data={"mermaid": mermaid_diagram},
                 diagram_path=diagram_path,
@@ -144,5 +165,8 @@ class OntologyProcessor:
         except Exception as e:
             self.logger.error(f"Error generating ontology: {str(e)}", exc_info=True)
             return ProcessingResult(
-                success=False, message=f"Ontology generation failed: {str(e)}"
+                success=False,
+                status="failed",
+                message=f"Ontology generation failed: {str(e)}",
+                error=str(e),
             )

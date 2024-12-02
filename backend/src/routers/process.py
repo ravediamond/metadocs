@@ -26,6 +26,7 @@ from ..models.schemas import (
     ProcessPipelineSchema,
     ProcessingVersionBase,
     MergeRequest,
+    OntologyRequest,
 )
 from ..processors.prompts.document_prompts import (
     SYSTEM_PROMPT,
@@ -35,15 +36,16 @@ from ..processors.prompts.document_prompts import (
     ITERATIVE_ENTITY_EXTRACTION_PROMPT,
     ENTITY_DETAILS_PROMPT,
     ENTITY_MERGE_PROMPT,
+    GROUP_PROMPT,
+    MERMAID_GENERATION_PROMPT,
 )
 from ..core.database import get_db
 from ..processors.parse.processor import ParseProcessor
 from ..processors.extract.processor import ExtractProcessor
-from ..processors.groups.processor import GroupProcessor
+from ..processors.group.processor import GroupProcessor
 from ..processors.ontology.processor import OntologyProcessor
-from ..processors.merger.processor import MergeProcessor
+from ..processors.merge.processor import MergeProcessor
 from ..core.config import ConfigManager, FILE_SYSTEM
-from .version_manager import VersionManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -151,113 +153,70 @@ async def process_merge(
 
 
 async def process_group(
-    pipeline: ProcessingPipeline, config: ConfigManager, db: Session
+    merge_version: MergeVersion,
+    group_version: GroupVersion,
+    config: ConfigManager,
+    db: Session,
 ) -> bool:
     """Process entity grouping stage"""
-    version_manager = VersionManager(pipeline.pipeline_id, db)
-
     try:
-        # Get latest successful merge version
-        merge_version = (
-            db.query(MergeVersion)
-            .filter(
-                MergeVersion.pipeline_id == pipeline.pipeline_id,
-                MergeVersion.status == "completed",
-            )
-            .order_by(MergeVersion.version_number.desc())
-            .first()
-        )
-
-        if not merge_version or not merge_version.output_path:
-            raise ValueError("No merged entities file available for grouping")
-
-        group_version = version_manager.create_group_version(merge_version.output_path)
-        pipeline.current_group_id = group_version.version_id
-        db.commit()
-
-        group_processor = GroupProcessor(pipeline, config)
+        # Process entities with base prompt from extract version
+        group_processor = GroupProcessor(merge_version, group_version, config)
         group_result = group_processor.process()
 
         if not group_result.success:
-            group_version.status = "failed"
-            group_version.error = f"Group analysis failed: {group_result.message}"
-            pipeline.status = "failed"
-            pipeline.error = group_version.error
+            group_version.status = group_result.status
+            group_version.error = group_result.error
             db.commit()
             return False
 
-        group_version.output_path = group_result.groups_path
-        group_version.status = "completed"
-        pipeline.entity_grouping_path = group_result.groups_path
+        # Update extract version with output information
+        group_version.status = group_result.status
         db.commit()
         return True
 
     except Exception as e:
-        logger.error(f"Error in group processing: {str(e)}")
+        logger.error(
+            f"Error in extract processing for merge version {merge_version.version_id}: {str(e)}"
+        )
         group_version.status = "failed"
         group_version.error = str(e)
-        pipeline.status = "failed"
-        pipeline.error = str(e)
         db.commit()
         return False
 
 
 async def process_ontology(
-    pipeline: ProcessingPipeline, config: ConfigManager, db: Session
+    merge_version: MergeVersion,
+    group_version: GroupVersion,
+    ontology_version: GroupVersion,
+    config: ConfigManager,
+    db: Session,
 ) -> bool:
     """Process ontology generation stage"""
-    version_manager = VersionManager(pipeline.pipeline_id, db)
-
     try:
-        # Get latest successful group version
-        group_version = (
-            db.query(GroupVersion)
-            .filter(
-                GroupVersion.pipeline_id == pipeline.pipeline_id,
-                GroupVersion.status == "completed",
-            )
-            .order_by(GroupVersion.version_number.desc())
-            .first()
+        # Process entities with base prompt from extract version
+        ontology_processor = OntologyProcessor(
+            merge_version, group_version, ontology_version, config
         )
-
-        if not group_version or not group_version.output_path:
-            raise ValueError(
-                "No grouped entities file available for ontology generation"
-            )
-
-        ontology_version = version_manager.create_ontology_version(
-            group_version.output_path
-        )
-        pipeline.current_ontology_id = ontology_version.version_id
-        db.commit()
-
-        ontology_processor = OntologyProcessor(pipeline, config)
         ontology_result = ontology_processor.process()
 
         if not ontology_result.success:
-            ontology_version.status = "failed"
-            ontology_version.error = (
-                f"Ontology generation failed: {ontology_result.message}"
-            )
-            pipeline.status = "failed"
-            pipeline.error = ontology_version.error
+            ontology_version.status = ontology_result.status
+            ontology_version.error = ontology_result.error
             db.commit()
             return False
 
-        ontology_version.output_path = ontology_result.diagram_path
-        ontology_version.status = "completed"
-        pipeline.ontology_path = ontology_result.diagram_path
-        pipeline.status = "completed"
-        pipeline.completed_at = datetime.utcnow()
+        # Update extract version with output information
+        group_version.status = ontology_version.status
         db.commit()
         return True
 
     except Exception as e:
-        logger.error(f"Error in ontology processing: {str(e)}")
+        logger.error(
+            f"Error in group or merge processing for ontology version merge -> {merge_version.version_id}, group -> {group_version.version_id}: {str(e)}"
+        )
         ontology_version.status = "failed"
         ontology_version.error = str(e)
-        pipeline.status = "failed"
-        pipeline.error = str(e)
         db.commit()
         return False
 
@@ -340,7 +299,7 @@ async def start_parse_processing(
         config.get("processing_dir", "processing_output"),
         str(pipeline.domain_id),
         str(pipeline.domain_version.version),
-        "parsing",
+        "parse",
         str(parse_version.version),
         str(parse_version.input_file_version_id),
     )
@@ -436,17 +395,17 @@ async def start_extract_processing(
         config.get("processing_dir", "processing_output"),
         str(pipeline.domain_id),
         str(pipeline.domain_version.version),
-        "entity_extraction",
+        "extract",
         str(extract_version.version),
     )
     extract_version.output_dir = output_dir
-    extract_version.output_path = f"{output_dir}/output.md"
+    extract_version.output_path = f"{output_dir}/output.json"
     db.commit()
 
     # Start processing
     config = ConfigManager(db, str(tenant_id), str(domain_id))
     background_tasks.add_task(
-        process_extract, parse_version, pipeline, extract_version, config, db
+        process_extract, parse_version, extract_version, config, db
     )
 
     return {
@@ -537,13 +496,13 @@ async def start_merge_processing(
         str(merge_version.version),
     )
     merge_version.output_dir = output_dir
-    merge_version.output_path = f"{output_dir}/output.md"
+    merge_version.output_path = f"{output_dir}/output.json"
     db.commit()
 
     # Start processing
     config = ConfigManager(db, str(tenant_id), str(domain_id))
     background_tasks.add_task(
-        process_merge, extract_versions, pipeline, merge_version, config, db
+        process_merge, extract_versions, merge_version, config, db
     )
 
     return {
@@ -555,77 +514,209 @@ async def start_merge_processing(
 
 
 @router.post(
-    "/tenants/{tenant_id}/domains/{domain_id}/group",
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/merge/{merge_version_id}/group",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def start_group_processing(
     tenant_id: UUID,
     domain_id: UUID,
-    pipeline_id: UUID,
+    domain_version: int,
+    merge_version_id: UUID,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Start grouping entities from merged results"""
-    pipeline = (
-        db.query(ProcessingPipeline)
+    domain_version_obj = (
+        db.query(DomainVersion)
         .join(Domain)
         .filter(
             Domain.tenant_id == tenant_id,
-            ProcessingPipeline.domain_id == domain_id,
-            ProcessingPipeline.pipeline_id == pipeline_id,
-            ProcessingPipeline.merged_entities_path.isnot(None),
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version == domain_version,
         )
         .first()
     )
 
+    if not domain_version_obj:
+        raise HTTPException(status_code=404, detail="Domain version not found")
+
+    if domain_version_obj.status != DomainVersionStatus.DRAFT:
+        raise HTTPException(
+            status_code=400,
+            detail="Can only extract entities for domain versions in DRAFT status",
+        )
+
+    # Check parse version exists and completed
+    merge_version = (
+        db.query(MergeVersion)
+        .filter(
+            MergeVersion.version_id == merge_version_id,
+            MergeVersion.status == "completed",
+        )
+        .first()
+    )
+
+    if not merge_version:
+        raise HTTPException(
+            status_code=404, detail="Merge version not found or not completed"
+        )
+
+    # Create extract version
+    group_version = GroupVersion(
+        pipeline_id=pipeline.pipeline_id,
+        version_number=len(pipeline.group_versions) + 1,
+        input_merge_version_id=merge_version_id,
+        system_prompt=SYSTEM_PROMPT,
+        entity_group_prompt=GROUP_PROMPT,
+        output_dir="",
+        output_path="",
+        status="processing",
+    )
+    db.add(group_version)
+    db.commit()
+
+    output_dir = os.path.join(
+        config.get("processing_dir", "processing_output"),
+        str(pipeline.domain_id),
+        str(pipeline.domain_version.version),
+        "group",
+        str(group_version.version),
+    )
+    group_version.output_dir = output_dir
+    group_version.output_path = f"{output_dir}/output.json"
+    db.commit()
+
+    # Get pipeline
+    pipeline = domain_version_obj.processing_pipeline
     if not pipeline:
         raise HTTPException(
             status_code=404,
-            detail="Processing pipeline not found or merge not completed",
+            detail="No processing pipeline found for this domain version",
         )
 
+    # Start processing
     config = ConfigManager(db, str(tenant_id), str(domain_id))
-    background_tasks.add_task(process_group, pipeline, config, db)
+    background_tasks.add_task(process_merge, merge_version, group_version, config, db)
 
-    return {"message": "Entity grouping started", "pipeline_id": pipeline.pipeline_id}
+    return {
+        "message": "Entity extraction started",
+        "pipeline_id": pipeline.pipeline_id,
+        "merge_version_id": group_version.version_id,
+    }
 
 
 @router.post(
-    "/tenants/{tenant_id}/domains/{domain_id}/ontology",
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/ontology",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def start_ontology_processing(
     tenant_id: UUID,
     domain_id: UUID,
-    pipeline_id: UUID,
+    domain_version: int,
+    ontology_request: OntologyRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Start generating ontology from grouped entities"""
-    pipeline = (
-        db.query(ProcessingPipeline)
+    domain_version_obj = (
+        db.query(DomainVersion)
         .join(Domain)
         .filter(
             Domain.tenant_id == tenant_id,
-            ProcessingPipeline.domain_id == domain_id,
-            ProcessingPipeline.pipeline_id == pipeline_id,
-            ProcessingPipeline.entity_grouping_path.isnot(None),
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version == domain_version,
         )
         .first()
     )
 
+    if not domain_version_obj:
+        raise HTTPException(status_code=404, detail="Domain version not found")
+
+    if domain_version_obj.status != DomainVersionStatus.DRAFT:
+        raise HTTPException(
+            status_code=400,
+            detail="Can only extract entities for domain versions in DRAFT status",
+        )
+
+    # Check group version exists and completed
+    group_version = (
+        db.query(GroupVersion)
+        .filter(
+            GroupVersion.version_id == ontology_request.group_version_id,
+            GroupVersion.status == "completed",
+        )
+        .first()
+    )
+
+    if not group_version:
+        raise HTTPException(
+            status_code=404, detail="Group version not found or not completed"
+        )
+
+    # Check merge version exists and completed
+    merge_version = (
+        db.query(MergeVersion)
+        .filter(
+            MergeVersion.version_id == ontology_request.merge_version_id,
+            MergeVersion.status == "completed",
+        )
+        .first()
+    )
+
+    if not merge_version:
+        raise HTTPException(
+            status_code=404, detail="Merge version not found or not completed"
+        )
+
+    # Create extract version
+    ontology_version = OntologyVersion(
+        pipeline_id=pipeline.pipeline_id,
+        version_number=len(pipeline.ontology_versions) + 1,
+        input_group_version_id=ontology_request.group_version_id,
+        input_merge_version_id=ontology_request.merge_version_id,
+        system_prompt=SYSTEM_PROMPT,
+        ontology_prompt=MERMAID_GENERATION_PROMPT,
+        output_dir="",
+        output_path="",
+        status="processing",
+    )
+    db.add(ontology_version)
+    db.commit()
+
+    output_dir = os.path.join(
+        config.get("processing_dir", "processing_output"),
+        str(pipeline.domain_id),
+        str(pipeline.domain_version.version),
+        "ontology",
+        str(ontology_version.version),
+    )
+    ontology_version.output_dir = output_dir
+    ontology_version.output_path = f"{output_dir}/output.json"
+    db.commit()
+
+    # Get pipeline
+    pipeline = domain_version_obj.processing_pipeline
     if not pipeline:
         raise HTTPException(
             status_code=404,
-            detail="Processing pipeline not found or grouping not completed",
+            detail="No processing pipeline found for this domain version",
         )
 
+    # Start processing
     config = ConfigManager(db, str(tenant_id), str(domain_id))
-    background_tasks.add_task(process_ontology, pipeline, config, db)
+    background_tasks.add_task(
+        process_ontology,
+        merge_version,
+        group_version,
+        ontology_version,
+        config,
+        db,
+    )
 
     return {
-        "message": "Ontology generation started",
+        "message": "Ontology started",
         "pipeline_id": pipeline.pipeline_id,
+        "merge_version_id": ontology_version.version_id,
     }
 
 
