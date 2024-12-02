@@ -89,6 +89,14 @@ class DomainCreate(DomainBase):
     pass
 
 
+class DomainUpdate(BaseModel):
+    domain_name: Optional[str] = None
+    description: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class Domain(DomainBase):
     domain_id: UUID
     created_at: datetime
@@ -262,6 +270,16 @@ class FileVersion(BaseModel):
     version: int
     filepath: str
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FileVersionCreate(BaseModel):
+    file_id: UUID
+    version: int
+    filepath: str
+    file_size: int
 
     class Config:
         from_attributes = True

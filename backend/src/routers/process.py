@@ -63,6 +63,63 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def get_default_prompts(stage: str) -> dict:
+    """Return default prompts for each stage"""
+    defaults = {
+        "parse": {
+            "system_prompt": PARSE_SYSTEM_PROMPT,
+            "readability_prompt": CHECK_READABILITY_PROMPT,
+            "convert_prompt": CONVERT_TO_MARKDOWN_PROMPT,
+        },
+        "extract": {
+            "system_prompt": EXTRACT_SYSTEM_PROMPT,
+            "initial_entity_extraction_prompt": INITIAL_ENTITY_EXTRACTION_PROMPT,
+            "iterative_extract_entities_prompt": ITERATIVE_ENTITY_EXTRACTION_PROMPT,
+            "entity_details_prompt": EXTRACT_ENTITY_DETAILS_PROMPT,
+        },
+        # Add other stages...
+    }
+    return defaults.get(stage, {})
+
+
+def get_stage_specific_prompts(stage: str, version) -> dict:
+    """Get stage-specific prompts from a version object"""
+    if stage == "parse":
+        return {
+            "readability_prompt": version.readability_prompt,
+            "convert_prompt": version.convert_prompt,
+        }
+    elif stage == "extract":
+        return {
+            "initial_entity_extraction_prompt": version.initial_entity_extraction_prompt,
+            "iterative_extract_entities_prompt": version.iterative_extract_entities_prompt,
+            "entity_details_prompt": version.entity_details_prompt,
+        }
+    # Add other stages...
+    return {}
+
+
+def validate_stage_prompts(stage: str, prompts: dict):
+    """Validate that all required prompts for a stage are present"""
+    required_prompts = {
+        "parse": ["system_prompt", "readability_prompt", "convert_prompt"],
+        "extract": [
+            "system_prompt",
+            "initial_entity_extraction_prompt",
+            "iterative_extract_entities_prompt",
+            "entity_details_prompt",
+        ],
+        # Add other stages...
+    }
+
+    missing = [p for p in required_prompts[stage] if p not in prompts]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required prompts for {stage}: {', '.join(missing)}",
+        )
+
+
 # Processing Functions
 async def process_parse(
     file_version: FileVersion,
@@ -1039,3 +1096,132 @@ async def get_parse_status(
         processing_started=True,
         parse_status=parse_version.global_status,
     )
+
+
+# Add these routes to manage stage prompts
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/prompts/{stage}"
+)
+async def get_stage_prompts(
+    tenant_id: UUID,
+    domain_id: UUID,
+    domain_version: int,
+    stage: str,
+    db: Session = Depends(get_db),
+):
+    """Get current prompts for a specific processing stage"""
+    # Validate stage
+    valid_stages = {"parse", "extract", "merge", "group", "ontology"}
+    if stage not in valid_stages:
+        raise HTTPException(status_code=400, detail="Invalid stage")
+
+    domain_version_obj = (
+        db.query(DomainVersion)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version == domain_version,
+        )
+        .first()
+    )
+
+    if not domain_version_obj:
+        raise HTTPException(status_code=404, detail="Domain version not found")
+
+    # Get latest version of the specified stage
+    pipeline = domain_version_obj.processing_pipeline
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="No processing pipeline found")
+
+    version_model = {
+        "parse": ParseVersion,
+        "extract": ExtractVersion,
+        "merge": MergeVersion,
+        "group": GroupVersion,
+        "ontology": OntologyVersion,
+    }[stage]
+
+    latest_version = (
+        db.query(version_model)
+        .filter(version_model.pipeline_id == pipeline.pipeline_id)
+        .order_by(version_model.version_number.desc())
+        .first()
+    )
+
+    if not latest_version:
+        return get_default_prompts(stage)
+
+    return {
+        "system_prompt": latest_version.system_prompt,
+        "custom_instructions": latest_version.custom_instructions,
+        # Add stage-specific prompts
+        **get_stage_specific_prompts(stage, latest_version),
+    }
+
+
+@router.put(
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/prompts/{stage}"
+)
+async def update_stage_prompts(
+    tenant_id: UUID,
+    domain_id: UUID,
+    domain_version: int,
+    stage: str,
+    prompts: dict,
+    db: Session = Depends(get_db),
+):
+    """Update prompts for a specific processing stage"""
+    valid_stages = {"parse", "extract", "merge", "group", "ontology"}
+    if stage not in valid_stages:
+        raise HTTPException(status_code=400, detail="Invalid stage")
+
+    domain_version_obj = (
+        db.query(DomainVersion)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version == domain_version,
+        )
+        .first()
+    )
+
+    if not domain_version_obj:
+        raise HTTPException(status_code=404, detail="Domain version not found")
+
+    if domain_version_obj.status != DomainVersionStatus.DRAFT:
+        raise HTTPException(
+            status_code=400, detail="Can only update prompts in DRAFT status"
+        )
+
+    # Create new version with updated prompts
+    pipeline = domain_version_obj.processing_pipeline
+    if not pipeline:
+        pipeline = ProcessingPipeline(domain_id=domain_id)
+        domain_version_obj.processing_pipeline = pipeline
+        db.add(pipeline)
+        db.commit()
+
+    version_model = {
+        "parse": ParseVersion,
+        "extract": ExtractVersion,
+        "merge": MergeVersion,
+        "group": GroupVersion,
+        "ontology": OntologyVersion,
+    }[stage]
+
+    # Validate required prompts are present
+    validate_stage_prompts(stage, prompts)
+
+    # Create new version with provided prompts
+    new_version = version_model(
+        pipeline_id=pipeline.pipeline_id,
+        version_number=get_next_version_number(db, pipeline.pipeline_id, version_model),
+        **prompts,
+    )
+
+    db.add(new_version)
+    db.commit()
+
+    return {"message": f"{stage} prompts updated successfully"}

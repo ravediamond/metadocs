@@ -1,5 +1,3 @@
-// FileManagerPage.jsx
-
 import React, { useState, useEffect, useContext } from 'react';
 import {
   Box,
@@ -30,15 +28,19 @@ import {
   ModalBody,
   ModalCloseButton,
   useDisclosure,
-  Badge,
+  Accordion,
+  AccordionItem,
+  AccordionButton,
+  AccordionPanel,
+  AccordionIcon,
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { DeleteIcon, RepeatIcon } from '@chakra-ui/icons';
+import { DeleteIcon, DownloadIcon, AddIcon } from '@chakra-ui/icons';
 import AuthContext from '../context/AuthContext';
 
 const FileManagerPage = () => {
   const { domain_id } = useParams();
-  const { user, token, currentTenant } = useContext(AuthContext); // Updated to include 'user'
+  const { token, currentTenant } = useContext(AuthContext);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -47,23 +49,29 @@ const FileManagerPage = () => {
   const [files, setFiles] = useState([]);
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [error, setError] = useState(null);
-  const [processing, setProcessing] = useState(false);
 
   // For delete confirmation modal
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [fileToDelete, setFileToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Fetch files on component mount and when domain_id changes
+  // For version upload modal
+  const {
+    isOpen: isVersionOpen,
+    onOpen: onVersionOpen,
+    onClose: onVersionClose,
+  } = useDisclosure();
+  const [selectedFileForVersion, setSelectedFileForVersion] = useState(null);
+  const [newVersionFile, setNewVersionFile] = useState(null);
+
   useEffect(() => {
     const fetchFiles = async () => {
       setLoadingFiles(true);
       setError(null);
       try {
         const response = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/`,
+          `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/files`,
           {
-            method: 'GET',
             headers: {
               Authorization: `Bearer ${token}`,
             },
@@ -88,12 +96,14 @@ const FileManagerPage = () => {
     fetchFiles();
   }, [currentTenant, domain_id, token]);
 
-  // Handle file selection
   const handleFileChange = (e) => {
     setSelectedFile(e.target.files[0]);
   };
 
-  // Handle file upload
+  const handleNewVersionChange = (e) => {
+    setNewVersionFile(e.target.files[0]);
+  };
+
   const handleUpload = async () => {
     if (!selectedFile) {
       toast({
@@ -107,7 +117,6 @@ const FileManagerPage = () => {
     }
 
     setUploading(true);
-
     const formData = new FormData();
     formData.append('uploaded_file', selectedFile);
 
@@ -132,7 +141,6 @@ const FileManagerPage = () => {
           isClosable: true,
         });
         setSelectedFile(null);
-        // Refresh the file list
         setFiles((prevFiles) => [...prevFiles, uploadedFile]);
       } else {
         const errorData = await response.json();
@@ -152,13 +160,64 @@ const FileManagerPage = () => {
     }
   };
 
-  // Handle delete button click
+  const handleAddVersion = async () => {
+    if (!newVersionFile || !selectedFileForVersion) return;
+
+    const formData = new FormData();
+    formData.append('uploaded_file', newVersionFile);
+
+    try {
+      const response = await fetch(
+        `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/files/${selectedFileForVersion.file_id}/versions`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        }
+      );
+
+      if (response.ok) {
+        const newVersion = await response.json();
+        toast({
+          title: 'New version uploaded successfully.',
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
+        
+        // Update files list with new version
+        setFiles(prevFiles => 
+          prevFiles.map(file => 
+            file.file_id === selectedFileForVersion.file_id 
+              ? { ...file, versions: [...file.versions, newVersion] }
+              : file
+          )
+        );
+        
+        onVersionClose();
+        setNewVersionFile(null);
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to upload new version.');
+      }
+    } catch (error) {
+      toast({
+        title: 'Failed to add version',
+        description: error.message,
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  };
+
   const handleDeleteClick = (file) => {
     setFileToDelete(file);
     onOpen();
   };
 
-  // Confirm deletion
   const confirmDelete = async () => {
     if (!fileToDelete) return;
 
@@ -174,14 +233,13 @@ const FileManagerPage = () => {
         }
       );
 
-      if (response.status === 204) {
+      if (response.ok) {
         toast({
           title: 'File deleted successfully.',
           status: 'success',
           duration: 3000,
           isClosable: true,
         });
-        // Remove the deleted file from the list
         setFiles((prevFiles) =>
           prevFiles.filter((file) => file.file_id !== fileToDelete.file_id)
         );
@@ -204,98 +262,14 @@ const FileManagerPage = () => {
     }
   };
 
-  // Handle processing files
-  const handleProcessFiles = async () => {
-    setProcessing(true);
-    try {
-      const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/process/tenants/${currentTenant}/domains/${domain_id}/process_files`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        toast({
-          title: 'Files processed successfully.',
-          description: data.message,
-          status: 'success',
-          duration: 3000,
-          isClosable: true,
-        });
-        // Refresh the file list to update last_processed_at
-        const refreshedResponse = await fetch(
-          `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/`,
-          {
-            method: 'GET',
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-        if (refreshedResponse.ok) {
-          const refreshedData = await refreshedResponse.json();
-          setFiles(refreshedData);
-        }
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to process files.');
-      }
-    } catch (error) {
-      console.error('Error processing files:', error);
-      toast({
-        title: 'Processing failed.',
-        description: error.message,
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  // Determine if a file needs processing
-  const needsProcessing = (file) => {
-    if (!file.last_processed_at) {
-      return true; // Never processed
-    }
-    const uploadedAt = new Date(file.uploaded_at);
-    const lastProcessedAt = new Date(file.last_processed_at);
-    return uploadedAt > lastProcessedAt;
-  };
-
   return (
     <Box bg="gray.50" minH="100vh" py={10}>
-      <Container maxW="container.lg">
-        <Heading
-          fontSize="3xl"
-          mb={8}
-          fontWeight="bold"
-          color="gray.900"
-          textAlign="center"
-        >
-          File Manager for Domain
+      <Container maxW="container.xl">
+        <Heading fontSize="3xl" mb={8} fontWeight="bold" color="gray.900" textAlign="center">
+          File Manager
         </Heading>
+
         <Box bg="white" borderRadius="xl" boxShadow="lg" p={8} mb={8}>
-          <Flex justify="space-between" align="center" mb={4}>
-            <Text fontSize="lg" color="gray.700">
-              Domain ID: <strong>{domain_id}</strong>
-            </Text>
-            <Button
-              colorScheme="blue"
-              leftIcon={<RepeatIcon />}
-              onClick={handleProcessFiles}
-              isLoading={processing}
-              loadingText="Processing"
-            >
-              Process Files
-            </Button>
-          </Flex>
           <Flex direction="column" align="start">
             <Input
               type="file"
@@ -349,77 +323,75 @@ const FileManagerPage = () => {
           ) : files.length === 0 ? (
             <Text color="gray.600">No files uploaded yet.</Text>
           ) : (
-            <Table variant="simple">
-              <Thead>
-                <Tr>
-                  <Th>Filename</Th>
-                  <Th>Uploaded At</Th>
-                  <Th>Uploaded By</Th>
-                  <Th>Status</Th>
-                  <Th>Actions</Th>
-                </Tr>
-              </Thead>
-              <Tbody>
-                {files.map((file) => (
-                  <Tr key={file.file_id}>
-                    <Td>{file.filename}</Td>
-                    <Td>{new Date(file.uploaded_at).toLocaleString()}</Td>
-                    <Td>
-                      {file.uploaded_by
-                        ? file.uploaded_by // Optionally, display user info if available
-                        : 'Unknown'}
-                    </Td>
-                    <Td>
-                      {needsProcessing(file) ? (
-                        <Badge colorScheme="yellow">Needs Processing</Badge>
-                      ) : (
-                        <Badge colorScheme="green">Up to Date</Badge>
-                      )}
-                    </Td>
-                    <Td>
-                      {/* Download Button (Optional) */}
-                      {/* <IconButton
-                        aria-label="Download File"
-                        icon={<DownloadIcon />}
-                        colorScheme="blue"
-                        variant="outline"
-                        size="sm"
-                        mr={2}
-                        onClick={() => {
-                          const downloadUrl = `${process.env.REACT_APP_BACKEND_URL}/tenants/${currentTenant}/domains/${domain_id}/files/${file.file_id}/download`;
-                          window.open(downloadUrl, '_blank');
-                        }}
-                      /> */}
-
-                      {/* Process Button (Optional) */}
-                      {/* If you implement per-file processing, you can uncomment and use the following:
-                      {needsProcessing(file) && (
+            <Accordion allowMultiple>
+              {files.map((file) => (
+                <AccordionItem key={file.file_id}>
+                  <AccordionButton>
+                    <Box flex="1">
+                      <Flex justify="space-between" align="center">
+                        <Text fontWeight="medium">{file.filename}</Text>
+                        <Text color="gray.600" fontSize="sm">
+                          {new Date(file.uploaded_at).toLocaleString()}
+                        </Text>
+                      </Flex>
+                    </Box>
+                    <AccordionIcon />
+                  </AccordionButton>
+                  <AccordionPanel>
+                    <Box>
+                      <Flex justify="space-between" mb={4}>
                         <Button
+                          leftIcon={<AddIcon />}
+                          colorScheme="blue"
                           size="sm"
-                          colorScheme="purple"
-                          mr={2}
-                          onClick={async () => {
-                            // Implement per-file processing
+                          onClick={() => {
+                            setSelectedFileForVersion(file);
+                            onVersionOpen();
                           }}
                         >
-                          Process
+                          Add Version
                         </Button>
-                      )} */}
-
-                      {/* Delete Button */}
-                      <IconButton
-                        aria-label="Delete File"
-                        icon={<DeleteIcon />}
-                        colorScheme="red"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDeleteClick(file)}
-                      />
-                    </Td>
-                  </Tr>
-                ))}
-              </Tbody>
-            </Table>
+                        <IconButton
+                          aria-label="Delete File"
+                          icon={<DeleteIcon />}
+                          colorScheme="red"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteClick(file)}
+                        />
+                      </Flex>
+                      
+                      <Table size="sm">
+                        <Thead>
+                          <Tr>
+                            <Th>Version</Th>
+                            <Th>Created At</Th>
+                            <Th>Actions</Th>
+                          </Tr>
+                        </Thead>
+                        <Tbody>
+                          {file.versions.map((version) => (
+                            <Tr key={version.file_version_id}>
+                              <Td>v{version.version}</Td>
+                              <Td>{new Date(version.created_at).toLocaleString()}</Td>
+                              <Td>
+                                <IconButton
+                                  aria-label="Download Version"
+                                  icon={<DownloadIcon />}
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {/* Implement version download */}}
+                                />
+                              </Td>
+                            </Tr>
+                          ))}
+                        </Tbody>
+                      </Table>
+                    </Box>
+                  </AccordionPanel>
+                </AccordionItem>
+              ))}
+            </Accordion>
           )}
         </Box>
       </Container>
@@ -433,12 +405,10 @@ const FileManagerPage = () => {
           <ModalBody>
             {fileToDelete && (
               <Text>
-                Are you sure you want to delete{' '}
-                <strong>{fileToDelete.filename}</strong>?
+                Are you sure you want to delete all versions of <strong>{fileToDelete.filename}</strong>?
               </Text>
             )}
           </ModalBody>
-
           <ModalFooter>
             <Button
               colorScheme="red"
@@ -449,6 +419,35 @@ const FileManagerPage = () => {
               Delete
             </Button>
             <Button variant="ghost" onClick={onClose} disabled={deleting}>
+              Cancel
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* New Version Modal */}
+      <Modal isOpen={isVersionOpen} onClose={onVersionClose} isCentered>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Add New Version</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Input
+              type="file"
+              onChange={handleNewVersionChange}
+              mb={4}
+            />
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              colorScheme="blue"
+              mr={3}
+              onClick={handleAddVersion}
+              isDisabled={!newVersionFile}
+            >
+              Upload Version
+            </Button>
+            <Button variant="ghost" onClick={onVersionClose}>
               Cancel
             </Button>
           </ModalFooter>
