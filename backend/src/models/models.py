@@ -104,9 +104,6 @@ class User(Base):
     api_keys = relationship(
         "APIKey", back_populates="user", cascade="all, delete-orphan"
     )
-    files = relationship(
-        "File", back_populates="uploader", cascade="all, delete-orphan"
-    )
 
 
 # APIKey Model
@@ -201,7 +198,7 @@ class DomainVersion(Base):
         ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
         nullable=False,
     )
-    version = Column(Integer, primary_key=True)
+    version_number = Column(Integer, primary_key=True)
     created_at = Column(TIMESTAMP, default=func.now())
     status = Column(
         SQLAlchemyEnum(DomainVersionStatus, name="domain_version_status"),
@@ -225,7 +222,7 @@ class DomainVersion(Base):
         "DomainVersionFile",
         back_populates="domain_version_ref",
         primaryjoin="and_(DomainVersion.domain_id==DomainVersionFile.domain_id, "
-        "DomainVersion.version==DomainVersionFile.domain_version)",
+        "DomainVersion.version_number==DomainVersionFile.version_number)",
     )
 
 
@@ -375,18 +372,11 @@ class File(Base):
         nullable=False,
     )
     filename = Column(String(255), nullable=False)
-    file_type = Column(String(50), nullable=False)
-    original_path = Column(String(1024), nullable=False)
-    uploaded_at = Column(TIMESTAMP, default=func.now())
-    uploaded_by = Column(
-        UUIDType(as_uuid=True), ForeignKey("users.user_id", ondelete="SET NULL")
-    )
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationships
     domain = relationship("Domain", back_populates="files")
     tenant = relationship("Tenant")
-    uploader = relationship("User", back_populates="files")
     versions = relationship(
         "FileVersion", back_populates="file", cascade="all, delete-orphan"
     )
@@ -403,13 +393,20 @@ class FileVersion(Base):
         ForeignKey("files.file_id", ondelete="CASCADE"),
         nullable=False,
     )
-    version = Column(Integer, nullable=False)
+    version_number = Column(Integer, nullable=False)
+    filename = Column(String(255), nullable=False)
+    file_type = Column(String(50), nullable=False)
     filepath = Column(String(1024), nullable=False)
     file_size = Column(BigInteger, nullable=False)
+    uploaded_at = Column(TIMESTAMP, default=func.now())
+    uploaded_by = Column(
+        UUIDType(as_uuid=True), ForeignKey("users.user_id", ondelete="SET NULL")
+    )
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationships
     file = relationship("File", back_populates="versions")
+    uploader = relationship("User")
     domain_versions = relationship("DomainVersionFile", back_populates="file_version")
 
 
@@ -417,7 +414,7 @@ class DomainVersionFile(Base):
     __tablename__ = "domain_version_files"
 
     domain_id = Column(UUIDType(as_uuid=True), primary_key=True)
-    domain_version = Column(Integer, primary_key=True)
+    version_number = Column(Integer, primary_key=True)
     file_version_id = Column(
         UUIDType(as_uuid=True),
         ForeignKey("file_versions.file_version_id", ondelete="CASCADE"),
@@ -430,15 +427,15 @@ class DomainVersionFile(Base):
     # Relationships
     domain_version_ref = relationship(
         "DomainVersion",
-        foreign_keys=[domain_id, domain_version],
+        foreign_keys=[domain_id, version_number],
         back_populates="file_versions",
     )
     file_version = relationship("FileVersion", back_populates="domain_versions")
 
     __table_args__ = (
         ForeignKeyConstraint(
-            ["domain_id", "domain_version"],
-            ["domain_versions.domain_id", "domain_versions.version"],
+            ["domain_id", "version_number"],
+            ["domain_versions.domain_id", "domain_versions.version_number"],
             ondelete="CASCADE",
         ),
     )

@@ -14,6 +14,7 @@ from ..models.models import (
     ProcessingPipeline,
     User,
     File,
+    DomainVersionFile,
 )
 from ..models.schemas import (
     Domain as DomainSchema,
@@ -23,6 +24,8 @@ from ..models.schemas import (
     DomainVersionSchema,
     ProcessPipelineSchema,
     DomainBasicResponse,
+    DomainVersionFile as DomainVersionFileSchema,
+    FileVersionsRequest,
 )
 from ..core.database import get_db
 from ..core.security import get_current_user
@@ -60,7 +63,7 @@ def create_domain(
         new_version = DomainVersion(
             domain_id=new_domain.domain_id,
             tenant_id=tenant_id,
-            version=1,
+            version_number=1,
         )
         db.add(new_version)
         db.commit()
@@ -117,12 +120,12 @@ def get_domain(
     )
 
     latest_version = (
-        db.query(func.max(DomainVersion.version))
+        db.query(func.max(DomainVersion.version_number))
         .filter(DomainVersion.domain_id == domain_id)
         .scalar()
     )
     version_count = (
-        db.query(func.count(DomainVersion.version))
+        db.query(func.count(DomainVersion.version_number))
         .filter(DomainVersion.domain_id == domain_id)
         .scalar()
     )
@@ -225,7 +228,8 @@ def get_domain_data(
         domain_version = (
             db.query(DomainVersion)
             .filter(
-                DomainVersion.domain_id == domain_id, DomainVersion.version == version
+                DomainVersion.domain_id == domain_id,
+                DomainVersion.version_number == version,
             )
             .first()
         )
@@ -233,7 +237,7 @@ def get_domain_data(
         domain_version = (
             db.query(DomainVersion)
             .filter(DomainVersion.domain_id == domain_id)
-            .order_by(DomainVersion.version.desc())
+            .order_by(DomainVersion.version_number.desc())
             .first()
         )
 
@@ -302,7 +306,7 @@ def get_domain_versions(
     versions = (
         db.query(DomainVersion)
         .filter(DomainVersion.domain_id == domain_id)
-        .order_by(DomainVersion.version.asc())
+        .order_by(DomainVersion.version_number.asc())
         .all()
     )
     return versions
@@ -325,14 +329,14 @@ def get_domain_version(
         .filter(
             DomainVersion.domain_id == domain_id,
             DomainVersion.tenant_id == tenant_id,
-            DomainVersion.version == version,
+            DomainVersion.version_number == version,
         )
         .first()
     )
     if not domain_version:
         raise HTTPException(status_code=404, detail="Domain version not found")
 
-    return DomainVersionSchema.from_orm(domain_version)
+    return domain_version
 
 
 @router.post(
@@ -355,14 +359,14 @@ def create_domain_version(
         raise HTTPException(status_code=404, detail="Domain not found")
 
     latest_version = (
-        db.query(func.max(DomainVersion.version))
+        db.query(func.max(DomainVersion.version_number))
         .filter(DomainVersion.domain_id == domain_id)
         .scalar()
         or 0
     )
 
     new_version = DomainVersion(
-        domain_id=domain_id, tenant_id=tenant_id, version=latest_version + 1
+        domain_id=domain_id, tenant_id=tenant_id, version_number=latest_version + 1
     )
 
     try:
@@ -374,3 +378,78 @@ def create_domain_version(
         db.rollback()
         logger.error(f"Error creating version: {e}")
         raise HTTPException(status_code=500, detail="Failed to create version")
+
+
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{version}/files",
+    response_model=List[DomainVersionFileSchema],
+)
+async def add_files_to_version(
+    tenant_id: UUID,
+    domain_id: UUID,
+    version: int,
+    file_versions: FileVersionsRequest,
+    db: Session = Depends(get_db),
+):
+    domain_version = (
+        db.query(DomainVersion)
+        .filter(
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version_number == version,
+            DomainVersion.tenant_id == tenant_id,
+        )
+        .first()
+    )
+
+    if not domain_version:
+        raise HTTPException(status_code=404, detail="Domain version not found")
+
+    new_version_files = []
+    for file_version_id in file_versions.file_version_ids:
+        version_file = DomainVersionFile(
+            domain_id=domain_id,
+            version_number=version,
+            file_version_id=file_version_id,
+            status="PENDING",
+        )
+        db.add(version_file)
+        new_version_files.append(version_file)
+
+    try:
+        db.commit()
+        return new_version_files
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete(
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{version}/files/{file_version_id}",
+)
+async def remove_file_from_version(
+    tenant_id: UUID,
+    domain_id: UUID,
+    version: int,
+    file_version_id: UUID,
+    db: Session = Depends(get_db),
+):
+    version_file = (
+        db.query(DomainVersionFile)
+        .filter(
+            DomainVersionFile.domain_id == domain_id,
+            DomainVersionFile.version_number == version,
+            DomainVersionFile.file_version_id == file_version_id,
+        )
+        .first()
+    )
+
+    if not version_file:
+        raise HTTPException(status_code=404, detail="File not found in version")
+
+    try:
+        db.delete(version_file)
+        db.commit()
+        return {"message": "File removed from version"}
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))

@@ -118,50 +118,6 @@ class DomainConfigSchema(BaseModel):
         from_attributes = True
 
 
-# Entity Schemas (replacing Concept, Source, and Methodology)
-class EntityBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-    type: str  # e.g., 'concept', 'source', 'methodology'
-    version: Optional[int] = 1
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class EntityCreate(EntityBase):
-    id: Optional[str] = None
-
-
-class Entity(EntityBase):
-    id: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# RelationshipEdge Schemas (replacing the old Relationship model)
-class RelationshipBase(BaseModel):
-    from_entity_id: str
-    to_entity_id: str
-    name: str
-    type: str
-    description: Optional[str] = None
-    version: Optional[int] = 1
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class RelationshipCreate(RelationshipBase):
-    id: Optional[str] = None
-
-
-class Relationship(RelationshipBase):
-    id: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
 # Domain Data Schema with entities and relationships
 class DomainDataSchema(BaseModel):
     domain_id: UUID
@@ -256,18 +212,16 @@ class InvitationResponse(InvitationBase):
 
 
 class FileBase(BaseModel):
-    filename: str
     domain_id: UUID
     tenant_id: UUID
-    file_type: str
-    file_size: int
-    original_path: str
+    filename: str
 
 
 class FileVersion(BaseModel):
     file_version_id: UUID
     file_id: UUID
-    version: int
+    version_number: int
+    file_size: int
     filepath: str
     created_at: datetime
 
@@ -275,11 +229,25 @@ class FileVersion(BaseModel):
         from_attributes = True
 
 
-class FileVersionCreate(BaseModel):
-    file_id: UUID
-    version: int
-    filepath: str
+class FileVersionBase(BaseModel):
+    filename: str
+    file_type: str
     file_size: int
+    filepath: str
+
+
+class FileVersionCreate(FileVersionBase):
+    file_id: UUID
+    version_number: int
+
+
+class FileVersion(FileVersionBase):
+    file_version_id: UUID
+    file_id: UUID
+    version_number: int
+    uploaded_at: datetime
+    uploaded_by: Optional[UUID]
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -287,10 +255,7 @@ class FileVersionCreate(BaseModel):
 
 class File(FileBase):
     file_id: UUID
-    uploaded_at: datetime
-    uploaded_by: Optional[UUID]
     created_at: datetime
-    versions: List[FileVersion]
 
     class Config:
         from_attributes = True
@@ -310,28 +275,12 @@ class FileResponse(FileBase):
         from_attributes = True
 
 
-class FileVersionResponse(BaseModel):
-    file_version_id: UUID
-    file_id: UUID
-    version: int
-    filepath: str
-    created_at: datetime
-
+class FileVersionResponse(FileVersion):
     class Config:
         from_attributes = True
 
 
-class FileWithVersionsResponse(BaseModel):
-    file_id: UUID
-    domain_id: UUID
-    tenant_id: UUID
-    filename: str
-    file_type: str
-    file_size: int
-    original_path: str
-    uploaded_at: datetime
-    uploaded_by: Optional[UUID]
-    created_at: datetime
+class FileWithVersionsResponse(File):
     versions: List[FileVersionResponse]
 
     class Config:
@@ -340,7 +289,7 @@ class FileWithVersionsResponse(BaseModel):
 
 class DomainVersionFile(BaseModel):
     domain_id: UUID
-    domain_version: int
+    version_number: int
     file_version_id: UUID
     status: Optional[str]
     error: Optional[str]
@@ -353,7 +302,7 @@ class DomainVersionFile(BaseModel):
 class DomainVersionSchema(BaseModel):
     domain_id: UUID
     tenant_id: UUID
-    version: int
+    version_number: int
     created_at: datetime
     status: DomainVersionStatus
     pipeline_id: Optional[UUID]
@@ -508,3 +457,7 @@ class MergeRequest(BaseModel):
 class OntologyRequest(BaseModel):
     merge_version_id: UUID
     group_version_id: UUID
+
+
+class FileVersionsRequest(BaseModel):
+    file_version_ids: List[UUID]

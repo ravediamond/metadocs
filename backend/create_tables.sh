@@ -131,19 +131,19 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE NOT NULL,
       tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE NOT NULL,
       filename VARCHAR(255) NOT NULL,
-      file_type VARCHAR(50) NOT NULL,
-      file_size BIGINT NOT NULL,
-      original_path VARCHAR(1024) NOT NULL,
-      uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      uploaded_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE file_versions (
       file_version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       file_id UUID REFERENCES files(file_id) ON DELETE CASCADE NOT NULL,
-      version INT NOT NULL,
+      version_number INT NOT NULL,
+      filename VARCHAR(255) NOT NULL,
+      file_type VARCHAR(50) NOT NULL,
       filepath VARCHAR(1024) NOT NULL,
+      file_size BIGINT NOT NULL,
+      uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      uploaded_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -161,24 +161,24 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   CREATE TABLE domain_versions (
       domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE,
       tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE NOT NULL,
-      domain_version INT NOT NULL,
+      version_number INT NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       status domain_version_status NOT NULL DEFAULT 'DRAFT',
       pipeline_id UUID REFERENCES processing_pipeline(pipeline_id),
-      PRIMARY KEY (domain_id, domain_version)
+      PRIMARY KEY (domain_id, version_number)
   );
 
   CREATE TABLE domain_version_files (
       domain_id UUID NOT NULL,
-      domain_version INT NOT NULL,  -- Keep consistent with the model
+      version_number INT NOT NULL,
       file_version_id UUID REFERENCES file_versions(file_version_id) ON DELETE CASCADE NOT NULL,
       status VARCHAR(50),
       error VARCHAR(1024),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (domain_id, domain_version, file_version_id),
+      PRIMARY KEY (domain_id, version_number, file_version_id),
       CONSTRAINT fk_domain_version 
-          FOREIGN KEY (domain_id, domain_version) 
-          REFERENCES domain_versions(domain_id, domain_version) 
+          FOREIGN KEY (domain_id, version_number) 
+          REFERENCES domain_versions(domain_id, version_number) 
           ON DELETE CASCADE
   );
 

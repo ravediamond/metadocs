@@ -5,8 +5,6 @@ import {
     Heading,
     VStack,
     Text,
-    Grid,
-    GridItem,
     Badge,
     Button,
     useToast,
@@ -21,22 +19,44 @@ import {
     Spinner,
     Alert,
     AlertIcon,
+    Modal,
+    ModalOverlay,
+    ModalContent,
+    ModalHeader,
+    ModalBody,
+    ModalCloseButton,
+    useDisclosure,
+    Table,
+    Thead,
+    Tbody,
+    Tr,
+    Th,
+    Td,
+    Input,
+    HStack,
+    Progress,
+    IconButton,
+    Checkbox
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
+import FileSelectionTab from '../components/FileSelectionTab';
 
 const VersionDetailPage = () => {
     const { domain_id, version_id } = useParams();
     const { token, currentTenant } = useContext(AuthContext);
     const navigate = useNavigate();
     const toast = useToast();
+    const { isOpen, onOpen, onClose } = useDisclosure();
 
     const [version, setVersion] = useState(null);
+    const [versions, setVersions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
     useEffect(() => {
         fetchVersionDetails();
+        fetchAllVersions();
     }, [domain_id, version_id]);
 
     const fetchVersionDetails = async () => {
@@ -49,15 +69,62 @@ const VersionDetailPage = () => {
                     },
                 }
             );
-
             if (!response.ok) throw new Error('Failed to fetch version details');
             const data = await response.json();
             setVersion(data);
         } catch (error) {
-            console.error('Error fetching version details:', error);
             setError(error.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchAllVersions = async () => {
+        try {
+            const response = await fetch(
+                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/versions`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                    },
+                }
+            );
+            if (!response.ok) throw new Error('Failed to fetch versions');
+            const data = await response.json();
+            setVersions(data);
+        } catch (error) {
+            console.error('Error fetching versions:', error);
+        }
+    };
+
+    const createNewVersion = async () => {
+        try {
+            const response = await fetch(
+                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/versions`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                    },
+                }
+            );
+            if (!response.ok) throw new Error('Failed to create version');
+            const data = await response.json();
+            toast({
+                title: 'Version created.',
+                description: `Version ${data.version} created successfully.`,
+                status: 'success',
+                duration: 5000,
+            });
+            fetchAllVersions();
+            navigate(`/domains/${domain_id}/versions/${data.version}`);
+        } catch (error) {
+            toast({
+                title: 'Error creating version.',
+                description: error.message,
+                status: 'error',
+                duration: 5000,
+            });
         }
     };
 
@@ -80,6 +147,19 @@ const VersionDetailPage = () => {
         );
     }
 
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 'DRAFT': return 'gray';
+            case 'TO_BE_VALIDATED': return 'yellow';
+            case 'PUBLISHED': return 'green';
+            case 'PENDING_SUSPENSION': return 'orange';
+            case 'SUSPENDED': return 'red';
+            case 'PENDING_DELETE': return 'red';
+            case 'DELETED': return 'gray';
+            default: return 'gray';
+        }
+    };
+
     return (
         <Box minH="100vh" bg="gray.50" py={8}>
             <Container maxW="container.lg">
@@ -87,132 +167,120 @@ const VersionDetailPage = () => {
                     <Flex justify="space-between" align="center">
                         <VStack align="start" spacing={2}>
                             <Heading size="lg">Version Details</Heading>
-                            <Text color="gray.600">Version {version?.version_number}</Text>
+                            <Text color="gray.600">Version {version?.version}</Text>
                         </VStack>
-                        <Badge
-                            colorScheme={
-                                version?.status === 'validated'
-                                    ? 'green'
-                                    : version?.status === 'processing'
-                                        ? 'blue'
-                                        : 'yellow'
-                            }
-                            p={2}
-                            fontSize="md"
-                        >
-                            {version?.status}
-                        </Badge>
+                        <Flex gap={4}>
+                            <Button colorScheme="blue" onClick={onOpen}>
+                                View All Versions
+                            </Button>
+                            <Button colorScheme="green" onClick={createNewVersion}>
+                                Create New Version
+                            </Button>
+                        </Flex>
                     </Flex>
 
-                    <Grid templateColumns="repeat(3, 1fr)" gap={6}>
-                        <StatsCard
-                            title="Files"
-                            value={version?.file_count}
-                            label="Total Files"
-                        />
-                        <StatsCard
-                            title="Entities"
-                            value={version?.entity_count}
-                            label="Extracted Entities"
-                        />
-                        <StatsCard
-                            title="Relations"
-                            value={version?.relation_count}
-                            label="Identified Relations"
-                        />
-                    </Grid>
-
                     <Box bg="white" shadow="sm" borderRadius="lg" p={6}>
+                        <Flex justify="space-between" align="center" mb={6}>
+                            <Text fontSize="xl" fontWeight="bold">Status</Text>
+                            <Badge colorScheme={getStatusColor(version?.status)} p={2} fontSize="md">
+                                {version?.status}
+                            </Badge>
+                        </Flex>
+
                         <Tabs>
                             <TabList>
                                 <Tab>Files</Tab>
-                                <Tab>Processing History</Tab>
-                                <Tab>Validation Results</Tab>
+                                <Tab>Pipeline Info</Tab>
+                                <Tab>Details</Tab>
                             </TabList>
 
                             <TabPanels>
+                            <TabPanel>
+                                <FileSelectionTab
+                                    version={version}
+                                    token={token}
+                                    currentTenant={currentTenant}
+                                    domain_id={domain_id}
+                                    onFilesUpdate={fetchVersionDetails}
+                                />
+                            </TabPanel>
+
                                 <TabPanel>
-                                    <List spacing={3}>
-                                        {version?.files.map((file) => (
-                                            <ListItem key={file.file_id}>
-                                                <Flex justify="space-between" align="center">
-                                                    <Text>{file.filename}</Text>
-                                                    <Badge colorScheme={file.processed ? 'green' : 'yellow'}>
-                                                        {file.processed ? 'Processed' : 'Pending'}
-                                                    </Badge>
-                                                </Flex>
-                                            </ListItem>
-                                        ))}
-                                    </List>
+                                    <VStack align="stretch" spacing={4}>
+                                        <Box>
+                                            <Text fontWeight="bold">Pipeline ID</Text>
+                                            <Text>{version?.pipeline_id || 'No pipeline assigned'}</Text>
+                                        </Box>
+                                        <Box>
+                                            <Text fontWeight="bold">Created At</Text>
+                                            <Text>{new Date(version?.created_at).toLocaleString()}</Text>
+                                        </Box>
+                                    </VStack>
                                 </TabPanel>
 
                                 <TabPanel>
-                                    <List spacing={3}>
-                                        {version?.processing_history.map((event, index) => (
-                                            <ListItem key={index}>
-                                                <Text fontWeight="bold">{event.stage}</Text>
-                                                <Text fontSize="sm" color="gray.600">
-                                                    {new Date(event.timestamp).toLocaleString()}
-                                                </Text>
-                                                <Badge colorScheme={event.status === 'completed' ? 'green' : 'yellow'}>
-                                                    {event.status}
-                                                </Badge>
-                                            </ListItem>
-                                        ))}
-                                    </List>
-                                </TabPanel>
-
-                                <TabPanel>
-                                    {version?.validation_results ? (
-                                        <VStack align="stretch" spacing={4}>
-                                            {version.validation_results.checks.map((check, index) => (
-                                                <Box
-                                                    key={index}
-                                                    p={4}
-                                                    borderRadius="md"
-                                                    bg="gray.50"
-                                                    border="1px"
-                                                    borderColor="gray.200"
-                                                >
-                                                    <Flex justify="space-between" align="center">
-                                                        <Text fontWeight="bold">{check.name}</Text>
-                                                        <Badge colorScheme={check.passed ? 'green' : 'red'}>
-                                                            {check.passed ? 'Passed' : 'Failed'}
-                                                        </Badge>
-                                                    </Flex>
-                                                    {!check.passed && (
-                                                        <Text color="red.500" fontSize="sm" mt={2}>
-                                                            {check.message}
-                                                        </Text>
-                                                    )}
-                                                </Box>
-                                            ))}
-                                        </VStack>
-                                    ) : (
-                                        <Text>No validation results available</Text>
-                                    )}
+                                    <VStack align="stretch" spacing={4}>
+                                        <Box>
+                                            <Text fontWeight="bold">Version Number</Text>
+                                            <Text>{version?.version}</Text>
+                                        </Box>
+                                        <Box>
+                                            <Text fontWeight="bold">Domain ID</Text>
+                                            <Text>{version?.domain_id}</Text>
+                                        </Box>
+                                    </VStack>
                                 </TabPanel>
                             </TabPanels>
                         </Tabs>
                     </Box>
                 </VStack>
             </Container>
+
+            <Modal isOpen={isOpen} onClose={onClose} size="xl">
+                <ModalOverlay />
+                <ModalContent>
+                    <ModalHeader>All Versions</ModalHeader>
+                    <ModalCloseButton />
+                    <ModalBody pb={6}>
+                        <Table variant="simple">
+                            <Thead>
+                                <Tr>
+                                    <Th>Version</Th>
+                                    <Th>Status</Th>
+                                    <Th>Created</Th>
+                                    <Th>Action</Th>
+                                </Tr>
+                            </Thead>
+                            <Tbody>
+                                {versions.map((v) => (
+                                    <Tr key={v.version}>
+                                        <Td>{v.version}</Td>
+                                        <Td>
+                                            <Badge colorScheme={getStatusColor(v.status)}>
+                                                {v.status}
+                                            </Badge>
+                                        </Td>
+                                        <Td>{new Date(v.created_at).toLocaleDateString()}</Td>
+                                        <Td>
+                                            <Button
+                                                size="sm"
+                                                onClick={() => {
+                                                    navigate(`/domains/${domain_id}/versions/${v.version}`);
+                                                    onClose();
+                                                }}
+                                            >
+                                                View
+                                            </Button>
+                                        </Td>
+                                    </Tr>
+                                ))}
+                            </Tbody>
+                        </Table>
+                    </ModalBody>
+                </ModalContent>
+            </Modal>
         </Box>
     );
 };
-
-const StatsCard = ({ title, value, label }) => (
-    <Box bg="white" p={6} borderRadius="lg" shadow="sm">
-        <Text fontSize="sm" color="gray.500">
-            {title}
-        </Text>
-        <Text fontSize="3xl" fontWeight="bold" my={2}>
-            {value}
-        </Text>
-        <Text fontSize="sm" color="gray.600">
-            {label}
-        </Text>
-    </Box>
-);
 
 export default VersionDetailPage;

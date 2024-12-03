@@ -48,6 +48,7 @@ const DomainVersionsPage = () => {
 
             if (!response.ok) throw new Error('Failed to fetch versions');
             const data = await response.json();
+            console.log(data);
             setVersions(data);
         } catch (error) {
             console.error('Error fetching versions:', error);
@@ -60,7 +61,7 @@ const DomainVersionsPage = () => {
     const handleCreateVersion = async () => {
         try {
             const response = await fetch(
-                `${process.env.REACT_APP_BACKEND_URL}/domains./tenants/${currentTenant}/domains/${domain_id}/versions`,
+                `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/versions`,
                 {
                     method: 'POST',
                     headers: {
@@ -95,6 +96,7 @@ const DomainVersionsPage = () => {
 
     const handleValidateVersion = async (versionId) => {
         try {
+            console.log(versionId);
             const response = await fetch(
                 `${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains/${domain_id}/versions/${versionId}/validate`,
                 {
@@ -171,7 +173,7 @@ const DomainVersionsPage = () => {
                             <Tbody>
                                 {versions.map((version) => (
                                     <Tr key={version.version_id}>
-                                        <Td>v{version.version_number}</Td>
+                                        <Td>{version.version_number}</Td>
                                         <Td>{new Date(version.created_at).toLocaleString()}</Td>
                                         <Td>
                                             <Badge
@@ -191,7 +193,7 @@ const DomainVersionsPage = () => {
                                             <Button
                                                 size="sm"
                                                 mr={2}
-                                                onClick={() => navigate(`/domains/${domain_id}/versions/${version.version_id}`)}
+                                                onClick={() => navigate(`/domains/${domain_id}/versions/${version.version_number}`)}
                                             >
                                                 View
                                             </Button>
@@ -199,7 +201,7 @@ const DomainVersionsPage = () => {
                                                 <Button
                                                     size="sm"
                                                     colorScheme="green"
-                                                    onClick={() => handleValidateVersion(version.version_id)}
+                                                    onClick={() => handleValidateVersion(version.version_number)}
                                                 >
                                                     Validate
                                                 </Button>

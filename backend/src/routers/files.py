@@ -35,12 +35,15 @@ def get_file_storage_path(
 
 
 def create_file_version(
-    db: Session, file: FileModel, filepath: str, file_size: int
+    db: Session,
+    file: FileModel,
+    filepath: str,
+    file_type: str,
+    file_size: int,
+    uploaded_by: UUID,
 ) -> FileVersion:
-    """Create a new version for a file"""
-    # Get latest version number
     latest_version = (
-        db.query(func.max(FileVersion.version))
+        db.query(func.max(FileVersion.version_number))
         .filter(FileVersion.file_id == file.file_id)
         .scalar()
         or 0
@@ -48,9 +51,12 @@ def create_file_version(
 
     new_version = FileVersion(
         file_id=file.file_id,
-        version=latest_version + 1,
+        version_number=latest_version + 1,
+        filename=file.filename,
+        file_type=file_type,
         filepath=filepath,
         file_size=file_size,
+        uploaded_by=uploaded_by,
     )
 
     db.add(new_version)
@@ -60,7 +66,6 @@ def create_file_version(
 @router.post(
     "/tenants/{tenant_id}/domains/{domain_id}/upload",
     response_model=FileWithVersionsResponse,
-    status_code=status.HTTP_201_CREATED,
 )
 def upload_file(
     tenant_id: UUID,
@@ -69,7 +74,6 @@ def upload_file(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Upload a new file to a domain"""
     domain = (
         db.query(Domain)
         .filter(Domain.domain_id == domain_id, Domain.tenant_id == tenant_id)
@@ -80,7 +84,6 @@ def upload_file(
 
     config = ConfigManager(db, str(tenant_id), str(domain_id))
 
-    # Check if file already exists
     existing_file = (
         db.query(FileModel)
         .filter(
@@ -91,12 +94,11 @@ def upload_file(
     )
 
     try:
-        # Save uploaded file content
         file_contents = uploaded_file.file.read()
         file_size = len(file_contents)
+        file_type = uploaded_file.filename.split(".")[-1].lower()
 
         if existing_file:
-            # Create new version for existing file
             file_path = get_file_storage_path(
                 config,
                 domain_id,
@@ -107,27 +109,13 @@ def upload_file(
             with open(file_path, "wb") as buffer:
                 buffer.write(file_contents)
 
-            new_version = create_file_version(db, existing_file, file_path, file_size)
+            new_version = create_file_version(
+                db, existing_file, file_path, file_type, file_size, current_user.user_id
+            )
             db.commit()
 
-            return FileWithVersionsResponse(
-                file_id=existing_file.file_id,
-                domain_id=existing_file.domain_id,
-                tenant_id=existing_file.tenant_id,
-                filename=existing_file.filename,
-                file_type=existing_file.file_type,
-                file_size=file_size,
-                original_path=existing_file.original_path,
-                uploaded_at=existing_file.uploaded_at,
-                uploaded_by=existing_file.uploaded_by,
-                created_at=existing_file.created_at,
-                versions=[
-                    FileVersionResponse.from_orm(v)
-                    for v in sorted(existing_file.versions, key=lambda x: x.version)
-                ],
-            )
+            return FileWithVersionsResponse.from_orm(existing_file)
         else:
-            # Create new file record
             file_path = get_file_storage_path(
                 config, domain_id, uploaded_file.filename, 1
             )
@@ -139,32 +127,17 @@ def upload_file(
                 domain_id=domain_id,
                 tenant_id=tenant_id,
                 filename=uploaded_file.filename,
-                file_type=uploaded_file.filename.split(".")[-1].lower(),
-                file_size=file_size,
-                original_path=file_path,
-                uploaded_by=current_user.user_id,
             )
 
             db.add(new_file)
-            db.flush()  # Get new_file.file_id
+            db.flush()
 
-            # Create initial version
-            new_version = create_file_version(db, new_file, file_path, file_size)
+            new_version = create_file_version(
+                db, new_file, file_path, file_type, file_size, current_user.user_id
+            )
             db.commit()
 
-            return FileWithVersionsResponse(
-                file_id=new_file.file_id,
-                domain_id=new_file.domain_id,
-                tenant_id=new_file.tenant_id,
-                filename=new_file.filename,
-                file_type=new_file.file_type,
-                file_size=new_file.file_size,
-                original_path=new_file.original_path,
-                uploaded_at=new_file.uploaded_at,
-                uploaded_by=new_file.uploaded_by,
-                created_at=new_file.created_at,
-                versions=[FileVersionResponse.from_orm(new_version)],
-            )
+            return FileWithVersionsResponse.from_orm(new_file)
 
     except Exception as e:
         logger.error(f"Failed to save file {uploaded_file.filename}: {e}")
@@ -198,15 +171,24 @@ async def create_file_version_endpoint(
     try:
         file_contents = uploaded_file.file.read()
         file_size = len(file_contents)
+        file_type = uploaded_file.filename.split(".")[-1].lower()
 
         file_path = get_file_storage_path(
-            config, domain_id, file.filename, len(file.versions) + 1
+            config, domain_id, uploaded_file.filename, len(file.versions) + 1
         )
 
         with open(file_path, "wb") as buffer:
             buffer.write(file_contents)
 
-        new_version = create_file_version(db, file, file_path, file_size)
+        new_version = create_file_version(
+            db,
+            file,
+            file_path,
+            uploaded_file.filename,
+            file_type,
+            file_size,
+            current_user.user_id,
+        )
         db.commit()
 
         return FileVersionResponse.from_orm(new_version)
@@ -238,7 +220,7 @@ async def get_file_version(
             Domain.tenant_id == tenant_id,
             FileModel.domain_id == domain_id,
             FileVersion.file_id == file_id,
-            FileVersion.version == version,
+            FileVersion.version_number == version,
         )
         .first()
     )
@@ -278,7 +260,6 @@ async def list_file_versions(
     return [FileVersionResponse.from_orm(v) for v in versions]
 
 
-# Keep existing endpoints but update their implementations
 @router.get(
     "/tenants/{tenant_id}/domains/{domain_id}/files",
     response_model=List[FileWithVersionsResponse],
@@ -305,15 +286,10 @@ def list_files(
             domain_id=file.domain_id,
             tenant_id=file.tenant_id,
             filename=file.filename,
-            file_type=file.file_type,
-            file_size=file.file_size,
-            original_path=file.original_path,
-            uploaded_at=file.uploaded_at,
-            uploaded_by=file.uploaded_by,
             created_at=file.created_at,
             versions=[
                 FileVersionResponse.from_orm(v)
-                for v in sorted(file.versions, key=lambda x: x.version)
+                for v in sorted(file.versions, key=lambda x: x.version_number)
             ],
         )
         for file in files
