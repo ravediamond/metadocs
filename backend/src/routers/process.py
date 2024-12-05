@@ -122,6 +122,18 @@ def validate_stage_prompts(stage: str, prompts: dict):
         )
 
 
+def get_next_version_number(db: Session, pipeline_id: UUID, version_model) -> int:
+    """Get next version number for a specific version type in a pipeline"""
+    latest_version = (
+        db.query(version_model)
+        .filter(version_model.pipeline_id == pipeline_id)
+        .order_by(version_model.version_number.desc())
+        .first()
+    )
+
+    return (latest_version.version_number + 1) if latest_version else 1
+
+
 # Processing Functions
 async def process_parse(
     file_version: FileVersion,
@@ -1266,3 +1278,87 @@ async def update_stage_prompts(
     db.commit()
 
     return {"message": f"{stage} prompts updated successfully"}
+
+
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/validate",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def start_validate_stage(
+    tenant_id: UUID,
+    domain_id: UUID,
+    domain_version: int,
+    db: Session = Depends(get_db),
+):
+    """Set pipeline status to validate stage"""
+    domain_version_obj = (
+        db.query(DomainVersion)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version == domain_version,
+        )
+        .first()
+    )
+
+    if not domain_version_obj:
+        raise HTTPException(status_code=404, detail="Domain version not found")
+
+    pipeline = domain_version_obj.processing_pipeline
+    if not pipeline:
+        raise HTTPException(
+            status_code=404,
+            detail="No processing pipeline found for this domain version",
+        )
+
+    pipeline.stage = PipelineStage.VALIDATE
+    pipeline.status = PipelineStatus.RUNNING
+    db.commit()
+
+    return {
+        "message": "Pipeline moved to validate stage",
+        "pipeline_id": pipeline.pipeline_id,
+    }
+
+
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/complete",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def complete_pipeline(
+    tenant_id: UUID,
+    domain_id: UUID,
+    domain_version: int,
+    db: Session = Depends(get_db),
+):
+    """Mark pipeline as completed"""
+    domain_version_obj = (
+        db.query(DomainVersion)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version == domain_version,
+        )
+        .first()
+    )
+
+    if not domain_version_obj:
+        raise HTTPException(status_code=404, detail="Domain version not found")
+
+    pipeline = domain_version_obj.processing_pipeline
+    if not pipeline:
+        raise HTTPException(
+            status_code=404,
+            detail="No processing pipeline found for this domain version",
+        )
+
+    pipeline.stage = PipelineStage.COMPLETED
+    pipeline.status = PipelineStatus.COMPLETED
+    db.commit()
+
+    return {
+        "message": "Pipeline marked as completed",
+        "pipeline_id": pipeline.pipeline_id,
+    }

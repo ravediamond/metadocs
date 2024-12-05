@@ -256,6 +256,24 @@ export const processing = {
     });
     if (!response.ok) throw new Error('Failed to update stage prompts');
     return response.json();
+  },
+
+  startValidate: async (tenantId, domainId, domainVersion, token) => {
+    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/validate`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to start validation');
+    return response.json();
+  },
+  
+  complete: async (tenantId, domainId, domainVersion, token) => {
+    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/complete`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to complete pipeline');
+    return response.json();
   }
 };
 

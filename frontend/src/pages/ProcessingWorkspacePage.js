@@ -8,6 +8,7 @@ import ChatPanel from '../components/chat/ChatPanel';
 import WorkflowStatus from '../components/processing/WorkflowStatus';
 import PhaseControls from '../components/processing/PhaseControls';
 import DomainVersionControl from '../components/processing/DomainVersionControl';
+import { ResizablePanel } from '../components/processing/ResizablePanel';
 
 
 const ProcessingWorkspace = () => {
@@ -169,7 +170,11 @@ const ProcessingWorkspace = () => {
           </Text>
         </Flex>
       </Box>
-      <ChatPanel />
+      <ResizablePanel>
+        <Box w="full" borderLeftWidth="1px">
+          <ChatPanel />
+        </Box>
+      </ResizablePanel>
     </Flex>
   );
 };

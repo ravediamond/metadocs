@@ -124,7 +124,9 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
     'EXTRACT', 
     'MERGE',
     'GROUP',
-    'ONTOLOGY'
+    'ONTOLOGY',
+    'VALIDATE'
+    'COMPLETED'
   );
 
   CREATE TYPE pipeline_status AS ENUM (

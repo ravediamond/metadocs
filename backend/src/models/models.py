@@ -448,6 +448,8 @@ class PipelineStage(str, Enum):
     MERGE = "MERGE"
     GROUP = "GROUP"
     ONTOLOGY = "ONTOLOGY"
+    VALIDATE = "VALIDATE"
+    COMPLETED = "COMPLETED"
 
 
 class PipelineStatus(str, Enum):
