@@ -130,7 +130,24 @@ export const domains = {
     });
     if (!response.ok) throw new Error('Failed to remove file from version');
     return response.json();
-  }
+  },
+
+  getDomainVersionFile: async (tenantId, domainId, version, fileVersionId, token) => {
+    const response = await fetch(
+      `${BASE_URL}/domains/tenants/${tenantId}/domains/${domainId}/versions/${version}/files/${fileVersionId}`,
+      { headers: { 'Authorization': `Bearer ${token}` } }
+    );
+    if (!response.ok) throw new Error('Failed to fetch domain version file');
+    return response.json();
+  },
+  
+  getDomainVersionFiles: async (tenantId, domainId, version, token) => {
+    const response = await fetch(`${BASE_URL}/domains/tenants/${tenantId}/domains/${domainId}/versions/${version}/files`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to fetch domain version files');
+    return response.json();
+  },
 };
 
 // File endpoints

@@ -1,34 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Flex, Select, Badge, Text } from '@chakra-ui/react';
 import { GitCommit } from 'lucide-react';
 
-const DomainVersionControl = ({ 
-  domainId, 
-  tenantId, 
-  token, 
-  domains, 
-  onVersionChange 
-}) => {
-  const [versions, setVersions] = useState([]);
-  const [currentVersion, setCurrentVersion] = useState(null);
-
-  useEffect(() => {
-    const fetchVersions = async () => {
-      try {
-        const versionsData = await domains.getVersions(tenantId, domainId, token);
-        console.log(versionsData);
-        setVersions(versionsData);
-        if (versionsData.length > 0) {
-          setCurrentVersion(versionsData[0]);
-          onVersionChange(versionsData[0]);
-        }
-      } catch (error) {
-        console.error('Failed to fetch versions:', error);
-      }
-    };
-    fetchVersions();
-  }, [domainId, tenantId, token]);
-
+const DomainVersionControl = ({ versions, selectedVersion, onVersionChange }) => {
   return (
     <Flex 
       bg="white" 
@@ -46,10 +20,9 @@ const DomainVersionControl = ({
       </Flex>
       <Select 
         w="48"
-        value={currentVersion?.version_number || ''}
+        value={selectedVersion?.version_number || ''}
         onChange={(e) => {
           const selected = versions.find(v => v.version_number === e.target.value);
-          setCurrentVersion(selected);
           onVersionChange(selected);
         }}
       >
@@ -59,12 +32,12 @@ const DomainVersionControl = ({
           </option>
         ))}
       </Select>
-      {currentVersion && (
+      {selectedVersion && (
         <Badge 
-          colorScheme={currentVersion.status === 'Draft' ? 'green' : 'gray'}
+          colorScheme={selectedVersion.status === 'Draft' ? 'green' : 'gray'}
           ml="2"
         >
-          {currentVersion.status}
+          {selectedVersion.status}
         </Badge>
       )}
     </Flex>

@@ -4,23 +4,41 @@ import SelectBox from './SelectBox';
 
 const PhaseControls = ({ 
   activePhase,
+  pipeline,
   files,
-  parsedFiles,
-  versions,
   selectedFile,
   selectedParsedFile,
-  selectedVersion,
   setSelectedFile,
   setSelectedParsedFile,
-  setSelectedVersion,
   handleStartParse,
   handleStartExtract,
+  handleStartValidate,
+  handleComplete,
   isLoading
 }) => {
-  const fileVersions = files.map(file => ({
-    value: file.version_number,
-    label: `File Version ${file.version_number}`
-  }));
+  if (pipeline?.stage === 'VALIDATE') {
+    return (
+      <Button
+        colorScheme="blue"
+        onClick={handleStartValidate}
+        isLoading={isLoading}
+      >
+        Start Validation
+      </Button>
+    );
+  }
+
+  if (pipeline?.stage === 'COMPLETED') {
+    return (
+      <Button
+        colorScheme="green"
+        onClick={handleComplete}
+        isLoading={isLoading}
+      >
+        Complete Pipeline
+      </Button>
+    );
+  }
 
   switch(activePhase) {
     case 'parse':
@@ -28,17 +46,18 @@ const PhaseControls = ({
         <Flex gap="4">
           <Box w="64">
             <SelectBox
-              label="File Version"
-              options={fileVersions}
-              value={selectedVersion}
-              onChange={setSelectedVersion}
+              label="Select File"
+              options={files}
+              value={selectedFile}
+              onChange={setSelectedFile}
               isLoading={isLoading}
             />
-            {selectedVersion && (
+            {selectedFile && (
               <Button
                 colorScheme="blue"
                 onClick={handleStartParse}
                 isLoading={isLoading}
+                mt="4"
               >
                 Start Parsing
               </Button>
@@ -46,13 +65,14 @@ const PhaseControls = ({
           </Box>
         </Flex>
       );
+
     case 'extract':
       return (
         <Flex gap="4">
           <Box w="64">
             <SelectBox
               label="Select Parsed File"
-              options={parsedFiles}
+              options={files}
               value={selectedParsedFile}
               onChange={setSelectedParsedFile}
               isLoading={isLoading}
@@ -62,6 +82,7 @@ const PhaseControls = ({
                 colorScheme="blue"
                 onClick={handleStartExtract}
                 isLoading={isLoading}
+                mt="4"
               >
                 Start Extraction
               </Button>
@@ -69,6 +90,7 @@ const PhaseControls = ({
           </Box>
         </Flex>
       );
+
     default:
       return null;
   }

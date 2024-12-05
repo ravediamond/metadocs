@@ -453,3 +453,69 @@ async def remove_file_from_version(
     except SQLAlchemyError as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{version}/files/{file_version_id}",
+    response_model=DomainVersionFileSchema,
+)
+def get_domain_version_file(
+    tenant_id: UUID,
+    domain_id: UUID,
+    version: int,
+    file_version_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get details of a specific file in a domain version."""
+    version_file = (
+        db.query(DomainVersionFile)
+        .filter(
+            DomainVersionFile.domain_id == domain_id,
+            DomainVersionFile.version_number == version,
+            DomainVersionFile.file_version_id == file_version_id,
+        )
+        .first()
+    )
+
+    if not version_file:
+        raise HTTPException(status_code=404, detail="File not found in version")
+
+    return version_file
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{version}/files",
+    response_model=List[DomainVersionFileSchema],
+)
+def list_domain_version_files(
+    tenant_id: UUID,
+    domain_id: UUID,
+    version: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all files associated with a domain version."""
+    domain_version = (
+        db.query(DomainVersion)
+        .filter(
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version_number == version,
+            DomainVersion.tenant_id == tenant_id,
+        )
+        .first()
+    )
+
+    if not domain_version:
+        raise HTTPException(status_code=404, detail="Domain version not found")
+
+    version_files = (
+        db.query(DomainVersionFile)
+        .filter(
+            DomainVersionFile.domain_id == domain_id,
+            DomainVersionFile.version_number == version,
+        )
+        .all()
+    )
+
+    return version_files
