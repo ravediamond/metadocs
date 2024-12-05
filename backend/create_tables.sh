@@ -118,10 +118,27 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       accepted_at TIMESTAMP
   );
 
+  CREATE TYPE pipeline_stage AS ENUM (
+    'NOT STARTED',
+    'PARSE',
+    'EXTRACT', 
+    'MERGE',
+    'GROUP',
+    'ONTOLOGY'
+  );
+
+  CREATE TYPE pipeline_status AS ENUM (
+      'UNINITIALIZED',
+      'RUNNING',
+      'COMPLETED',
+      'FAILED'
+  );
+
   CREATE TABLE processing_pipeline (
     pipeline_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE NOT NULL,
-    status VARCHAR(50),
+    stage pipeline_stage NOT NULL DEFAULT 'NOT STARTED',
+    status pipeline_status NOT NULL DEFAULT 'UNINITIALIZED',
     error VARCHAR(1024),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );

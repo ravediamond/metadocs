@@ -1,107 +1,63 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-    Box,
-    VStack,
-    Input,
-    Button,
-    Text,
-    Flex,
-    Avatar,
-    Divider,
+  Box,
+  Button,
+  Flex,
+  Icon,
+  Input,
+  Text,
 } from '@chakra-ui/react';
+import { MessageSquare, Settings } from 'lucide-react';
 
-const ChatPanel = ({ domainId, currentStage }) => {
-    const [messages, setMessages] = useState([]);
-    const [input, setInput] = useState('');
-    const messagesEndRef = useRef(null);
+const ChatPanel = () => {
+  const [message, setMessage] = useState('');
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
+  return (
+    <Flex w="96" bg="white" borderLeftWidth="1px" direction="column">
+      <Flex p="4" borderBottomWidth="1px" align="center" justify="space-between">
+        <Flex align="center" gap="2">
+          <Icon as={MessageSquare} boxSize="5" color="blue.500" />
+          <Text fontWeight="medium">Knowledge Assistant</Text>
+        </Flex>
+        <Icon
+          as={Settings}
+          boxSize="5"
+          color="gray.400"
+          cursor="pointer"
+          _hover={{ color: 'gray.600' }}
+        />
+      </Flex>
 
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
-
-    const handleSend = () => {
-        if (!input.trim()) return;
-
-        const newMessage = {
-            id: Date.now(),
-            text: input,
-            sender: 'user',
-            timestamp: new Date(),
-        };
-
-        setMessages([...messages, newMessage]);
-
-        // Simulate AI response
-        setTimeout(() => {
-            const aiResponse = {
-                id: Date.now() + 1,
-                text: `Processing response for ${currentStage.name}...`,
-                sender: 'ai',
-                timestamp: new Date(),
-            };
-            setMessages(prev => [...prev, aiResponse]);
-        }, 1000);
-
-        setInput('');
-    };
-
-    return (
-        <Box
-            bg="white"
-            borderRadius="lg"
-            shadow="sm"
-            h="calc(100vh - 200px)"
-            position="relative"
-        >
-            <Box p={4} borderBottom="1px" borderColor="gray.200">
-                <Text fontWeight="bold">Processing Assistant</Text>
-            </Box>
-
-            <VStack
-                spacing={4}
-                p={4}
-                overflowY="auto"
-                h="calc(100% - 140px)"
-                align="stretch"
-            >
-                {messages.map((message) => (
-                    <Flex
-                        key={message.id}
-                        justify={message.sender === 'user' ? 'flex-end' : 'flex-start'}
-                    >
-                        <Box
-                            maxW="80%"
-                            bg={message.sender === 'user' ? 'blue.500' : 'gray.100'}
-                            color={message.sender === 'user' ? 'white' : 'black'}
-                            borderRadius="lg"
-                            p={3}
-                        >
-                            <Text>{message.text}</Text>
-                        </Box>
-                    </Flex>
-                ))}
-                <div ref={messagesEndRef} />
-            </VStack>
-
-            <Box p={4} position="absolute" bottom={0} left={0} right={0}>
-                <Flex>
-                    <Input
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        placeholder="Ask a question..."
-                        mr={2}
-                    />
-                    <Button colorScheme="blue" onClick={handleSend}>
-                        Send
-                    </Button>
-                </Flex>
-            </Box>
+      <Box flex="1" overflowY="auto" p="4" spacing="4">
+        <Box bg="blue.50" rounded="lg" p="3" ml="8">
+          <Text fontSize="sm">
+            I can help you with:
+            - Creating new versions
+            - Modifying prompts
+            - Analyzing results
+            - Starting next phases
+            
+            What would you like to do?
+          </Text>
         </Box>
-    );
+      </Box>
+
+      <Box p="4" borderTopWidth="1px">
+        <Flex gap="2">
+          <Input
+            placeholder="Type your message..."
+            p="3"
+            focusBorderColor="blue.500"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+          />
+          <Button colorScheme="blue">
+            Send
+          </Button>
+        </Flex>
+      </Box>
+    </Flex>
+  );
 };
 
 export default ChatPanel;

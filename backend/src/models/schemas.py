@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
-from .models import DomainVersionStatus
+from .models import DomainVersionStatus, PipelineStage
 
 
 # Tenant Schemas
@@ -330,6 +330,7 @@ class ProcessingStatus(BaseModel):
 class ProcessPipelineSchema(BaseModel):
     processing_id: UUID
     domain_id: UUID
+    stage: PipelineStage
     status: str
     error: Optional[str]
     merged_entities_path: Optional[str]

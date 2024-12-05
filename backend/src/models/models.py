@@ -441,6 +441,22 @@ class DomainVersionFile(Base):
     )
 
 
+class PipelineStage(str, Enum):
+    NOT_STARTED = "NOT STARTED"
+    PARSE = "PARSE"
+    EXTRACT = "EXTRACT"
+    MERGE = "MERGE"
+    GROUP = "GROUP"
+    ONTOLOGY = "ONTOLOGY"
+
+
+class PipelineStatus(str, Enum):
+    UNINITIALIZED = "UNINITIALIZED"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class ProcessingPipeline(Base):
     __tablename__ = "processing_pipeline"
 
@@ -452,7 +468,16 @@ class ProcessingPipeline(Base):
         ForeignKey("domains.domain_id", ondelete="CASCADE"),
         nullable=False,
     )
-    status = Column(String(50))
+    stage = Column(
+        SQLAlchemyEnum(PipelineStage, name="pipeline_stage"),
+        nullable=False,
+        default=PipelineStage.NOT_STARTED,
+    )
+    status = Column(
+        SQLAlchemyEnum(PipelineStatus, name="pipeline_status"),
+        nullable=False,
+        default=PipelineStatus.UNINITIALIZED,
+    )
     error = Column(String(1024))
     created_at = Column(TIMESTAMP, default=func.now())
 

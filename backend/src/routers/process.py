@@ -19,6 +19,8 @@ from ..models.models import (
     DomainVersion,
     DomainVersionStatus,
     FileVersion,
+    PipelineStatus,
+    PipelineStage,
 )
 from ..models.schemas import (
     ProcessingStatus,
@@ -130,6 +132,11 @@ async def process_parse(
     """Process a single file version through PDF parsing stage"""
     try:
 
+        pipeline = parse_version.pipeline
+        pipeline.status = PipelineStatus.RUNNING
+        pipeline.stage = PipelineStage.PARSE
+        db.commit()
+
         # Process PDF with base prompt from parse version
         parse_processor = ParseProcessor(file_version, parse_version, config)
         parse_result = parse_processor.process()
@@ -137,11 +144,13 @@ async def process_parse(
         if not parse_result.success:
             parse_version.status = "failed"
             parse_version.error = parse_result.error
+            pipeline.status = PipelineStatus.FAILED
             db.commit()
             return False
 
         # Update parse version with output information
         parse_version.status = parse_processor.status
+        pipeline.status = PipelineStatus.FAILED
         db.commit()
         return True
 
@@ -163,6 +172,12 @@ async def process_extract(
 ) -> bool:
     """Process a single file through entity extraction stage"""
     try:
+
+        pipeline = extract_version.pipeline
+        pipeline.status = PipelineStatus.RUNNING
+        pipeline.stage = PipelineStage.EXTRACT
+        db.commit()
+
         # Process entities with base prompt from extract version
         extract_processor = ExtractProcessor(parse_version, extract_version, config)
         extract_result = extract_processor.process()
@@ -170,6 +185,7 @@ async def process_extract(
         if not extract_result.success:
             extract_version.status = extract_result.status
             extract_version.error = extract_result.error
+            pipeline.status = PipelineStatus.FAILED
             db.commit()
             return False
 
@@ -184,6 +200,7 @@ async def process_extract(
         )
         extract_version.status = "failed"
         extract_version.error = str(e)
+        pipeline.status = PipelineStatus.FAILED
         db.commit()
         return False
 
@@ -196,6 +213,12 @@ async def process_merge(
 ) -> bool:
     """process multiple extract version through merging stage"""
     try:
+
+        pipeline = merge_version.pipeline
+        pipeline.status = PipelineStatus.RUNNING
+        pipeline.stage = PipelineStage.MERGE
+        db.commit()
+
         # Process entities with base prompt from extract version
         merge_processor = MergeProcessor(extract_versions, merge_version, config)
         merge_result = merge_processor.process()
@@ -203,6 +226,7 @@ async def process_merge(
         if not merge_result.success:
             merge_version.status = merge_result.status
             merge_version.error = merge_result.error
+            pipeline.status = PipelineStatus.FAILED
             db.commit()
             return False
 
@@ -217,6 +241,7 @@ async def process_merge(
         )
         merge_version.status = "failed"
         merge_version.error = str(e)
+        pipeline.status = PipelineStatus.FAILED
         db.commit()
         return False
 
@@ -229,6 +254,12 @@ async def process_group(
 ) -> bool:
     """Process entity grouping stage"""
     try:
+
+        pipeline = group_version.pipeline
+        pipeline.status = PipelineStatus.RUNNING
+        pipeline.stage = PipelineStage.GROUP
+        db.commit()
+
         # Process entities with base prompt from extract version
         group_processor = GroupProcessor(merge_version, group_version, config)
         group_result = group_processor.process()
@@ -236,6 +267,7 @@ async def process_group(
         if not group_result.success:
             group_version.status = group_result.status
             group_version.error = group_result.error
+            pipeline.status = PipelineStatus.FAILED
             db.commit()
             return False
 
@@ -250,6 +282,7 @@ async def process_group(
         )
         group_version.status = "failed"
         group_version.error = str(e)
+        pipeline.status = PipelineStatus.FAILED
         db.commit()
         return False
 
@@ -263,6 +296,12 @@ async def process_ontology(
 ) -> bool:
     """Process ontology generation stage"""
     try:
+
+        pipeline = ontology_version.pipeline
+        pipeline.status = PipelineStatus.RUNNING
+        pipeline.stage = PipelineStage.ONTOLOGY
+        db.commit()
+
         # Process entities with base prompt from extract version
         ontology_processor = OntologyProcessor(
             merge_version, group_version, ontology_version, config
@@ -272,6 +311,7 @@ async def process_ontology(
         if not ontology_result.success:
             ontology_version.status = ontology_result.status
             ontology_version.error = ontology_result.error
+            pipeline.status = PipelineStatus.FAILED
             db.commit()
             return False
 
@@ -286,6 +326,7 @@ async def process_ontology(
         )
         ontology_version.status = "failed"
         ontology_version.error = str(e)
+        pipeline.status = PipelineStatus.FAILED
         db.commit()
         return False
 
