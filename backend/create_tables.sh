@@ -119,7 +119,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   );
 
   CREATE TYPE pipeline_stage AS ENUM (
-    'NOT STARTED',
+    'NOT_STARTED',
     'PARSE',
     'EXTRACT', 
     'MERGE',
@@ -139,7 +139,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   CREATE TABLE processing_pipeline (
     pipeline_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     domain_id UUID REFERENCES domains(domain_id) ON DELETE CASCADE NOT NULL,
-    stage pipeline_stage NOT NULL DEFAULT 'NOT STARTED',
+    stage pipeline_stage NOT NULL DEFAULT 'NOT_STARTED',
     status pipeline_status NOT NULL DEFAULT 'UNINITIALIZED',
     error VARCHAR(1024),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -208,7 +208,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       system_prompt TEXT NOT NULL,
       readability_prompt TEXT NOT NULL,
       convert_prompt TEXT NOT NULL,
-      custom_instructions TEXT[] NOT NULL,
+      custom_instructions TEXT[],
       input_file_version_id UUID REFERENCES file_versions(file_version_id) ON DELETE CASCADE NOT NULL,
       status VARCHAR(50)[] NOT NULL,
       output_dir VARCHAR(1024)[] NOT NULL,
@@ -226,7 +226,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       initial_entity_extraction_prompt TEXT NOT NULL,
       iterative_extract_entities_prompt TEXT NOT NULL,
       entity_details_prompt TEXT NOT NULL,
-      custom_instructions TEXT[] NOT NULL,
+      custom_instructions TEXT[],
       input_extraction_version_id UUID REFERENCES parse_versions(version_id) ON DELETE CASCADE NOT NULL,
       status VARCHAR(50)[] NOT NULL,
       output_dir VARCHAR(1024)[] NOT NULL,
@@ -243,7 +243,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       system_prompt TEXT NOT NULL,
       entity_details_prompt TEXT NOT NULL,
       entity_merge_prompt TEXT NOT NULL,
-      custom_instructions TEXT[] NOT NULL,
+      custom_instructions TEXT[],
       input_extract_version_ids UUID[] NOT NULL,
       output_dir VARCHAR(1024)[] NOT NULL,
       output_path VARCHAR(1024),
@@ -259,7 +259,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       version_number INTEGER NOT NULL,
       system_prompt TEXT NOT NULL,
       entity_group_prompt TEXT NOT NULL,
-      custom_instructions TEXT[] NOT NULL,
+      custom_instructions TEXT[],
       input_merge_version_id UUID REFERENCES merge_versions(version_id) ON DELETE CASCADE NOT NULL,
       output_dir VARCHAR(1024)[] NOT NULL,
       output_path VARCHAR(1024),
@@ -275,7 +275,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       version_number INTEGER NOT NULL,
       system_prompt TEXT NOT NULL,
       ontology_prompt TEXT NOT NULL,
-      custom_instructions TEXT[] NOT NULL,
+      custom_instructions TEXT[],
       input_group_version_id UUID REFERENCES group_versions(version_id) ON DELETE CASCADE NOT NULL,
       input_merge_version_id UUID REFERENCES merge_versions(version_id) ON DELETE CASCADE NOT NULL,
       output_dir VARCHAR(1024)[] NOT NULL,

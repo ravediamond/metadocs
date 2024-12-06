@@ -364,7 +364,7 @@ async def start_parse_processing(
         .filter(
             Domain.tenant_id == tenant_id,
             DomainVersion.domain_id == domain_id,
-            DomainVersion.version == domain_version,
+            DomainVersion.version_number == domain_version,
         )
         .first()
     )
@@ -377,6 +377,8 @@ async def start_parse_processing(
             status_code=400,
             detail="Can only parse files for domain versions in DRAFT status",
         )
+
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
 
     # Check file version exists
     file_version = (
@@ -420,9 +422,9 @@ async def start_parse_processing(
     output_dir = os.path.join(
         config.get("processing_dir", "processing_output"),
         str(pipeline.domain_id),
-        str(pipeline.domain_version.version),
+        str(pipeline.domain_version.version_number),
         "parse",
-        str(parse_version.version),
+        str(parse_version.version_number),
         str(parse_version.input_file_version_id),
     )
     parse_version.output_dir = output_dir
@@ -430,7 +432,6 @@ async def start_parse_processing(
     db.commit()
 
     # Start processing
-    config = ConfigManager(db, str(tenant_id), str(domain_id))
     background_tasks.add_task(process_parse, file_version, parse_version, config, db)
 
     return {
@@ -460,7 +461,7 @@ async def start_extract_processing(
         .filter(
             Domain.tenant_id == tenant_id,
             DomainVersion.domain_id == domain_id,
-            DomainVersion.version == domain_version,
+            DomainVersion.version_number == domain_version,
         )
         .first()
     )
@@ -473,6 +474,8 @@ async def start_extract_processing(
             status_code=400,
             detail="Can only extract entities for domain versions in DRAFT status",
         )
+
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
 
     # Check parse version exists and completed
     parse_version = (
@@ -516,16 +519,15 @@ async def start_extract_processing(
     output_dir = os.path.join(
         config.get("processing_dir", "processing_output"),
         str(pipeline.domain_id),
-        str(pipeline.domain_version.version),
+        str(pipeline.domain_version.version_number),
         "extract",
-        str(extract_version.version),
+        str(extract_version.version_number),
     )
     extract_version.output_dir = output_dir
     extract_version.output_path = f"{output_dir}/output.json"
     db.commit()
 
     # Start processing
-    config = ConfigManager(db, str(tenant_id), str(domain_id))
     background_tasks.add_task(
         process_extract, parse_version, extract_version, config, db
     )
@@ -557,7 +559,7 @@ async def start_merge_processing(
         .filter(
             Domain.tenant_id == tenant_id,
             DomainVersion.domain_id == domain_id,
-            DomainVersion.version == domain_version,
+            DomainVersion.version_number == domain_version,
         )
         .first()
     )
@@ -595,6 +597,8 @@ async def start_merge_processing(
             detail="One or more extract versions not found or not completed",
         )
 
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
+
     # Create merge version
     merge_version = MergeVersion(
         pipeline_id=pipeline.pipeline_id,
@@ -613,16 +617,15 @@ async def start_merge_processing(
     output_dir = os.path.join(
         config.get("processing_dir", "processing_output"),
         str(pipeline.domain_id),
-        str(pipeline.domain_version.version),
+        str(pipeline.domain_version.version_number),
         "merge",
-        str(merge_version.version),
+        str(merge_version.version_number),
     )
     merge_version.output_dir = output_dir
     merge_version.output_path = f"{output_dir}/output.json"
     db.commit()
 
     # Start processing
-    config = ConfigManager(db, str(tenant_id), str(domain_id))
     background_tasks.add_task(
         process_merge, extract_versions, merge_version, config, db
     )
@@ -654,7 +657,7 @@ async def start_group_processing(
         .filter(
             Domain.tenant_id == tenant_id,
             DomainVersion.domain_id == domain_id,
-            DomainVersion.version == domain_version,
+            DomainVersion.version_number == domain_version,
         )
         .first()
     )
@@ -683,6 +686,8 @@ async def start_group_processing(
             status_code=404, detail="Merge version not found or not completed"
         )
 
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
+
     # Create extract version
     group_version = GroupVersion(
         pipeline_id=pipeline.pipeline_id,
@@ -700,9 +705,9 @@ async def start_group_processing(
     output_dir = os.path.join(
         config.get("processing_dir", "processing_output"),
         str(pipeline.domain_id),
-        str(pipeline.domain_version.version),
+        str(pipeline.domain_version.version_number),
         "group",
-        str(group_version.version),
+        str(group_version.version_number),
     )
     group_version.output_dir = output_dir
     group_version.output_path = f"{output_dir}/output.json"
@@ -717,7 +722,6 @@ async def start_group_processing(
         )
 
     # Start processing
-    config = ConfigManager(db, str(tenant_id), str(domain_id))
     background_tasks.add_task(process_merge, merge_version, group_version, config, db)
 
     return {
@@ -746,7 +750,7 @@ async def start_ontology_processing(
         .filter(
             Domain.tenant_id == tenant_id,
             DomainVersion.domain_id == domain_id,
-            DomainVersion.version == domain_version,
+            DomainVersion.version_number == domain_version,
         )
         .first()
     )
@@ -774,6 +778,8 @@ async def start_ontology_processing(
         raise HTTPException(
             status_code=404, detail="Group version not found or not completed"
         )
+
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
 
     # Check merge version exists and completed
     merge_version = (
@@ -808,9 +814,9 @@ async def start_ontology_processing(
     output_dir = os.path.join(
         config.get("processing_dir", "processing_output"),
         str(pipeline.domain_id),
-        str(pipeline.domain_version.version),
+        str(pipeline.domain_version.version_number),
         "ontology",
-        str(ontology_version.version),
+        str(ontology_version.version_number),
     )
     ontology_version.output_dir = output_dir
     ontology_version.output_path = f"{output_dir}/output.json"
@@ -825,7 +831,6 @@ async def start_ontology_processing(
         )
 
     # Start processing
-    config = ConfigManager(db, str(tenant_id), str(domain_id))
     background_tasks.add_task(
         process_ontology,
         merge_version,
@@ -1174,7 +1179,7 @@ async def get_stage_prompts(
         .filter(
             Domain.tenant_id == tenant_id,
             DomainVersion.domain_id == domain_id,
-            DomainVersion.version == domain_version,
+            DomainVersion.version_number == domain_version,
         )
         .first()
     )
@@ -1235,7 +1240,7 @@ async def update_stage_prompts(
         .filter(
             Domain.tenant_id == tenant_id,
             DomainVersion.domain_id == domain_id,
-            DomainVersion.version == domain_version,
+            DomainVersion.version_number == domain_version,
         )
         .first()
     )
@@ -1297,7 +1302,7 @@ async def start_validate_stage(
         .filter(
             Domain.tenant_id == tenant_id,
             DomainVersion.domain_id == domain_id,
-            DomainVersion.version == domain_version,
+            DomainVersion.version_number == domain_version,
         )
         .first()
     )
@@ -1339,7 +1344,7 @@ async def complete_pipeline(
         .filter(
             Domain.tenant_id == tenant_id,
             DomainVersion.domain_id == domain_id,
-            DomainVersion.version == domain_version,
+            DomainVersion.version_number == domain_version,
         )
         .first()
     )

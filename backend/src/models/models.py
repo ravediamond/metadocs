@@ -441,7 +441,7 @@ class DomainVersionFile(Base):
 
 
 class PipelineStage(str, Enum):
-    NOT_STARTED = "NOT STARTED"
+    NOT_STARTED = "NOT_STARTED"
     PARSE = "PARSE"
     EXTRACT = "EXTRACT"
     MERGE = "MERGE"
