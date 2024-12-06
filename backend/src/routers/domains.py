@@ -15,6 +15,7 @@ from ..models.models import (
     User,
     File,
     DomainVersionFile,
+    FileVersion,
 )
 from ..models.schemas import (
     Domain as DomainSchema,
@@ -410,7 +411,6 @@ async def add_files_to_version(
             domain_id=domain_id,
             version_number=version,
             file_version_id=file_version_id,
-            status="PENDING",
         )
         db.add(version_file)
         new_version_files.append(version_file)
@@ -469,7 +469,11 @@ def get_domain_version_file(
 ):
     """Get details of a specific file in a domain version."""
     version_file = (
-        db.query(DomainVersionFile)
+        db.query(DomainVersionFile, FileVersion.filename)
+        .join(
+            FileVersion,
+            DomainVersionFile.file_version_id == FileVersion.file_version_id,
+        )
         .filter(
             DomainVersionFile.domain_id == domain_id,
             DomainVersionFile.version_number == version,
@@ -481,7 +485,17 @@ def get_domain_version_file(
     if not version_file:
         raise HTTPException(status_code=404, detail="File not found in version")
 
-    return version_file
+    # Create a dictionary with all fields from DomainVersionFile
+    result = {
+        "domain_id": version_file[0].domain_id,
+        "version_number": version_file[0].version_number,
+        "file_version_id": version_file[0].file_version_id,
+        "error": version_file[0].error,
+        "created_at": version_file[0].created_at,
+        "filename": version_file[1],
+    }
+
+    return result
 
 
 @router.get(
@@ -510,7 +524,11 @@ def list_domain_version_files(
         raise HTTPException(status_code=404, detail="Domain version not found")
 
     version_files = (
-        db.query(DomainVersionFile)
+        db.query(DomainVersionFile, FileVersion.filename)
+        .join(
+            FileVersion,
+            DomainVersionFile.file_version_id == FileVersion.file_version_id,
+        )
         .filter(
             DomainVersionFile.domain_id == domain_id,
             DomainVersionFile.version_number == version,
@@ -518,4 +536,16 @@ def list_domain_version_files(
         .all()
     )
 
-    return version_files
+    results = []
+    for vf in version_files:
+        result = {
+            "domain_id": vf[0].domain_id,
+            "version_number": vf[0].version_number,
+            "file_version_id": vf[0].file_version_id,
+            "error": vf[0].error,
+            "created_at": vf[0].created_at,
+            "filename": vf[1],
+        }
+        results.append(result)
+
+    return results

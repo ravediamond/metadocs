@@ -420,7 +420,6 @@ class DomainVersionFile(Base):
         ForeignKey("file_versions.file_version_id", ondelete="CASCADE"),
         primary_key=True,
     )
-    status = Column(String(50))
     error = Column(String(1024))
     created_at = Column(TIMESTAMP, default=func.now())
 

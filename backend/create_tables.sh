@@ -191,7 +191,6 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       domain_id UUID NOT NULL,
       version_number INT NOT NULL,
       file_version_id UUID REFERENCES file_versions(file_version_id) ON DELETE CASCADE NOT NULL,
-      status VARCHAR(50),
       error VARCHAR(1024),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (domain_id, version_number, file_version_id),

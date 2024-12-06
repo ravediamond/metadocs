@@ -5,7 +5,6 @@ import {
     Heading,
     VStack,
     Text,
-    Badge,
     Button,
     useToast,
     Tabs,
@@ -13,8 +12,6 @@ import {
     TabPanels,
     Tab,
     TabPanel,
-    List,
-    ListItem,
     Flex,
     Spinner,
     Alert,
@@ -31,12 +28,7 @@ import {
     Tbody,
     Tr,
     Th,
-    Td,
-    Input,
-    HStack,
-    Progress,
-    IconButton,
-    Checkbox
+    Td
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
@@ -147,19 +139,6 @@ const VersionDetailPage = () => {
         );
     }
 
-    const getStatusColor = (status) => {
-        switch (status) {
-            case 'DRAFT': return 'gray';
-            case 'TO_BE_VALIDATED': return 'yellow';
-            case 'PUBLISHED': return 'green';
-            case 'PENDING_SUSPENSION': return 'orange';
-            case 'SUSPENDED': return 'red';
-            case 'PENDING_DELETE': return 'red';
-            case 'DELETED': return 'gray';
-            default: return 'gray';
-        }
-    };
-
     return (
         <Box minH="100vh" bg="gray.50" py={8}>
             <Container maxW="container.lg">
@@ -180,13 +159,6 @@ const VersionDetailPage = () => {
                     </Flex>
 
                     <Box bg="white" shadow="sm" borderRadius="lg" p={6}>
-                        <Flex justify="space-between" align="center" mb={6}>
-                            <Text fontSize="xl" fontWeight="bold">Status</Text>
-                            <Badge colorScheme={getStatusColor(version?.status)} p={2} fontSize="md">
-                                {version?.status}
-                            </Badge>
-                        </Flex>
-
                         <Tabs>
                             <TabList>
                                 <Tab>Files</Tab>
@@ -195,15 +167,15 @@ const VersionDetailPage = () => {
                             </TabList>
 
                             <TabPanels>
-                            <TabPanel>
-                                <FileSelectionTab
-                                    version={version}
-                                    token={token}
-                                    currentTenant={currentTenant}
-                                    domain_id={domain_id}
-                                    onFilesUpdate={fetchVersionDetails}
-                                />
-                            </TabPanel>
+                                <TabPanel>
+                                    <FileSelectionTab
+                                        version={version}
+                                        token={token}
+                                        currentTenant={currentTenant}
+                                        domain_id={domain_id}
+                                        onFilesUpdate={fetchVersionDetails}
+                                    />
+                                </TabPanel>
 
                                 <TabPanel>
                                     <VStack align="stretch" spacing={4}>
@@ -246,7 +218,6 @@ const VersionDetailPage = () => {
                             <Thead>
                                 <Tr>
                                     <Th>Version</Th>
-                                    <Th>Status</Th>
                                     <Th>Created</Th>
                                     <Th>Action</Th>
                                 </Tr>
@@ -255,11 +226,6 @@ const VersionDetailPage = () => {
                                 {versions.map((v) => (
                                     <Tr key={v.version}>
                                         <Td>{v.version}</Td>
-                                        <Td>
-                                            <Badge colorScheme={getStatusColor(v.status)}>
-                                                {v.status}
-                                            </Badge>
-                                        </Td>
                                         <Td>{new Date(v.created_at).toLocaleDateString()}</Td>
                                         <Td>
                                             <Button

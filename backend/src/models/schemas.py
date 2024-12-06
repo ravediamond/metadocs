@@ -291,9 +291,9 @@ class DomainVersionFile(BaseModel):
     domain_id: UUID
     version_number: int
     file_version_id: UUID
-    status: Optional[str]
-    error: Optional[str]
+    error: Optional[str] = None
     created_at: datetime
+    filename: Optional[str] = None
 
     class Config:
         from_attributes = True

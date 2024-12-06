@@ -44,15 +44,17 @@ const ProcessingWorkspace = () => {
             currentTenant,
             domain_id,
             selectedVersion.version_number,
-            token
+            token,
           );
-        console.log("RRRRRR");
-        console.log(files);
-          
-          setDomainFiles(files.map(file => ({
+
+          const mappedFiles = files.map(file => ({
             value: file.file_version_id,
-            label: file.file_name
-          })));
+            label: file.filename
+          }));
+
+          console.log("Mapped files:", mappedFiles);
+          
+          setDomainFiles(mappedFiles);
         } catch (error) {
           toast({
             title: 'Error fetching domain files',
