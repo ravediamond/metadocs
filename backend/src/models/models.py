@@ -542,10 +542,10 @@ class ParseVersion(Base):
         ForeignKey("file_versions.file_version_id", ondelete="CASCADE"),
         nullable=False,
     )
-    status = Column(ARRAY(String(50)), nullable=False)
-    output_dir = Column(ARRAY(String(1024)), nullable=False)
-    output_path = Column(ARRAY(String(1024)), nullable=False)
-    errors = Column(ARRAY(String(1024)))
+    status = Column(String(50), nullable=False)
+    output_dir = Column(String(1024), nullable=False)
+    output_path = Column(String(1024), nullable=False)
+    errors = Column(String(1024))
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationship
@@ -576,10 +576,10 @@ class ExtractVersion(Base):
         ForeignKey("parse_versions.version_id", ondelete="CASCADE"),
         nullable=False,
     )
-    status = Column(ARRAY(String(50)), nullable=False)
-    output_dir = Column(ARRAY(String(1024)), nullable=False)
-    output_path = Column(ARRAY(String(1024)), nullable=False)
-    errors = Column(ARRAY(String(1024)))
+    status = Column(String(50), nullable=False)
+    output_dir = Column(String(1024), nullable=False)
+    output_path = Column(String(1024), nullable=False)
+    errors = Column(String(1024))
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationship
@@ -604,7 +604,7 @@ class MergeVersion(Base):
     entity_merge_prompt = Column(Text, nullable=False)
     custom_instructions = Column(ARRAY(Text), nullable=False)
     input_extract_version_ids = Column(ARRAY(UUIDType(as_uuid=True)), nullable=False)
-    output_dir = Column(ARRAY(String(1024)), nullable=False)
+    output_dir = Column(String(1024), nullable=False)
     output_path = Column(String(1024))
     status = Column(String(50))
     error = Column(String(1024))
@@ -637,7 +637,7 @@ class GroupVersion(Base):
         ForeignKey("merge_versions.version_id", ondelete="CASCADE"),
         nullable=False,
     )
-    output_dir = Column(ARRAY(String(1024)), nullable=False)
+    output_dir = Column(String(1024), nullable=False)
     output_path = Column(String(1024))
     status = Column(String(50))
     error = Column(String(1024))
@@ -675,7 +675,7 @@ class OntologyVersion(Base):
         ForeignKey("merge_versions.version_id", ondelete="CASCADE"),
         nullable=False,
     )
-    output_dir = Column(ARRAY(String(1024)), nullable=False)
+    output_dir = Column(String(1024), nullable=False)
     output_path = Column(String(1024))
     status = Column(String(50))
     error = Column(String(1024))

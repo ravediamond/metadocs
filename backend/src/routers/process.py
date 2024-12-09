@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Optional
 import logging
 import os
+import sys
 
 
 from ..models.models import (
@@ -60,6 +61,12 @@ from ..processors.group.processor import GroupProcessor
 from ..processors.ontology.processor import OntologyProcessor
 from ..processors.merge.processor import MergeProcessor
 from ..core.config import ConfigManager, FILE_SYSTEM
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -134,56 +141,77 @@ def get_next_version_number(db: Session, pipeline_id: UUID, version_model) -> in
     return (latest_version.version_number + 1) if latest_version else 1
 
 
-# Processing Functions
 async def process_parse(
-    file_version: FileVersion,
-    parse_version: ParseVersion,
+    file_version_id: UUID,
+    parse_version_id: UUID,
     config: ConfigManager,
     db: Session,
 ) -> bool:
-    """Process a single file version through PDF parsing stage"""
     try:
+        logger.info(f"Starting parse for file version {file_version_id}")
+
+        file_version = (
+            db.query(FileVersion)
+            .filter(FileVersion.file_version_id == file_version_id)
+            .first()
+        )
+        parse_version = (
+            db.query(ParseVersion)
+            .filter(ParseVersion.version_id == parse_version_id)
+            .first()
+        )
 
         pipeline = parse_version.pipeline
         pipeline.status = PipelineStatus.RUNNING
         pipeline.stage = PipelineStage.PARSE
         db.commit()
 
-        # Process PDF with base prompt from parse version
         parse_processor = ParseProcessor(file_version, parse_version, config)
         parse_result = parse_processor.process()
 
         if not parse_result.success:
+            logger.error(f"Parse failed: {parse_result.error}")
             parse_version.status = "failed"
             parse_version.error = parse_result.error
             pipeline.status = PipelineStatus.FAILED
             db.commit()
             return False
 
-        # Update parse version with output information
-        parse_version.status = parse_processor.status
-        pipeline.status = PipelineStatus.FAILED
+        parse_version.status = "completed"
+        pipeline.status = PipelineStatus.COMPLETED
         db.commit()
+        logger.info("Parse completed successfully")
         return True
 
     except Exception as e:
-        logger.error(
-            f"Error in parse processing for file version {file_version.file_version_id}: {str(e)}"
-        )
+        logger.error(f"Error in parse processing: {str(e)}", exc_info=True)
         parse_version.status = "failed"
         parse_version.error = str(e)
+        pipeline.status = PipelineStatus.FAILED
         db.commit()
         return False
 
 
 async def process_extract(
-    parse_version: ParseVersion,
-    extract_version: ExtractVersion,
+    parse_version_id: UUID,
+    extract_version_id: UUID,
     config: ConfigManager,
     db: Session,
 ) -> bool:
     """Process a single file through entity extraction stage"""
     try:
+        logger.info(f"Starting extract for parse version {parse_version_id}")
+
+        parse_version = (
+            db.query(ParseVersion)
+            .filter(ParseVersion.version_id == parse_version_id)
+            .first()
+        )
+        extract_version = (
+            db.query(ExtractVersion)
+            .filter(ExtractVersion.version_id == extract_version_id)
+            .first()
+        )
 
         pipeline = extract_version.pipeline
         pipeline.status = PipelineStatus.RUNNING
@@ -218,13 +246,25 @@ async def process_extract(
 
 
 async def process_merge(
-    extract_versions: List[ExtractVersion],
-    merge_version: MergeVersion,
+    extract_version_ids: List[UUID],
+    merge_version_id: UUID,
     config: ConfigManager,
     db: Session,
 ) -> bool:
     """process multiple extract version through merging stage"""
     try:
+        logger.info(f"Starting merge for {len(extract_versions)} extract versions")
+
+        merge_version = (
+            db.query(MergeVersion)
+            .filter(MergeVersion.version_id == merge_version_id)
+            .first()
+        )
+        extract_versions = (
+            db.query(ExtractVersion)
+            .filter(ExtractVersion.version_id.in_(extract_version_ids))
+            .all()
+        )
 
         pipeline = merge_version.pipeline
         pipeline.status = PipelineStatus.RUNNING
@@ -259,13 +299,25 @@ async def process_merge(
 
 
 async def process_group(
-    merge_version: MergeVersion,
-    group_version: GroupVersion,
+    merge_version_id: UUID,
+    group_version_id: UUID,
     config: ConfigManager,
     db: Session,
 ) -> bool:
     """Process entity grouping stage"""
     try:
+        logger.info(f"Starting group processing for merge version {merge_version_id}")
+
+        merge_version = (
+            db.query(MergeVersion)
+            .filter(MergeVersion.version_id == merge_version_id)
+            .first()
+        )
+        group_version = (
+            db.query(GroupVersion)
+            .filter(GroupVersion.version_id == group_version_id)
+            .first()
+        )
 
         pipeline = group_version.pipeline
         pipeline.status = PipelineStatus.RUNNING
@@ -300,14 +352,33 @@ async def process_group(
 
 
 async def process_ontology(
-    merge_version: MergeVersion,
-    group_version: GroupVersion,
-    ontology_version: GroupVersion,
+    merge_version_id: UUID,
+    group_version_id: UUID,
+    ontology_version_id: UUID,
     config: ConfigManager,
     db: Session,
 ) -> bool:
     """Process ontology generation stage"""
     try:
+        logger.info(
+            f"Starting ontology for group version {group_version_id} and ontology version {ontology_version_id}"
+        )
+
+        merge_version = (
+            db.query(MergeVersion)
+            .filter(MergeVersion.version_id == merge_version_id)
+            .first()
+        )
+        group_version = (
+            db.query(GroupVersion)
+            .filter(GroupVersion.version_id == group_version_id)
+            .first()
+        )
+        ontology_version = (
+            db.query(OntologyVersion)
+            .filter(OntologyVersion.version_id == ontology_version_id)
+            .first()
+        )
 
         pipeline = ontology_version.pipeline
         pipeline.status = PipelineStatus.RUNNING
@@ -432,7 +503,13 @@ async def start_parse_processing(
     db.commit()
 
     # Start processing
-    background_tasks.add_task(process_parse, file_version, parse_version, config, db)
+    background_tasks.add_task(
+        process_parse,
+        file_version_id=file_version.file_version_id,
+        parse_version_id=parse_version.version_id,
+        config=config,
+        db=db,
+    )
 
     return {
         "message": "PDF parsing started",
@@ -529,7 +606,11 @@ async def start_extract_processing(
 
     # Start processing
     background_tasks.add_task(
-        process_extract, parse_version, extract_version, config, db
+        process_extract,
+        parse_version.version_id,
+        extract_version.version_id,
+        config,
+        db,
     )
 
     return {
@@ -627,7 +708,11 @@ async def start_merge_processing(
 
     # Start processing
     background_tasks.add_task(
-        process_merge, extract_versions, merge_version, config, db
+        process_merge,
+        merge_version_id=merge_version.version_id,
+        extract_version_ids=merge_request.extract_version_ids,
+        config=config,
+        db=db,
     )
 
     return {
@@ -722,7 +807,9 @@ async def start_group_processing(
         )
 
     # Start processing
-    background_tasks.add_task(process_merge, merge_version, group_version, config, db)
+    background_tasks.add_task(
+        process_merge, merge_version.version_id, group_version.version_id, config, db
+    )
 
     return {
         "message": "Entity extraction started",
@@ -832,10 +919,10 @@ async def start_ontology_processing(
 
     # Start processing
     background_tasks.add_task(
-        process_ontology,
-        merge_version,
-        group_version,
-        ontology_version,
+        ontology_version.version_id,
+        merge_version.version_id,
+        group_version.version_id,
+        ontology_version.version_id,
         config,
         db,
     )

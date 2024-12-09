@@ -357,65 +357,101 @@ class ProcessingVersionBase(BaseModel):
 class ParseVersion(ProcessingVersionBase):
     """Version info for PDF parsing stage"""
 
-    base_prompt: str
-    file_versions_id: List[UUID]
+    system_prompt: str
+    readability_prompt: str
+    convert_prompt: str
+    input_file_version_id: UUID
     custom_instructions: List[str]
-    file_statuses: List[str]
-    output_paths: List[str]
-    errors: Optional[List[str]]
-    global_status: str
+    status: str
+    output_dir: str
+    output_path: str
+    errors: Optional[str]
+
+    class Config:
+        from_attributes = True
 
 
 class ExtractVersion(ProcessingVersionBase):
     """Version info for entity extraction stage"""
 
-    base_prompt: str
-    file_versions_id: List[UUID]
+    system_prompt: str
+    initial_entity_extraction_prompt: str
+    iterative_extract_entities_prompt: str
+    entity_details_prompt: str
+    input_extraction_version_id: UUID
     custom_instructions: List[str]
-    file_statuses: List[str]
-    output_paths: List[str]
-    errors: Optional[List[str]]
-    global_status: str
+    status: str
+    output_dir: str
+    output_path: str
+    errors: Optional[str]
+
+    class Config:
+        from_attributes = True
 
 
 class MergeVersion(ProcessingVersionBase):
     """Version info for entity merging stage"""
 
-    base_prompt: str
-    input_path: Optional[str]
+    system_prompt: str
+    entity_details_prompt: str
+    entity_merge_prompt: str
+    input_extract_version_ids: List[UUID]
+    custom_instructions: List[str]
+    output_dir: str
     output_path: Optional[str]
-    status: str
+    status: Optional[str]
     error: Optional[str]
+
+    class Config:
+        from_attributes = True
 
 
 class GroupVersion(ProcessingVersionBase):
     """Version info for entity grouping stage"""
 
-    base_prompt: str
-    input_path: Optional[str]
+    system_prompt: str
+    entity_group_prompt: str
+    input_merge_version_id: UUID
+    custom_instructions: List[str]
+    output_dir: str
     output_path: Optional[str]
-    status: str
+    status: Optional[str]
     error: Optional[str]
+
+    class Config:
+        from_attributes = True
 
 
 class OntologyVersion(ProcessingVersionBase):
     """Version info for ontology generation stage"""
 
-    base_prompt: str
-    input_path: Optional[str]
+    system_prompt: str
+    ontology_prompt: str
+    input_group_version_id: UUID
+    input_merge_version_id: UUID
+    custom_instructions: List[str]
+    output_dir: str
     output_path: Optional[str]
-    status: str
+    status: Optional[str]
     error: Optional[str]
+
+    class Config:
+        from_attributes = True
 
 
 class GraphVersion(ProcessingVersionBase):
     """Version info for graph generation stage"""
 
-    base_prompt: str
-    input_path: Optional[str]
+    input_group_version_id: UUID
+    input_merge_version_id: UUID
+    input_ontology_version_id: UUID
+    output_dir: str
     output_path: Optional[str]
-    status: str
+    status: Optional[str]
     error: Optional[str]
+
+    class Config:
+        from_attributes = True
 
 
 class ProcessingPipeline(BaseModel):
