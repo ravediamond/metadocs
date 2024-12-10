@@ -55,11 +55,11 @@ from ..processors.prompts.ontology_prompts import (
     ONTOLOGY_PROMPT,
 )
 from ..core.database import get_db
-from ..processors.parse.processor import ParseProcessor
-from ..processors.extract.processor import ExtractProcessor
-from ..processors.group.processor import GroupProcessor
-from ..processors.ontology.processor import OntologyProcessor
-from ..processors.merge.processor import MergeProcessor
+from ..processors.parse_processor import ParseProcessor
+from ..processors.extract_processor import ExtractProcessor
+from ..processors.group_processor import GroupProcessor
+from ..processors.ontology_processor import OntologyProcessor
+from ..processors.merge_processor import MergeProcessor
 from ..core.config import ConfigManager, FILE_SYSTEM
 
 logging.basicConfig(

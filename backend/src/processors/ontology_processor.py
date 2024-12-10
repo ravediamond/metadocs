@@ -8,9 +8,9 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ...models.models import MergeVersion, GroupVersion
-from ...llm.llm_factory import LLMConfig, LLMFactory
-from ...core.config import ConfigManager, FILE_SYSTEM
+from ..models.models import MergeVersion, GroupVersion
+from ..llm.llm_factory import LLMConfig, LLMFactory
+from ..core.config import ConfigManager, FILE_SYSTEM
 
 
 @dataclass
@@ -36,9 +36,9 @@ class OntologyProcessor:
         # TODO: Implement custom instructions
         self.custom_instructions = self.ontology_version.custom_instructions
         self.config = config_manager
+        self._setup_directories()
         self.logger = self._setup_logger()
         self.model = self._setup_model()
-        self._setup_directories()
 
     def _setup_model(self) -> ChatBedrock:
         """Initialize the LLM model"""
@@ -60,29 +60,49 @@ class OntologyProcessor:
             f"OntologyProcessor_{self.ontology_version.pipeline_id}"
         )
         logger.setLevel(logging.DEBUG)
-        os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
 
-        file_handler = logging.FileHandler(
-            os.path.join(
-                self.output_dir,
-                "logs",
-                f"ontology_processor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
-            )
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        log_file = os.path.join(
+            self.output_dir,
+            "logs",
+            f"ontology_processor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
         )
-        logger.addHandler(file_handler)
+
+        try:
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.INFO)
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
+
+            logger.info(f"Logging initialized: {log_file}")
+        except Exception as e:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.DEBUG)
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
+            logger.error(f"Failed to create file handler: {str(e)}")
+
         return logger
 
     def _setup_directories(self):
-        """Create necessary directories for processing."""
-        # TODO: implement file storage manager for local and cloud
-        if FILE_SYSTEM == "local":
-            os.makedirs(
-                os.path.join(self.parse_version.output_dir, "logs"), exist_ok=True
-            )
+        if self.config.get("file_system", "local") == "local":
+            directories = [
+                self.output_dir,
+                os.path.join(self.output_dir, "logs"),
+                os.path.join(self.output_dir, "temp"),
+            ]
+            for directory in directories:
+                os.makedirs(directory, exist_ok=True)
 
     def _generate_mermaid(self, entities_data: Dict, groups_data: Dict) -> str:
         self.logger.info("Generating Mermaid diagram")

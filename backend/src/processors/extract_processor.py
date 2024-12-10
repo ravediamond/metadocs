@@ -9,9 +9,9 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 import concurrent.futures
 
-from ...models.models import ParseVersion, ExtractVersion
-from ...llm.llm_factory import LLMConfig, LLMFactory
-from ...core.config import ConfigManager, FILE_SYSTEM
+from ..models.models import ParseVersion, ExtractVersion
+from ..llm.llm_factory import LLMConfig, LLMFactory
+from ..core.config import ConfigManager, FILE_SYSTEM
 
 
 @dataclass
@@ -54,9 +54,9 @@ class ExtractProcessor:
         # TODO: Implement custom instructions
         self.custom_instructions = self.extract_version.custom_instructions
         self.config = config_manager
+        self._setup_directories()
         self.logger = self._setup_logger()
         self.model = self._setup_model()
-        self._setup_directories()
 
     def _setup_model(self) -> ChatBedrock:
         """Initialize the LLM model"""
@@ -74,37 +74,57 @@ class ExtractProcessor:
         return LLMFactory(llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
-        """Setup logging for the processor."""
+        """Setup logging with proper error handling."""
         logger = logging.getLogger(
             f"EntityProcessor_{self.extract_version.pipeline_id}"
         )
         logger.setLevel(logging.DEBUG)
 
-        os.makedirs(os.path.join(self.output_dir, "logs"), exist_ok=True)
+        # Remove existing handlers
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
 
-        file_handler = logging.FileHandler(
-            os.path.join(
-                self.output_dir,
-                "logs",
-                f"entity_processor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
-            )
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = os.path.join(
+            self.output_dir, "logs", f"extract_processor_{timestamp}.log"
         )
-        file_handler.setLevel(logging.DEBUG)
         formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+
+        try:
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.INFO)
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
+
+            logger.info(f"Logging initialized. Log file: {log_file}")
+        except Exception as e:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.DEBUG)
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
+            logger.error(
+                f"Failed to create file handler: {str(e)}. Using console logging only."
+            )
 
         return logger
 
     def _setup_directories(self):
-        """Create necessary directories for processing."""
-        # TODO: implement file storage manager for local and cloud
-        if FILE_SYSTEM == "local":
-            os.makedirs(
-                os.path.join(self.parse_version.output_dir, "logs"), exist_ok=True
-            )
+        """Create all necessary directories for processing."""
+        if self.config.get("file_system", "local") == "local":
+            directories = [
+                self.output_dir,
+                os.path.join(self.output_dir, "logs"),
+                os.path.join(self.output_dir, "temp"),
+            ]
+            for directory in directories:
+                os.makedirs(directory, exist_ok=True)
 
     def _initial_extraction(self, content: str) -> tuple[List[str], List[Dict]]:
         """Perform initial extraction of entities and relationships."""

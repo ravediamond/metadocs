@@ -13,12 +13,12 @@ from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ...models.models import (
+from ..models.models import (
     ParseVersion,
     FileVersion,
 )
-from ...llm.llm_factory import LLMConfig, LLMFactory
-from ...core.config import FILE_SYSTEM, ConfigManager
+from ..llm.llm_factory import LLMConfig, LLMFactory
+from ..core.config import FILE_SYSTEM, ConfigManager
 
 
 # TODO: Implement quality score and improvement message
@@ -45,9 +45,9 @@ class ParseProcessor:
         # TODO: Implement custom instructions
         self.custom_instructions = self.parse_version.custom_instructions
         self.config = config_manager
+        self._setup_directories()
         self.logger = self._setup_logger()
         self.model = self._setup_model()
-        self._setup_directories()
 
     def _setup_model(self) -> ChatBedrock:
         """Initialize the LLM model"""
@@ -65,39 +65,66 @@ class ParseProcessor:
         return LLMFactory(llm_config).create_model()
 
     def _setup_logger(self) -> logging.Logger:
-        """Setup logging for the processor."""
+        """Setup logging for the processor with proper directory handling."""
         logger = logging.getLogger(
             f"ParseProcessor_{self.file_version.file_version_id}"
         )
         logger.setLevel(logging.DEBUG)
 
-        # Create logs directory
+        # Remove any existing handlers to avoid duplicate logging
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+
+        # Create logs directory path
         logs_dir = os.path.join(self.parse_version.output_dir, "logs")
 
         # File handler
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_handler = logging.FileHandler(
-            os.path.join(logs_dir, f"processor_{timestamp}.log")
-        )
-        file_handler.setLevel(logging.DEBUG)
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+        log_file = os.path.join(logs_dir, f"parse_processor_{timestamp}.log")
+
+        try:
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setLevel(logging.DEBUG)
+            formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            )
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+
+            # Add a stream handler for console output
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.INFO)
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
+
+            logger.info(f"Logging initialized. Log file: {log_file}")
+        except Exception as e:
+            # Fallback to console-only logging if file handler fails
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.DEBUG)
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
+            logger.error(
+                f"Failed to create file handler: {str(e)}. Falling back to console logging only."
+            )
 
         return logger
 
     def _setup_directories(self):
-        """Create necessary directories for processing."""
-        # TODO: implement file storage manager for local and cloud
-        if FILE_SYSTEM == "local":
-            os.makedirs(
-                os.path.join(self.parse_version.output_dir, "images"), exist_ok=True
-            )
-            os.makedirs(
-                os.path.join(self.parse_version.output_dir, "logs"), exist_ok=True
-            )
+        """Create all necessary directories for processing and logging."""
+        if self.config.get("file_system", "local") == "local":
+            # Create base output directory
+            os.makedirs(self.parse_version.output_dir, exist_ok=True)
+
+            # Create subdirectories
+            directories = [
+                os.path.join(self.parse_version.output_dir, "images"),
+                os.path.join(self.parse_version.output_dir, "logs"),
+                os.path.join(self.parse_version.output_dir, "temp"),
+            ]
+
+            for directory in directories:
+                os.makedirs(directory, exist_ok=True)
 
     def _convert_page_to_image(self, page: fitz.Page) -> Image.Image:
         """Convert PDF page to PIL Image."""
