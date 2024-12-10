@@ -1,27 +1,17 @@
-from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict
 import json
 import logging
 from datetime import datetime
 import os
-from langchain_aws.chat_models import ChatBedrock
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from ..models.models import MergeVersion, GroupVersion
-from ..llm.llm_factory import LLMConfig, LLMFactory
-from ..core.config import ConfigManager, FILE_SYSTEM
+from ..core.config import ConfigManager
+from .base_processor import BaseProcessor, ProcessingResult
 
 
-@dataclass
-class ProcessingResult:
-    success: bool
-    status: str
-    message: str
-    error: str
-
-
-class OntologyProcessor:
+class OntologyProcessor(BaseProcessor):
     def __init__(
         self,
         merge_version: MergeVersion,
@@ -31,78 +21,12 @@ class OntologyProcessor:
     ):
         self.merge_version = merge_version
         self.group_version = group_version
+        self.ontology_version = ontology_version
         self.system_prompt = self.ontology_version.system_prompt
         self.ontology_prompt = self.ontology_version.ontology_prompt
         # TODO: Implement custom instructions
         self.custom_instructions = self.ontology_version.custom_instructions
-        self.config = config_manager
-        self._setup_directories()
-        self.logger = self._setup_logger()
-        self.model = self._setup_model()
-
-    def _setup_model(self) -> ChatBedrock:
-        """Initialize the LLM model"""
-        llm_config = LLMConfig(
-            provider=self.config.get("llm_provider", "bedrock"),
-            profile_name=self.config.get("aws_profile"),
-            model_id=self.config.get(
-                "aws_model_id", "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-            ),
-            model_kwargs={
-                "temperature": float(self.config.get("llm_temperature", 0)),
-                "max_tokens": int(self.config.get("llm_max_tokens", 4096)),
-            },
-        )
-        return LLMFactory(llm_config).create_model()
-
-    def _setup_logger(self) -> logging.Logger:
-        logger = logging.getLogger(
-            f"OntologyProcessor_{self.ontology_version.pipeline_id}"
-        )
-        logger.setLevel(logging.DEBUG)
-
-        for handler in logger.handlers[:]:
-            logger.removeHandler(handler)
-
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        log_file = os.path.join(
-            self.output_dir,
-            "logs",
-            f"ontology_processor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
-        )
-
-        try:
-            file_handler = logging.FileHandler(log_file)
-            file_handler.setLevel(logging.DEBUG)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
-
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(logging.INFO)
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
-
-            logger.info(f"Logging initialized: {log_file}")
-        except Exception as e:
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(logging.DEBUG)
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
-            logger.error(f"Failed to create file handler: {str(e)}")
-
-        return logger
-
-    def _setup_directories(self):
-        if self.config.get("file_system", "local") == "local":
-            directories = [
-                self.output_dir,
-                os.path.join(self.output_dir, "logs"),
-                os.path.join(self.output_dir, "temp"),
-            ]
-            for directory in directories:
-                os.makedirs(directory, exist_ok=True)
+        super().__init__(config_manager)
 
     def _generate_mermaid(self, entities_data: Dict, groups_data: Dict) -> str:
         self.logger.info("Generating Mermaid diagram")
