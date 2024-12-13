@@ -157,7 +157,6 @@ class ParseProcessor(BaseProcessor):
                 return ProcessingResult(
                     success=False,
                     message=f"Quality check failed: {quality_result['problem']}",
-                    quality_score=quality_result["confidence"],
                 )
 
             # Process pages in parallel

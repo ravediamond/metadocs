@@ -23,7 +23,7 @@ from ..models.schemas import (
     DomainUpdate,
     DomainDataSchema,
     DomainVersionSchema,
-    ProcessPipelineSchema,
+    ProcessingPipeline as ProcessingPipelineSchema,
     DomainBasicResponse,
     DomainVersionFile as DomainVersionFileSchema,
     FileVersionsRequest,
@@ -133,7 +133,7 @@ def get_domain(
 
     pipeline_data = None
     if latest_pipeline:
-        pipeline_data = ProcessPipelineSchema.from_orm(latest_pipeline)
+        pipeline_data = ProcessingPipelineSchema.from_orm(latest_pipeline)
 
     return DomainBasicResponse(
         domain_id=domain.domain_id,

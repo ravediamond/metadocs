@@ -140,7 +140,7 @@ export const domains = {
     if (!response.ok) throw new Error('Failed to fetch domain version file');
     return response.json();
   },
-  
+
   getDomainVersionFiles: async (tenantId, domainId, version, token) => {
     const response = await fetch(`${BASE_URL}/domains/tenants/${tenantId}/domains/${domainId}/versions/${version}/files`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -155,7 +155,7 @@ export const files = {
   upload: async (tenantId, domainId, file, token) => {
     const formData = new FormData();
     formData.append('uploaded_file', file);
-    
+
     const response = await fetch(`${BASE_URL}/files/tenants/${tenantId}/domains/${domainId}/upload`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },
@@ -246,14 +246,6 @@ export const processing = {
     return response.json();
   },
 
-  getLatestVersions: async (tenantId, domainId, pipelineId, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/latest`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to fetch latest versions');
-    return response.json();
-  },
-
   getStagePrompts: async (tenantId, domainId, domainVersion, stage, token) => {
     const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/prompts/${stage}`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -263,6 +255,7 @@ export const processing = {
   },
 
   updateStagePrompts: async (tenantId, domainId, domainVersion, stage, prompts, token) => {
+    // Validation des prompts selon le stage
     const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/prompts/${stage}`, {
       method: 'PUT',
       headers: {
@@ -283,13 +276,53 @@ export const processing = {
     if (!response.ok) throw new Error('Failed to start validation');
     return response.json();
   },
-  
+
   complete: async (tenantId, domainId, domainVersion, token) => {
     const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/complete`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!response.ok) throw new Error('Failed to complete pipeline');
+    return response.json();
+  },
+
+  getParseVersion: async (tenantId, domainId, pipelineId, versionId, token) => {
+    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/parse/${versionId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to fetch parse version');
+    return response.json();
+  },
+
+  getExtractVersion: async (tenantId, domainId, pipelineId, versionId, token) => {
+    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/extract/${versionId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to fetch extract version');
+    return response.json();
+  },
+
+  getMergeVersion: async (tenantId, domainId, pipelineId, versionId, token) => {
+    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/merge/${versionId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to fetch merge version');
+    return response.json();
+  },
+
+  getGroupVersion: async (tenantId, domainId, pipelineId, versionId, token) => {
+    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/group/${versionId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to fetch group version');
+    return response.json();
+  },
+
+  getOntologyVersion: async (tenantId, domainId, pipelineId, versionId, token) => {
+    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/ontology/${versionId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error('Failed to fetch ontology version');
     return response.json();
   }
 };

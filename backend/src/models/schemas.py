@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
-from .models import DomainVersionStatus, PipelineStage
+from .models import DomainVersionStatus, PipelineStage, PipelineStatus
 
 
 # Tenant Schemas
@@ -327,18 +327,20 @@ class ProcessingStatus(BaseModel):
         from_attributes = True
 
 
-class ProcessPipelineSchema(BaseModel):
-    processing_id: UUID
+class ProcessingPipeline(BaseModel):
+    pipeline_id: UUID
     domain_id: UUID
     stage: PipelineStage
-    status: str
+    status: PipelineStatus
     error: Optional[str]
-    merged_entities_path: Optional[str]
-    entity_grouping_path: Optional[str]
-    ontology_path: Optional[str]
     created_at: datetime
-    completed_at: Optional[datetime]
-    file_ids: List[UUID]
+    # Latest version IDs
+    latest_parse_version_id: Optional[UUID] = None
+    latest_extract_version_id: Optional[UUID] = None
+    latest_merge_version_id: Optional[UUID] = None
+    latest_group_version_id: Optional[UUID] = None
+    latest_ontology_version_id: Optional[UUID] = None
+    latest_graph_version_id: Optional[UUID] = None
 
     class Config:
         from_attributes = True
@@ -464,6 +466,7 @@ class ProcessingPipeline(BaseModel):
     current_ontology_id: Optional[UUID]
     current_graph_id: Optional[UUID]
     status: str
+    stage: str
     error: Optional[str]
     created_at: datetime
 
@@ -478,7 +481,7 @@ class DomainBasicResponse(BaseModel):
     tenant_id: UUID
     created_at: datetime
     owner_user_id: UUID
-    latest_pipeline: Optional[ProcessPipelineSchema] = None
+    latest_pipeline: Optional[ProcessingPipeline] = None
     file_count: int
     version_count: int
     latest_version: Optional[int] = None
@@ -498,3 +501,32 @@ class OntologyRequest(BaseModel):
 
 class FileVersionsRequest(BaseModel):
     file_version_ids: List[UUID]
+
+
+class BasePrompts(BaseModel):
+    system_prompt: str
+    custom_instructions: List[str]
+
+
+class ParsePrompts(BasePrompts):
+    readability_prompt: str
+    convert_prompt: str
+
+
+class ExtractPrompts(BasePrompts):
+    initial_entity_extraction_prompt: str
+    iterative_extract_entities_prompt: str
+    entity_details_prompt: str
+
+
+class MergePrompts(BasePrompts):
+    entity_details_prompt: str
+    entity_merge_prompt: str
+
+
+class GroupPrompts(BasePrompts):
+    entity_group_prompt: str
+
+
+class OntologyPrompts(BasePrompts):
+    ontology_prompt: str

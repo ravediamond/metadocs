@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, status
 from sqlalchemy.orm import Session
 from uuid import UUID
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Union
 import logging
 import os
 import sys
@@ -17,6 +17,7 @@ from ..models.models import (
     MergeVersion,
     GroupVersion,
     OntologyVersion,
+    GraphVersion,
     DomainVersion,
     DomainVersionStatus,
     FileVersion,
@@ -25,10 +26,15 @@ from ..models.models import (
 )
 from ..models.schemas import (
     ProcessingStatus,
-    ProcessPipelineSchema,
+    ProcessingPipeline as ProcessingPipelineSchema,
     ProcessingVersionBase,
     MergeRequest,
     OntologyRequest,
+    ParsePrompts,
+    ExtractPrompts,
+    MergePrompts,
+    GroupPrompts,
+    OntologyPrompts,
 )
 from ..processors.prompts.parse_prompts import (
     SYSTEM_PROMPT as PARSE_SYSTEM_PROMPT,
@@ -934,10 +940,9 @@ async def start_ontology_processing(
     }
 
 
-# Status check endpoints
 @router.get(
     "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}",
-    response_model=ProcessPipelineSchema,
+    response_model=ProcessingPipelineSchema,
 )
 async def get_pipeline_status(
     tenant_id: UUID,
@@ -956,258 +961,90 @@ async def get_pipeline_status(
         )
         .first()
     )
-
     if not pipeline:
         raise HTTPException(status_code=404, detail="Processing pipeline not found")
 
-    # Get associated file IDs
-    file_ids = [file.file_id for file in pipeline.files]
+    # Get current version IDs for each stage
+    current_parse = (
+        db.query(ParseVersion)
+        .filter(ParseVersion.pipeline_id == pipeline_id)
+        .order_by(ParseVersion.version_number.desc())
+        .first()
+    )
 
-    return ProcessPipelineSchema(
-        processing_id=pipeline.pipeline_id,
+    current_extract = (
+        db.query(ExtractVersion)
+        .filter(ExtractVersion.pipeline_id == pipeline_id)
+        .order_by(ExtractVersion.version_number.desc())
+        .first()
+    )
+
+    current_merge = (
+        db.query(MergeVersion)
+        .filter(MergeVersion.pipeline_id == pipeline_id)
+        .order_by(MergeVersion.version_number.desc())
+        .first()
+    )
+
+    current_group = (
+        db.query(GroupVersion)
+        .filter(GroupVersion.pipeline_id == pipeline_id)
+        .order_by(GroupVersion.version_number.desc())
+        .first()
+    )
+
+    current_ontology = (
+        db.query(OntologyVersion)
+        .filter(OntologyVersion.pipeline_id == pipeline_id)
+        .order_by(OntologyVersion.version_number.desc())
+        .first()
+    )
+
+    current_graph = (
+        db.query(GraphVersion)
+        .filter(GraphVersion.pipeline_id == pipeline_id)
+        .order_by(GraphVersion.version_number.desc())
+        .first()
+    )
+
+    return ProcessingPipelineSchema(
+        pipeline_id=pipeline.pipeline_id,
         domain_id=pipeline.domain_id,
+        stage=pipeline.stage,
         status=pipeline.status,
         error=pipeline.error,
-        merged_entities_path=pipeline.merged_entities_path,
-        entity_grouping_path=pipeline.entity_grouping_path,
-        ontology_path=pipeline.ontology_path,
         created_at=pipeline.created_at,
-        completed_at=pipeline.completed_at if pipeline.status == "completed" else None,
-        file_ids=file_ids,
+        current_parse_id=current_parse.version_id if current_parse else None,
+        current_extract_id=current_extract.version_id if current_extract else None,
+        current_merge_id=current_merge.version_id if current_merge else None,
+        current_group_id=current_group.version_id if current_group else None,
+        current_ontology_id=current_ontology.version_id if current_ontology else None,
+        current_graph_id=current_graph.version_id if current_graph else None,
+        latest_parse_version_id=current_parse.version_id if current_parse else None,
+        latest_extract_version_id=(
+            current_extract.version_id if current_extract else None
+        ),
+        latest_merge_version_id=current_merge.version_id if current_merge else None,
+        latest_group_version_id=current_group.version_id if current_group else None,
+        latest_ontology_version_id=(
+            current_ontology.version_id if current_ontology else None
+        ),
     )
 
 
 @router.get(
-    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/parse/{version_number}",
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/parse/{version_id}",
     response_model=ProcessingVersionBase,
 )
 async def get_parse_version(
     tenant_id: UUID,
     domain_id: UUID,
     pipeline_id: UUID,
-    version_number: int,
+    version_id: UUID,
     db: Session = Depends(get_db),
 ):
     """Get details of a specific parse version"""
     version = (
-        db.query(ParseVersion)
-        .join(ProcessingPipeline)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            ProcessingPipeline.domain_id == domain_id,
-            ProcessingPipeline.pipeline_id == pipeline_id,
-            ParseVersion.version_number == version_number,
-        )
-        .first()
-    )
-
-    if not version:
-        raise HTTPException(status_code=404, detail="Parse version not found")
-
-    return version
-
-
-@router.get(
-    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/extract/{version_number}",
-    response_model=ProcessingVersionBase,
-)
-async def get_extract_version(
-    tenant_id: UUID,
-    domain_id: UUID,
-    pipeline_id: UUID,
-    version_number: int,
-    db: Session = Depends(get_db),
-):
-    """Get details of a specific extract version"""
-    version = (
-        db.query(ExtractVersion)
-        .join(ProcessingPipeline)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            ProcessingPipeline.domain_id == domain_id,
-            ProcessingPipeline.pipeline_id == pipeline_id,
-            ExtractVersion.version_number == version_number,
-        )
-        .first()
-    )
-
-    if not version:
-        raise HTTPException(status_code=404, detail="Extract version not found")
-
-    return version
-
-
-@router.get(
-    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/merge/{version_number}",
-    response_model=ProcessingVersionBase,
-)
-async def get_merge_version(
-    tenant_id: UUID,
-    domain_id: UUID,
-    pipeline_id: UUID,
-    version_number: int,
-    db: Session = Depends(get_db),
-):
-    """Get details of a specific merge version"""
-    version = (
-        db.query(MergeVersion)
-        .join(ProcessingPipeline)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            ProcessingPipeline.domain_id == domain_id,
-            ProcessingPipeline.pipeline_id == pipeline_id,
-            MergeVersion.version_number == version_number,
-        )
-        .first()
-    )
-
-    if not version:
-        raise HTTPException(status_code=404, detail="Merge version not found")
-
-    return version
-
-
-@router.get(
-    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/group/{version_number}",
-    response_model=ProcessingVersionBase,
-)
-async def get_group_version(
-    tenant_id: UUID,
-    domain_id: UUID,
-    pipeline_id: UUID,
-    version_number: int,
-    db: Session = Depends(get_db),
-):
-    """Get details of a specific group version"""
-    version = (
-        db.query(GroupVersion)
-        .join(ProcessingPipeline)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            ProcessingPipeline.domain_id == domain_id,
-            ProcessingPipeline.pipeline_id == pipeline_id,
-            GroupVersion.version_number == version_number,
-        )
-        .first()
-    )
-
-    if not version:
-        raise HTTPException(status_code=404, detail="Group version not found")
-
-    return version
-
-
-@router.get(
-    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/ontology/{version_number}",
-    response_model=ProcessingVersionBase,
-)
-async def get_ontology_version(
-    tenant_id: UUID,
-    domain_id: UUID,
-    pipeline_id: UUID,
-    version_number: int,
-    db: Session = Depends(get_db),
-):
-    """Get details of a specific ontology version"""
-    version = (
-        db.query(OntologyVersion)
-        .join(ProcessingPipeline)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            ProcessingPipeline.domain_id == domain_id,
-            ProcessingPipeline.pipeline_id == pipeline_id,
-            OntologyVersion.version_number == version_number,
-        )
-        .first()
-    )
-
-    if not version:
-        raise HTTPException(status_code=404, detail="Ontology version not found")
-
-    return version
-
-
-@router.get(
-    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/latest",
-    response_model=dict,
-)
-async def get_latest_versions(
-    tenant_id: UUID,
-    domain_id: UUID,
-    pipeline_id: UUID,
-    db: Session = Depends(get_db),
-):
-    """Get the latest version numbers for each processing stage"""
-    pipeline = (
-        db.query(ProcessingPipeline)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            ProcessingPipeline.domain_id == domain_id,
-            ProcessingPipeline.pipeline_id == pipeline_id,
-        )
-        .first()
-    )
-
-    if not pipeline:
-        raise HTTPException(status_code=404, detail="Processing pipeline not found")
-
-    # Get latest versions
-    latest_versions = {
-        "parse": db.query(ParseVersion)
-        .filter(ParseVersion.pipeline_id == pipeline_id)
-        .order_by(ParseVersion.version_number.desc())
-        .first(),
-        "extract": db.query(ExtractVersion)
-        .filter(ExtractVersion.pipeline_id == pipeline_id)
-        .order_by(ExtractVersion.version_number.desc())
-        .first(),
-        "merge": db.query(MergeVersion)
-        .filter(MergeVersion.pipeline_id == pipeline_id)
-        .order_by(MergeVersion.version_number.desc())
-        .first(),
-        "group": db.query(GroupVersion)
-        .filter(GroupVersion.pipeline_id == pipeline_id)
-        .order_by(GroupVersion.version_number.desc())
-        .first(),
-        "ontology": db.query(OntologyVersion)
-        .filter(OntologyVersion.pipeline_id == pipeline_id)
-        .order_by(OntologyVersion.version_number.desc())
-        .first(),
-    }
-
-    return {
-        stage: (
-            {
-                "version_number": version.version_number,
-                "status": version.status,
-                "created_at": version.created_at,
-                "error": version.error,
-            }
-            if version
-            else None
-        )
-        for stage, version in latest_versions.items()
-    }
-
-
-@router.get(
-    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/parse/{version_id}/status"
-)
-async def get_parse_status(
-    tenant_id: UUID,
-    domain_id: UUID,
-    pipeline_id: UUID,
-    version_id: UUID,
-    db: Session = Depends(get_db),
-) -> ProcessingStatus:
-    """Get parse processing status for a specific version"""
-    parse_version = (
         db.query(ParseVersion)
         .join(ProcessingPipeline)
         .join(Domain)
@@ -1220,30 +1057,136 @@ async def get_parse_status(
         .first()
     )
 
-    if not parse_version:
+    if not version:
         raise HTTPException(status_code=404, detail="Parse version not found")
 
-    total_files = len(parse_version.file_versions_id)
-    completed = sum(
-        1 for status in parse_version.file_statuses if status == "completed"
-    )
-    failed = sum(1 for status in parse_version.file_statuses if status == "failed")
-    processing = sum(
-        1 for status in parse_version.file_statuses if status == "processing"
-    )
-
-    return ProcessingStatus(
-        message=f"Processing {completed}/{total_files} files",
-        total_files=total_files,
-        files_completed=completed,
-        files_failed=failed,
-        files_processing=processing,
-        processing_started=True,
-        parse_status=parse_version.global_status,
-    )
+    return version
 
 
-# Add these routes to manage stage prompts
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/extract/{version_id}",
+    response_model=ProcessingVersionBase,
+)
+async def get_extract_version(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    version_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Get details of a specific extract version"""
+    version = (
+        db.query(ExtractVersion)
+        .join(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            ExtractVersion.version_id == version_id,
+        )
+        .first()
+    )
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Extract version not found")
+
+    return version
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/merge/{version_id}",
+    response_model=ProcessingVersionBase,
+)
+async def get_merge_version(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    version_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Get details of a specific merge version"""
+    version = (
+        db.query(MergeVersion)
+        .join(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            MergeVersion.version_id == version_id,
+        )
+        .first()
+    )
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Merge version not found")
+
+    return version
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/group/{version_id}",
+    response_model=ProcessingVersionBase,
+)
+async def get_group_version(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    version_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Get details of a specific group version"""
+    version = (
+        db.query(GroupVersion)
+        .join(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            GroupVersion.version_id == version_id,
+        )
+        .first()
+    )
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Group version not found")
+
+    return version
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/ontology/{version_id}",
+    response_model=ProcessingVersionBase,
+)
+async def get_ontology_version(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    version_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Get details of a specific ontology version"""
+    version = (
+        db.query(OntologyVersion)
+        .join(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            OntologyVersion.version_id == version_id,
+        )
+        .first()
+    )
+
+    if not version:
+        raise HTTPException(status_code=404, detail="Ontology version not found")
+
+    return version
+
+
 @router.get(
     "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/prompts/{stage}"
 )
@@ -1251,15 +1194,10 @@ async def get_stage_prompts(
     tenant_id: UUID,
     domain_id: UUID,
     domain_version: int,
-    stage: str,
+    stage: PipelineStage,
     db: Session = Depends(get_db),
 ):
     """Get current prompts for a specific processing stage"""
-    # Validate stage
-    valid_stages = {"parse", "extract", "merge", "group", "ontology"}
-    if stage not in valid_stages:
-        raise HTTPException(status_code=400, detail="Invalid stage")
-
     domain_version_obj = (
         db.query(DomainVersion)
         .join(Domain)
@@ -1270,23 +1208,30 @@ async def get_stage_prompts(
         )
         .first()
     )
-
     if not domain_version_obj:
         raise HTTPException(status_code=404, detail="Domain version not found")
 
-    # Get latest version of the specified stage
+    # Get pipeline
     pipeline = domain_version_obj.processing_pipeline
     if not pipeline:
         raise HTTPException(status_code=404, detail="No processing pipeline found")
 
+    # Map stages to version models
     version_model = {
-        "parse": ParseVersion,
-        "extract": ExtractVersion,
-        "merge": MergeVersion,
-        "group": GroupVersion,
-        "ontology": OntologyVersion,
-    }[stage]
+        PipelineStage.PARSE: ParseVersion,
+        PipelineStage.EXTRACT: ExtractVersion,
+        PipelineStage.MERGE: MergeVersion,
+        PipelineStage.GROUP: GroupVersion,
+        PipelineStage.ONTOLOGY: OntologyVersion,
+    }.get(stage)
 
+    if not version_model:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid stage. Must be one of: {', '.join([s.value for s in PipelineStage if s not in [PipelineStage.NOT_STARTED, PipelineStage.VALIDATE, PipelineStage.COMPLETED]])}",
+        )
+
+    # Get latest version
     latest_version = (
         db.query(version_model)
         .filter(version_model.pipeline_id == pipeline.pipeline_id)
@@ -1295,14 +1240,38 @@ async def get_stage_prompts(
     )
 
     if not latest_version:
-        return get_default_prompts(stage)
+        return get_default_prompts(stage.value.lower())
 
-    return {
+    prompts = {
         "system_prompt": latest_version.system_prompt,
         "custom_instructions": latest_version.custom_instructions,
-        # Add stage-specific prompts
-        **get_stage_specific_prompts(stage, latest_version),
     }
+
+    # Add stage-specific prompts
+    stage_prompts = {
+        PipelineStage.PARSE: {
+            "readability_prompt": latest_version.readability_prompt,
+            "convert_prompt": latest_version.convert_prompt,
+        },
+        PipelineStage.EXTRACT: {
+            "initial_entity_extraction_prompt": latest_version.initial_entity_extraction_prompt,
+            "iterative_extract_entities_prompt": latest_version.iterative_extract_entities_prompt,
+            "entity_details_prompt": latest_version.entity_details_prompt,
+        },
+        PipelineStage.MERGE: {
+            "entity_details_prompt": latest_version.entity_details_prompt,
+            "entity_merge_prompt": latest_version.entity_merge_prompt,
+        },
+        PipelineStage.GROUP: {
+            "entity_group_prompt": latest_version.entity_group_prompt,
+        },
+        PipelineStage.ONTOLOGY: {
+            "ontology_prompt": latest_version.ontology_prompt,
+        },
+    }
+
+    prompts.update(stage_prompts.get(stage, {}))
+    return prompts
 
 
 @router.put(
@@ -1312,15 +1281,13 @@ async def update_stage_prompts(
     tenant_id: UUID,
     domain_id: UUID,
     domain_version: int,
-    stage: str,
-    prompts: dict,
+    stage: PipelineStage,
+    prompts: Union[
+        ParsePrompts, ExtractPrompts, MergePrompts, GroupPrompts, OntologyPrompts
+    ],
     db: Session = Depends(get_db),
 ):
     """Update prompts for a specific processing stage"""
-    valid_stages = {"parse", "extract", "merge", "group", "ontology"}
-    if stage not in valid_stages:
-        raise HTTPException(status_code=400, detail="Invalid stage")
-
     domain_version_obj = (
         db.query(DomainVersion)
         .join(Domain)
@@ -1331,16 +1298,14 @@ async def update_stage_prompts(
         )
         .first()
     )
-
     if not domain_version_obj:
         raise HTTPException(status_code=404, detail="Domain version not found")
-
     if domain_version_obj.status != DomainVersionStatus.DRAFT:
         raise HTTPException(
             status_code=400, detail="Can only update prompts in DRAFT status"
         )
 
-    # Create new version with updated prompts
+    # Get or create pipeline
     pipeline = domain_version_obj.processing_pipeline
     if not pipeline:
         pipeline = ProcessingPipeline(domain_id=domain_id)
@@ -1348,28 +1313,81 @@ async def update_stage_prompts(
         db.add(pipeline)
         db.commit()
 
+    # Map stages to version models
     version_model = {
-        "parse": ParseVersion,
-        "extract": ExtractVersion,
-        "merge": MergeVersion,
-        "group": GroupVersion,
-        "ontology": OntologyVersion,
-    }[stage]
+        PipelineStage.PARSE: ParseVersion,
+        PipelineStage.EXTRACT: ExtractVersion,
+        PipelineStage.MERGE: MergeVersion,
+        PipelineStage.GROUP: GroupVersion,
+        PipelineStage.ONTOLOGY: OntologyVersion,
+    }.get(stage)
 
-    # Validate required prompts are present
-    validate_stage_prompts(stage, prompts)
+    if not version_model:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid stage. Must be one of: {', '.join([s.value for s in PipelineStage if s not in [PipelineStage.NOT_STARTED, PipelineStage.VALIDATE, PipelineStage.COMPLETED]])}",
+        )
 
-    # Create new version with provided prompts
+    # Required prompts for each stage
+    required_prompts = {
+        PipelineStage.PARSE: [
+            "system_prompt",
+            "readability_prompt",
+            "convert_prompt",
+            "custom_instructions",
+        ],
+        PipelineStage.EXTRACT: [
+            "system_prompt",
+            "initial_entity_extraction_prompt",
+            "iterative_extract_entities_prompt",
+            "entity_details_prompt",
+            "custom_instructions",
+        ],
+        PipelineStage.MERGE: [
+            "system_prompt",
+            "entity_details_prompt",
+            "entity_merge_prompt",
+            "custom_instructions",
+        ],
+        PipelineStage.GROUP: [
+            "system_prompt",
+            "entity_group_prompt",
+            "custom_instructions",
+        ],
+        PipelineStage.ONTOLOGY: [
+            "system_prompt",
+            "ontology_prompt",
+            "custom_instructions",
+        ],
+    }
+
+    # Validate required prompts
+    missing_prompts = [p for p in required_prompts[stage] if p not in prompts]
+    if missing_prompts:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required prompts for {stage.value}: {', '.join(missing_prompts)}",
+        )
+
+    # Create new version with next version number
+    next_version_number = get_next_version_number(
+        db, pipeline.pipeline_id, version_model
+    )
+
+    # Create new version with the provided prompts
     new_version = version_model(
         pipeline_id=pipeline.pipeline_id,
-        version_number=get_next_version_number(db, pipeline.pipeline_id, version_model),
+        version_number=next_version_number,
         **prompts,
     )
 
     db.add(new_version)
     db.commit()
 
-    return {"message": f"{stage} prompts updated successfully"}
+    return {
+        "message": f"{stage.value} prompts updated successfully",
+        "version_number": next_version_number,
+    }
 
 
 @router.post(
