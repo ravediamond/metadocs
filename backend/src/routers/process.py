@@ -1472,3 +1472,56 @@ async def complete_pipeline(
         "message": "Pipeline marked as completed",
         "pipeline_id": pipeline.pipeline_id,
     }
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/{stage}/{version_id}/content"
+)
+async def get_processing_output_content(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    stage: str,
+    version_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Get the output content for a specific processing version"""
+    # Map stages to version models
+    version_model = {
+        "parse": ParseVersion,
+        "extract": ExtractVersion,
+        "merge": MergeVersion,
+        "group": GroupVersion,
+        "ontology": OntologyVersion,
+    }.get(stage)
+
+    if not version_model:
+        raise HTTPException(status_code=400, detail="Invalid stage")
+
+    version = (
+        db.query(version_model)
+        .join(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            ProcessingPipeline.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+            version_model.version_id == version_id,
+        )
+        .first()
+    )
+
+    if not version:
+        raise HTTPException(status_code=404, detail=f"{stage} version not found")
+
+    try:
+        if not os.path.exists(version.output_path):
+            return {"content": None}
+
+        with open(version.output_path, "r") as f:
+            content = f.read()
+
+        return {"content": content}
+    except Exception as e:
+        logger.error(f"Error reading output file: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error reading output file")

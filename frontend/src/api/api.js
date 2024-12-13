@@ -324,6 +324,16 @@ export const processing = {
     });
     if (!response.ok) throw new Error('Failed to fetch ontology version');
     return response.json();
+  },
+  getProcessingContent: async (tenantId, domainId, pipelineId, stage, versionId, token) => {
+    const response = await fetch(
+      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/${stage}/${versionId}/content`,
+      {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+    if (!response.ok) throw new Error('Failed to fetch processing content');
+    return response.json();
   }
 };
 

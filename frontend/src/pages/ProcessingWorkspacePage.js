@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, Flex, Text, useToast } from '@chakra-ui/react';
 import { FileText, Network, CheckCircle } from 'lucide-react';
@@ -9,6 +9,7 @@ import WorkflowStatus from '../components/processing/WorkflowStatus';
 import PhaseControls from '../components/processing/PhaseControls';
 import DomainVersionControl from '../components/processing/DomainVersionControl';
 import { ResizablePanel } from '../components/processing/ResizablePanel';
+import { marked } from 'marked';
 
 const ProcessingWorkspace = () => {
   const { domain_id } = useParams();
@@ -19,7 +20,6 @@ const ProcessingWorkspace = () => {
   const [domainFiles, setDomainFiles] = useState([]);
   const [pipeline, setPipeline] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-
   const [state, setState] = useState({
     activePhase: 'parse',
     selectedFile: '',
@@ -43,62 +43,65 @@ const ProcessingWorkspace = () => {
     ontology: null
   });
 
-  const fetchResults = async (phase) => {
-    if (!pipeline || !selectedVersion) return;
+  const fetchResults = useCallback(async (phase) => {
+    console.log('fetchResults called with phase:', phase);
+
+    // Add a check for activePhase to prevent unnecessary calls
+    if (!pipeline || !selectedVersion || phase !== state.activePhase) {
+      console.log('Skipping fetchResults - conditions not met');
+      return;
+    }
+
+    // Add check for existing results to prevent unnecessary refetching
+    if (results[phase]?.content) {
+      console.log('Results already exist for phase:', phase);
+      return;
+    }
+
     try {
-      let result;
-      switch (phase) {
-        case 'parse':
-          result = await processing.getParseVersion(
-            currentTenant,
-            domain_id,
-            selectedVersion.pipeline_id,
-            pipeline.current_parse_id,
-            token
-          );
-          break;
-        case 'extract':
-          result = await processing.getExtractVersion(
-            currentTenant,
-            domain_id,
-            selectedVersion.pipeline_id,
-            pipeline.current_extract_id,
-            token
-          );
-          break;
-        case 'merge':
-          result = await processing.getMergeVersion(
-            currentTenant,
-            domain_id,
-            selectedVersion.pipeline_id,
-            pipeline.current_merge_id,
-            token
-          );
-          break;
-        case 'group':
-          result = await processing.getGroupVersion(
-            currentTenant,
-            domain_id,
-            selectedVersion.pipeline_id,
-            pipeline.current_group_id,
-            token
-          );
-          break;
-        case 'ontology':
-          result = await processing.getOntologyVersion(
-            currentTenant,
-            domain_id,
-            selectedVersion.pipeline_id,
-            pipeline.current_ontology_id,
-            token
-          );
-          break;
+      const versionIdMap = {
+        'parse': pipeline.current_parse_id,
+        'extract': pipeline.current_extract_id,
+        'merge': pipeline.current_merge_id,
+        'group': pipeline.current_group_id,
+        'ontology': pipeline.current_ontology_id
+      };
+
+      const versionId = versionIdMap[phase];
+
+      if (!versionId) {
+        console.log('No version ID for phase:', phase);
+        return;
       }
+
+      const [metadata, content] = await Promise.all([
+        processing[`get${phase.charAt(0).toUpperCase() + phase.slice(1)}Version`](
+          currentTenant,
+          domain_id,
+          selectedVersion.pipeline_id,
+          versionId,
+          token
+        ),
+        processing.getProcessingContent(
+          currentTenant,
+          domain_id,
+          selectedVersion.pipeline_id,
+          phase,
+          versionId,
+          token
+        )
+      ]);
+
       setResults(prev => ({
         ...prev,
-        [phase]: result
+        [phase]: {
+          ...metadata,
+          content: content.content
+        }
       }));
+
     } catch (error) {
+      console.error('Error in fetchResults:', error);
       toast({
         title: `Error fetching ${phase} results`,
         description: error.message,
@@ -106,45 +109,80 @@ const ProcessingWorkspace = () => {
         duration: 5000,
       });
     }
-  };
+  }, [pipeline, selectedVersion, currentTenant, domain_id, token, state.activePhase, results]);
 
-  useEffect(() => {
-    if (state.activePhase && pipeline?.status !== 'NOT_STARTED') {
-      fetchResults(state.activePhase);
-    }
-  }, [state.activePhase, pipeline]);
+  // Modify the pipeline effect to not trigger fetchResults directly
+  const fetchPipeline = useCallback(async () => {
+    if (!selectedVersion?.pipeline_id) return;
 
-  useEffect(() => {
-    const fetchDomainFiles = async () => {
-      if (!selectedVersion) return;
+    try {
+      const pipelineData = await processing.getPipeline(
+        currentTenant,
+        domain_id,
+        selectedVersion.pipeline_id,
+        token
+      );
 
-      try {
-        const files = await domains.getDomainVersionFiles(
-          currentTenant,
-          domain_id,
-          selectedVersion.version_number,
-          token,
-        );
+      setPipeline(pipelineData);
 
-        const mappedFiles = files.map(file => ({
-          value: file.file_version_id,
-          label: file.filename
+      if (pipelineData.stage) {
+        const newActivePhase = pipelineData.stage.toLowerCase();
+        setState(prev => ({
+          ...prev,
+          activePhase: newActivePhase
         }));
-
-        setDomainFiles(mappedFiles);
-      } catch (error) {
-        toast({
-          title: 'Error fetching domain files',
-          description: error.message,
-          status: 'error',
-          duration: 5000,
-        });
       }
-    };
 
-    fetchDomainFiles();
+      updatePhaseStatuses(pipelineData.stage, pipelineData.status);
+    } catch (error) {
+      toast({
+        title: 'Error fetching pipeline',
+        description: error.message,
+        status: 'error',
+        duration: 5000,
+      });
+    }
   }, [selectedVersion, currentTenant, domain_id, token]);
 
+  // Modify the polling effect
+  useEffect(() => {
+    let interval;
+
+    if (pipeline?.status === 'RUNNING') {
+      interval = setInterval(() => {
+        fetchPipeline();
+      }, 5000);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [pipeline?.status, fetchPipeline]);
+
+  // Separate effect for fetching results when active phase changes
+  useEffect(() => {
+    if (!state.activePhase || !pipeline) return;
+
+    // Only fetch if we don't have results for this phase yet
+    if (!results[state.activePhase]?.content) {
+      fetchResults(state.activePhase);
+    }
+  }, [state.activePhase, pipeline, fetchResults]);
+
+  // Clear results when version changes
+  useEffect(() => {
+    setResults({
+      parse: null,
+      extract: null,
+      merge: null,
+      group: null,
+      ontology: null
+    });
+  }, [selectedVersion]);
+
+  // Fetch domain versions
   useEffect(() => {
     const fetchDomainVersions = async () => {
       setIsLoading(true);
@@ -164,9 +202,90 @@ const ProcessingWorkspace = () => {
       }
       setIsLoading(false);
     };
-
     fetchDomainVersions();
   }, [currentTenant, domain_id, token]);
+
+  // Fetch domain files
+  useEffect(() => {
+    const fetchDomainFiles = async () => {
+      if (!selectedVersion) return;
+      try {
+        const files = await domains.getDomainVersionFiles(
+          currentTenant,
+          domain_id,
+          selectedVersion.version_number,
+          token,
+        );
+        const mappedFiles = files.map(file => ({
+          value: file.file_version_id,
+          label: file.filename
+        }));
+        setDomainFiles(mappedFiles);
+      } catch (error) {
+        toast({
+          title: 'Error fetching domain files',
+          description: error.message,
+          status: 'error',
+          duration: 5000,
+        });
+      }
+    };
+    fetchDomainFiles();
+  }, [selectedVersion, currentTenant, domain_id, token]);
+  // Selected version effect
+  useEffect(() => {
+    console.log('Selected version changed:', selectedVersion);
+    if (selectedVersion?.pipeline_id) {
+      fetchPipeline();
+    }
+  }, [selectedVersion, fetchPipeline]);
+
+  // Pipeline status change effect
+  useEffect(() => {
+    console.log('Pipeline status changed:', pipeline?.status);
+    let interval;
+
+    if (pipeline?.status === 'RUNNING') {
+      interval = setInterval(() => {
+        console.log('Polling: fetching pipeline and results');
+        fetchPipeline();
+        if (state.activePhase) {
+          console.log('Polling: fetching results for phase:', state.activePhase);
+          fetchResults(state.activePhase);
+        }
+      }, 5000);
+    }
+
+    return () => {
+      if (interval) {
+        console.log('Clearing polling interval');
+        clearInterval(interval);
+      }
+    };
+  }, [pipeline?.status, state.activePhase, fetchPipeline, fetchResults]);
+
+  // Active phase change effect
+  useEffect(() => {
+    console.log('Active phase or pipeline changed:', {
+      activePhase: state.activePhase,
+      pipelineId: pipeline?.id
+    });
+
+    if (!state.activePhase || !pipeline) return;
+
+    fetchResults(state.activePhase);
+  }, [state.activePhase, pipeline, fetchResults]);
+
+  // Clear results when version changes
+  useEffect(() => {
+    setResults({
+      parse: null,
+      extract: null,
+      merge: null,
+      group: null,
+      ontology: null
+    });
+  }, [selectedVersion]);
 
   const updatePhaseStatuses = (currentStage, pipelineStatus) => {
     if (!currentStage) return phases;
@@ -174,20 +293,18 @@ const ProcessingWorkspace = () => {
     const stageOrder = ['PARSE', 'EXTRACT', 'MERGE', 'GROUP', 'ONTOLOGY', 'VALIDATE', 'COMPLETED'];
     const currentIndex = stageOrder.indexOf(currentStage);
 
-    // Update the active phase based on the current stage
     setState(prev => ({
       ...prev,
       activePhase: currentStage.toLowerCase()
     }));
 
-    const updatedPhases = phases.map((phase) => {
+    return phases.map((phase) => {
       const phaseIndex = stageOrder.indexOf(phase.id.toUpperCase());
       let status = 'pending';
 
       if (phaseIndex < currentIndex) {
         status = 'completed';
       } else if (phaseIndex === currentIndex) {
-        // For the current phase, use the pipeline status to determine the status
         switch (pipelineStatus) {
           case 'RUNNING':
             status = 'in_progress';
@@ -205,58 +322,12 @@ const ProcessingWorkspace = () => {
             status = 'pending';
         }
       }
-
       return {
         ...phase,
         status
       };
     });
-
-    return updatedPhases;
   };
-
-  const fetchPipeline = async () => {
-    if (!selectedVersion?.pipeline_id) return;
-    try {
-      const pipelineData = await processing.getPipeline(
-        currentTenant,
-        domain_id,
-        selectedVersion.pipeline_id,
-        token
-      );
-      console.log(pipelineData);
-      setPipeline(pipelineData);
-      if (pipelineData.stage) {
-        updatePhaseStatuses(pipelineData.stage, pipelineData.status);
-      }
-    } catch (error) {
-      toast({
-        title: 'Error fetching pipeline',
-        description: error.message,
-        status: 'error',
-        duration: 5000,
-      });
-    }
-  };
-
-  useEffect(() => {
-    if (selectedVersion?.pipeline_id) {
-      fetchPipeline();
-    }
-  }, [selectedVersion]);
-
-  useEffect(() => {
-    let interval;
-    if (pipeline?.status === 'RUNNING') {
-      interval = setInterval(() => {
-        fetchPipeline();
-        if (state.activePhase) {
-          fetchResults(state.activePhase);
-        }
-      }, 5000);
-    }
-    return () => clearInterval(interval);
-  }, [pipeline?.status, state.activePhase]);
 
   const handleStartParse = async () => {
     try {
@@ -272,7 +343,7 @@ const ProcessingWorkspace = () => {
         status: 'success',
         duration: 3000,
       });
-      await fetchPipeline();
+      fetchPipeline();
     } catch (error) {
       toast({
         title: 'Error starting parse',
@@ -297,7 +368,7 @@ const ProcessingWorkspace = () => {
         status: 'success',
         duration: 3000,
       });
-      await fetchPipeline();
+      fetchPipeline();
     } catch (error) {
       toast({
         title: 'Error starting extract',
@@ -321,7 +392,7 @@ const ProcessingWorkspace = () => {
         status: 'success',
         duration: 3000,
       });
-      await fetchPipeline();
+      fetchPipeline();
     } catch (error) {
       toast({
         title: 'Error starting validation',
@@ -345,7 +416,7 @@ const ProcessingWorkspace = () => {
         status: 'success',
         duration: 3000,
       });
-      await fetchPipeline();
+      fetchPipeline();
     } catch (error) {
       toast({
         title: 'Error completing pipeline',
@@ -354,6 +425,26 @@ const ProcessingWorkspace = () => {
         duration: 5000,
       });
     }
+  };
+
+  const ResultsViewer = ({ phase, results }) => {
+    const currentResults = results[phase];
+
+    if (!currentResults) return null;
+
+    return (
+      <Box p={4} w="full" h="full" overflow="auto">
+        {currentResults.content ? (
+          phase === 'parse' ? (
+            <div dangerouslySetInnerHTML={{ __html: marked(currentResults.content) }} />
+          ) : (
+            <pre>{currentResults.content}</pre>
+          )
+        ) : (
+          <Text>No content available</Text>
+        )}
+      </Box>
+    );
   };
 
   if (isLoading) {
@@ -371,30 +462,6 @@ const ProcessingWorkspace = () => {
       </Flex>
     );
   }
-
-  const ResultsViewer = ({ phase, results }) => {
-    if (!results) return null;
-
-    return (
-      <Box p={4} w="full" h="full" overflow="auto">
-        {phase === 'parse' && (
-          <pre>{results.parse?.output_content || JSON.stringify(results.parse, null, 2)}</pre>
-        )}
-        {phase === 'extract' && (
-          <pre>{JSON.stringify(results.extract?.entities || results.extract, null, 2)}</pre>
-        )}
-        {phase === 'merge' && (
-          <pre>{JSON.stringify(results.merge?.merged_entities || results.merge, null, 2)}</pre>
-        )}
-        {phase === 'group' && (
-          <pre>{JSON.stringify(results.group?.entity_groups || results.group, null, 2)}</pre>
-        )}
-        {phase === 'ontology' && (
-          <pre>{JSON.stringify(results.ontology?.ontology || results.ontology, null, 2)}</pre>
-        )}
-      </Box>
-    );
-  };
 
   return (
     <Flex h="100vh" bg="gray.50">

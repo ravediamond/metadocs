@@ -47,10 +47,10 @@ const FileUploadPage = () => {
   const [error, setError] = useState(null);
 
   // Modals
-  const { 
-    isOpen: isDeleteOpen, 
-    onOpen: onDeleteOpen, 
-    onClose: onDeleteClose 
+  const {
+    isOpen: isDeleteOpen,
+    onOpen: onDeleteOpen,
+    onClose: onDeleteClose
   } = useDisclosure();
   const {
     isOpen: isVersionOpen,
@@ -76,7 +76,7 @@ const FileUploadPage = () => {
         return 'Invalid date';
       }
     };
-  
+
     return <>{formatDate(dateString)}</>;
   };
 
@@ -95,7 +95,6 @@ const FileUploadPage = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('Fetched files:', data);
         setFiles(data);
       } else {
         const errorData = await response.json();
@@ -206,15 +205,15 @@ const FileUploadPage = () => {
           duration: 3000,
           isClosable: true,
         });
-        
-        setFiles(prevFiles => 
-          prevFiles.map(file => 
-            file.file_id === selectedFileForVersion.file_id 
+
+        setFiles(prevFiles =>
+          prevFiles.map(file =>
+            file.file_id === selectedFileForVersion.file_id
               ? { ...file, versions: [...file.versions, newVersion] }
               : file
           )
         );
-        
+
         onVersionClose();
         setNewVersionFile(null);
       } else {
@@ -311,7 +310,7 @@ const FileUploadPage = () => {
         {/* Files List */}
         <Box bg="white" borderRadius="xl" boxShadow="lg" p={8}>
           <Heading size="md" mb={6}>Uploaded Files</Heading>
-          
+
           {loadingFiles ? (
             <Flex justify="center" py={8}>
               <Spinner size="xl" />
@@ -358,7 +357,7 @@ const FileUploadPage = () => {
                         }}
                       />
                     </Flex>
-                    
+
                     <Table size="sm">
                       <Thead>
                         <Tr>
@@ -377,7 +376,7 @@ const FileUploadPage = () => {
                                 icon={<DownloadIcon />}
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => {/* Implement download */}}
+                                onClick={() => {/* Implement download */ }}
                               />
                             </Td>
                           </Tr>
