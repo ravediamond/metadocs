@@ -25,6 +25,17 @@ class GroupProcessor(BaseProcessor):
         self.custom_instructions = self.group_version.custom_instructions
         super().__init__(config_manager)
 
+    @property
+    def _get_logger_name(self) -> str:
+        return f"GroupProcessor_{self.group_version.version_id}"
+
+    @property
+    def _get_output_dir(self) -> str:
+        return os.path.join(
+            os.path.dirname(self.merge_version.output_path),
+            f"group_{self.group_version.version_id}",
+        )
+
     def _analyze_groups(self, entities_data: Dict) -> Dict:
         self.logger.info("Analyzing entity groups")
         try:

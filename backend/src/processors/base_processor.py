@@ -24,17 +24,21 @@ class ProcessingResult:
 class BaseProcessor(ABC):
     def __init__(self, config_manager: ConfigManager):
         self.config = config_manager
-        self.output_dir = self._get_output_dir()
+        self.output_dir = self._get_output_dir
         self._setup_directories()
         self.logger = self._setup_logger()
         self.model = self._setup_model()
 
+    @property
     @abstractmethod
     def _get_output_dir(self) -> str:
+        """Abstract property for getting output directory path."""
         pass
 
+    @property
     @abstractmethod
     def _get_logger_name(self) -> str:
+        """Abstract property for getting logger name."""
         pass
 
     def _setup_directories(self):
@@ -49,7 +53,7 @@ class BaseProcessor(ABC):
                 os.makedirs(directory, exist_ok=True)
 
     def _setup_logger(self) -> logging.Logger:
-        logger = logging.getLogger(self._get_logger_name())
+        logger = logging.getLogger(self._get_logger_name)
         logger.setLevel(logging.DEBUG)
 
         for handler in logger.handlers[:]:

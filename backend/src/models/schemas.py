@@ -530,3 +530,10 @@ class GroupPrompts(BasePrompts):
 
 class OntologyPrompts(BasePrompts):
     ontology_prompt: str
+
+
+class StageStartResponse(BaseModel):
+    message: str
+    pipeline_id: UUID
+    version_id: UUID
+    input_version_ids: List[UUID]

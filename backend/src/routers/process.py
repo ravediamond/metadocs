@@ -25,7 +25,6 @@ from ..models.models import (
     PipelineStage,
 )
 from ..models.schemas import (
-    ProcessingStatus,
     ProcessingPipeline as ProcessingPipelineSchema,
     ProcessingVersionBase,
     MergeRequest,
@@ -35,6 +34,7 @@ from ..models.schemas import (
     MergePrompts,
     GroupPrompts,
     OntologyPrompts,
+    StageStartResponse,
 )
 from ..processors.prompts.parse_prompts import (
     SYSTEM_PROMPT as PARSE_SYSTEM_PROMPT,
@@ -259,7 +259,7 @@ async def process_merge(
 ) -> bool:
     """process multiple extract version through merging stage"""
     try:
-        logger.info(f"Starting merge for {len(extract_versions)} extract versions")
+        logger.info(f"Starting merge for {len(extract_version_ids)} extract versions")
 
         merge_version = (
             db.query(MergeVersion)
@@ -295,7 +295,7 @@ async def process_merge(
 
     except Exception as e:
         logger.error(
-            f"Error in extract processing for parse version {merge_result.version_id}: {str(e)}"
+            f"Error in merge processing for merge version {merge_version.version_id}: {str(e)}"
         )
         merge_version.status = "failed"
         merge_version.error = str(e)
@@ -424,6 +424,7 @@ async def process_ontology(
 @router.post(
     "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/files/{file_version_id}/parse",
     status_code=status.HTTP_202_ACCEPTED,
+    response_model=StageStartResponse,
 )
 async def start_parse_processing(
     tenant_id: UUID,
@@ -520,13 +521,15 @@ async def start_parse_processing(
     return {
         "message": "PDF parsing started",
         "pipeline_id": pipeline.pipeline_id,
-        "parse_version_id": parse_version.version_id,
+        "version_id": parse_version.version_id,
+        "input_version_ids": [file_version_id],
     }
 
 
 @router.post(
     "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/parse/{parse_version_id}/extract",
     status_code=status.HTTP_202_ACCEPTED,
+    response_model=StageStartResponse,
 )
 async def start_extract_processing(
     tenant_id: UUID,
@@ -622,13 +625,15 @@ async def start_extract_processing(
     return {
         "message": "Entity extraction started",
         "pipeline_id": pipeline.pipeline_id,
-        "extract_version_id": extract_version.version_id,
+        "version_id": extract_version.version_id,
+        "input_version_ids": [parse_version_id],
     }
 
 
 @router.post(
     "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/merge",
     status_code=status.HTTP_202_ACCEPTED,
+    response_model=StageStartResponse,
 )
 async def start_merge_processing(
     tenant_id: UUID,
@@ -690,7 +695,7 @@ async def start_merge_processing(
     merge_version = MergeVersion(
         pipeline_id=pipeline.pipeline_id,
         version_number=len(pipeline.merge_versions) + 1,
-        input_extraction_version_id=merge_request.extract_version_ids,
+        input_extract_version_ids=merge_request.extract_version_ids,
         system_prompt=MERGE_SYSTEM_PROMPT,
         entity_merge_prompt=ENTITY_MERGE_PROMPT,
         entity_details_prompt=MERGE_ENTITY_DETAILS_PROMPT,
@@ -724,14 +729,15 @@ async def start_merge_processing(
     return {
         "message": "Entity merging started",
         "pipeline_id": pipeline.pipeline_id,
-        "merge_version_id": merge_version.version_id,
-        "extract_version_ids": [str(ev.version_id) for ev in extract_versions],
+        "version_id": merge_version.version_id,
+        "input_version_ids": merge_request.extract_version_ids,
     }
 
 
 @router.post(
     "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/merge/{merge_version_id}/group",
     status_code=status.HTTP_202_ACCEPTED,
+    response_model=StageStartResponse,
 )
 async def start_group_processing(
     tenant_id: UUID,
@@ -760,6 +766,14 @@ async def start_group_processing(
         raise HTTPException(
             status_code=400,
             detail="Can only extract entities for domain versions in DRAFT status",
+        )
+
+    # Get pipeline
+    pipeline = domain_version_obj.processing_pipeline
+    if not pipeline:
+        raise HTTPException(
+            status_code=404,
+            detail="No processing pipeline found for this domain version",
         )
 
     # Check parse version exists and completed
@@ -814,19 +828,21 @@ async def start_group_processing(
 
     # Start processing
     background_tasks.add_task(
-        process_merge, merge_version.version_id, group_version.version_id, config, db
+        process_group, merge_version.version_id, group_version.version_id, config, db
     )
 
     return {
-        "message": "Entity extraction started",
+        "message": "Entity grouping started",
         "pipeline_id": pipeline.pipeline_id,
-        "merge_version_id": group_version.version_id,
+        "version_id": group_version.version_id,
+        "input_version_ids": [merge_version_id],
     }
 
 
 @router.post(
     "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/ontology",
     status_code=status.HTTP_202_ACCEPTED,
+    response_model=StageStartResponse,
 )
 async def start_ontology_processing(
     tenant_id: UUID,
@@ -855,6 +871,14 @@ async def start_ontology_processing(
         raise HTTPException(
             status_code=400,
             detail="Can only extract entities for domain versions in DRAFT status",
+        )
+
+    # Get pipeline
+    pipeline = domain_version_obj.processing_pipeline
+    if not pipeline:
+        raise HTTPException(
+            status_code=404,
+            detail="No processing pipeline found for this domain version",
         )
 
     # Check group version exists and completed
@@ -925,7 +949,7 @@ async def start_ontology_processing(
 
     # Start processing
     background_tasks.add_task(
-        ontology_version.version_id,
+        process_ontology,
         merge_version.version_id,
         group_version.version_id,
         ontology_version.version_id,
@@ -934,9 +958,13 @@ async def start_ontology_processing(
     )
 
     return {
-        "message": "Ontology started",
+        "message": "Ontology generation started",
         "pipeline_id": pipeline.pipeline_id,
-        "merge_version_id": ontology_version.version_id,
+        "version_id": ontology_version.version_id,
+        "input_version_ids": [
+            ontology_request.merge_version_id,
+            ontology_request.group_version_id,
+        ],
     }
 
 

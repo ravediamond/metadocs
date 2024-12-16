@@ -26,6 +26,16 @@ class MergeProcessor(BaseProcessor):
         self.custom_instructions = self.merge_version.custom_instructions
         super().__init__(config_manager)
 
+    @property
+    def _get_logger_name(self) -> str:
+        return f"MergeProcessor_{self.merge_version.version_id}"
+
+    @property
+    def _get_output_dir(self) -> str:
+        # Since we have multiple extract versions, use the directory of the first one
+        base_dir = os.path.dirname(self.extract_versions[0].output_path)
+        return os.path.join(base_dir, f"merge_{self.merge_version.version_id}")
+
     def _merge_batch(self, entities_batch: List[Dict]) -> Dict:
         content = [
             {"type": "text", "text": json.dumps(entities_batch)},

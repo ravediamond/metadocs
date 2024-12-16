@@ -44,6 +44,19 @@ class ExtractProcessor(BaseProcessor):
         self.custom_instructions = self.extract_version.custom_instructions
         super().__init__(config_manager)
 
+    @property
+    def _get_logger_name(self) -> str:
+        """Return the logger name for this processor."""
+        return f"ExtractProcessor_{self.extract_version.version_id}"
+
+    @property
+    def _get_output_dir(self) -> str:
+        """Return the output directory for this processor."""
+        return os.path.join(
+            os.path.dirname(self.parse_version.output_path),
+            f"extract_{self.extract_version.version_id}",
+        )
+
     def _initial_extraction(self, content: str) -> tuple[List[str], List[Dict]]:
         """Perform initial extraction of entities and relationships."""
         self.logger.info("Performing initial entity extraction")

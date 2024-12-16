@@ -4,9 +4,9 @@ import { GitCommit, CheckCircle } from 'lucide-react';
 
 const WorkflowStatus = ({ phases, activePhase, setActivePhase, currentWorkflowVersion }) => {
   const borderColor = useColorModeValue('gray.200', 'gray.700');
-  
+
   const getStatusColor = (phase) => {
-    switch(phase.status) {
+    switch (phase.status) {
       case 'completed':
         return { bg: 'green.100', color: 'green.600', hover: 'green.200' };
       case 'in_progress':
@@ -71,10 +71,10 @@ const WorkflowStatus = ({ phases, activePhase, setActivePhase, currentWorkflowVe
                 )}
               </Flex>
               {index < phases.length - 1 && (
-                <Box 
-                  h="px" 
-                  flex="1" 
-                  bg={phase.status === 'completed' ? 'green.400' : 'gray.200'} 
+                <Box
+                  h="px"
+                  flex="1"
+                  bg={phase.status === 'completed' ? 'green.400' : 'gray.200'}
                 />
               )}
             </Flex>

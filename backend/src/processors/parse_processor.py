@@ -33,9 +33,11 @@ class ParseProcessor(BaseProcessor):
         self.custom_instructions = self.parse_version.custom_instructions
         super().__init__(config_manager)
 
+    @property
     def _get_output_dir(self) -> str:
         return self.parse_version.output_dir
 
+    @property
     def _get_logger_name(self) -> str:
         return f"ParseProcessor_{self.file_version.file_version_id}"
 

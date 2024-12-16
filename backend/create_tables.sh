@@ -227,7 +227,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       iterative_extract_entities_prompt TEXT NOT NULL,
       entity_details_prompt TEXT NOT NULL,
       custom_instructions TEXT[],
-      input_extraction_version_id UUID REFERENCES parse_versions(version_id) ON DELETE CASCADE NOT NULL,
+      input_parse_version_id UUID REFERENCES parse_versions(version_id) ON DELETE CASCADE NOT NULL,
       status VARCHAR(50) NOT NULL,
       output_dir VARCHAR(1024) NOT NULL,
       output_path VARCHAR(1024) NOT NULL,

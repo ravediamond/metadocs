@@ -28,6 +28,17 @@ class OntologyProcessor(BaseProcessor):
         self.custom_instructions = self.ontology_version.custom_instructions
         super().__init__(config_manager)
 
+    @property
+    def _get_logger_name(self) -> str:
+        return f"OntologyProcessor_{self.ontology_version.version_id}"
+
+    @property
+    def _get_output_dir(self) -> str:
+        return os.path.join(
+            os.path.dirname(self.merge_version.output_path),
+            f"ontology_{self.ontology_version.version_id}",
+        )
+
     def _generate_mermaid(self, entities_data: Dict, groups_data: Dict) -> str:
         self.logger.info("Generating Mermaid diagram")
         try:

@@ -536,7 +536,7 @@ class ParseVersion(Base):
     system_prompt = Column(Text, nullable=False)
     readability_prompt = Column(Text, nullable=False)
     convert_prompt = Column(Text, nullable=False)
-    custom_instructions = Column(ARRAY(Text), nullable=False)
+    custom_instructions = Column(ARRAY(Text))
     input_file_version_id = Column(
         UUIDType(as_uuid=True),
         ForeignKey("file_versions.file_version_id", ondelete="CASCADE"),
@@ -570,8 +570,8 @@ class ExtractVersion(Base):
     initial_entity_extraction_prompt = Column(Text, nullable=False)
     iterative_extract_entities_prompt = Column(Text, nullable=False)
     entity_details_prompt = Column(Text, nullable=False)
-    custom_instructions = Column(ARRAY(Text), nullable=False)
-    input_extraction_version_id = Column(
+    custom_instructions = Column(ARRAY(Text))
+    input_parse_version_id = Column(
         UUIDType(as_uuid=True),
         ForeignKey("parse_versions.version_id", ondelete="CASCADE"),
         nullable=False,
@@ -602,7 +602,7 @@ class MergeVersion(Base):
     system_prompt = Column(Text, nullable=False)
     entity_details_prompt = Column(Text, nullable=False)
     entity_merge_prompt = Column(Text, nullable=False)
-    custom_instructions = Column(ARRAY(Text), nullable=False)
+    custom_instructions = Column(ARRAY(Text))
     input_extract_version_ids = Column(ARRAY(UUIDType(as_uuid=True)), nullable=False)
     output_dir = Column(String(1024), nullable=False)
     output_path = Column(String(1024))
@@ -631,7 +631,7 @@ class GroupVersion(Base):
     version_number = Column(Integer, nullable=False)
     system_prompt = Column(Text, nullable=False)
     entity_group_prompt = Column(Text, nullable=False)
-    custom_instructions = Column(ARRAY(Text), nullable=False)
+    custom_instructions = Column(ARRAY(Text))
     input_merge_version_id = Column(
         UUIDType(as_uuid=True),
         ForeignKey("merge_versions.version_id", ondelete="CASCADE"),
@@ -664,7 +664,7 @@ class OntologyVersion(Base):
     version_number = Column(Integer, nullable=False)
     system_prompt = Column(Text, nullable=False)
     ontology_prompt = Column(Text, nullable=False)
-    custom_instructions = Column(ARRAY(Text), nullable=False)
+    custom_instructions = Column(ARRAY(Text))
     input_group_version_id = Column(
         UUIDType(as_uuid=True),
         ForeignKey("group_versions.version_id", ondelete="CASCADE"),
