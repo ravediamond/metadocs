@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import func
 from typing import List, Optional
@@ -16,6 +16,8 @@ from ..models.models import (
     File,
     DomainVersionFile,
     FileVersion,
+    PipelineStatus,
+    PipelineStage,
 )
 from ..models.schemas import (
     Domain as DomainSchema,
@@ -295,7 +297,7 @@ def get_domain_versions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Retrieves all versions for a specific domain."""
+    """Retrieves all versions for a specific domain with their pipelines."""
     domain = (
         db.query(Domain)
         .filter(Domain.tenant_id == tenant_id, Domain.domain_id == domain_id)
@@ -306,6 +308,7 @@ def get_domain_versions(
 
     versions = (
         db.query(DomainVersion)
+        .options(joinedload(DomainVersion.processing_pipeline))  # Eager load pipeline
         .filter(DomainVersion.domain_id == domain_id)
         .order_by(DomainVersion.version_number.asc())
         .all()
@@ -350,7 +353,7 @@ def create_domain_version(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Creates a new version for a domain."""
+    """Creates a new version for a domain with an associated pipeline."""
     domain = (
         db.query(Domain)
         .filter(Domain.tenant_id == tenant_id, Domain.domain_id == domain_id)
@@ -366,8 +369,20 @@ def create_domain_version(
         or 0
     )
 
+    # Create new pipeline
+    pipeline = ProcessingPipeline(
+        domain_id=domain_id,
+        stage=PipelineStage.NOT_STARTED,
+        status=PipelineStatus.UNINITIALIZED,
+    )
+    db.add(pipeline)
+    db.flush()  # Flush to get pipeline_id
+
     new_version = DomainVersion(
-        domain_id=domain_id, tenant_id=tenant_id, version_number=latest_version + 1
+        domain_id=domain_id,
+        tenant_id=tenant_id,
+        version_number=latest_version + 1,
+        pipeline_id=pipeline.pipeline_id,  # Associate the pipeline
     )
 
     try:

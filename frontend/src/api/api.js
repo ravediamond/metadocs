@@ -334,7 +334,45 @@ export const processing = {
     );
     if (!response.ok) throw new Error('Failed to fetch processing content');
     return response.json();
-  }
+  },
+  getStageStatus: async (tenantId, domainId, pipelineId, stage, token) => {
+    const response = await fetch(
+      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/stage/${stage}/status`,
+      {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+    if (!response.ok) throw new Error(`Failed to fetch ${stage} stage status`);
+    return response.json();
+  },
+
+  getStageDependencies: async (tenantId, domainId, pipelineId, stage, token) => {
+    const response = await fetch(
+      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/stage/${stage}/dependencies`,
+      {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+    if (!response.ok) throw new Error(`Failed to fetch ${stage} stage dependencies`);
+    return response.json();
+  },
+
+  startStageBatch: async (tenantId, domainId, pipelineId, stage, versionIds, token) => {
+    const response = await fetch(
+      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/stage/${stage}/start-batch`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        // Send array directly instead of an object
+        body: JSON.stringify(versionIds)  // Changed this line
+      }
+    );
+    if (!response.ok) throw new Error(`Failed to start ${stage} batch processing`);
+    return response.json();
+  },
 };
 
 // User endpoints

@@ -537,3 +537,52 @@ class StageStartResponse(BaseModel):
     pipeline_id: UUID
     version_id: UUID
     input_version_ids: List[UUID]
+
+
+class StageVersionInfo(BaseModel):
+    version_id: UUID
+    status: str
+    number: int
+    created_at: datetime
+    error: Optional[str] = None
+    created_at: datetime
+
+
+class StageDependencyInfo(BaseModel):
+    stage: PipelineStage
+    completed: bool
+
+
+class StageStatusResponse(BaseModel):
+    stage: PipelineStage
+    status: PipelineStatus
+    can_start: bool
+    versions: List[StageVersionInfo]
+    latest_version_id: Optional[UUID]
+
+    class Config:
+        from_attributes = True
+
+
+class StageDependenciesResponse(BaseModel):
+    stage: PipelineStage
+    dependencies: List[StageDependencyInfo]
+    can_start: bool
+
+    class Config:
+        from_attributes = True
+
+
+class StartedVersionInfo(BaseModel):
+    message: str
+    pipeline_id: UUID
+    version_id: UUID
+    input_version_ids: List[UUID]
+
+
+class StageBatchResponse(BaseModel):
+    message: str
+    started_versions: List[StartedVersionInfo]
+
+    class Config:
+        from_attributes = True

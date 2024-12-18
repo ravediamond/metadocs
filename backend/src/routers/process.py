@@ -35,6 +35,9 @@ from ..models.schemas import (
     GroupPrompts,
     OntologyPrompts,
     StageStartResponse,
+    StageStatusResponse,
+    StageDependenciesResponse,
+    StageBatchResponse,
 )
 from ..processors.prompts.parse_prompts import (
     SYSTEM_PROMPT as PARSE_SYSTEM_PROMPT,
@@ -148,10 +151,7 @@ def get_next_version_number(db: Session, pipeline_id: UUID, version_model) -> in
 
 
 async def process_parse(
-    file_version_id: UUID,
-    parse_version_id: UUID,
-    config: ConfigManager,
-    db: Session,
+    file_version_id: UUID, parse_version_id: UUID, config: ConfigManager, db: Session
 ) -> bool:
     try:
         logger.info(f"Starting parse for file version {file_version_id}")
@@ -166,10 +166,11 @@ async def process_parse(
             .filter(ParseVersion.version_id == parse_version_id)
             .first()
         )
-
         pipeline = parse_version.pipeline
-        pipeline.status = PipelineStatus.RUNNING
+
+        # Update pipeline status
         pipeline.stage = PipelineStage.PARSE
+        pipeline.status = PipelineStatus.RUNNING
         db.commit()
 
         parse_processor = ParseProcessor(file_version, parse_version, config)
@@ -179,12 +180,12 @@ async def process_parse(
             logger.error(f"Parse failed: {parse_result.error}")
             parse_version.status = "failed"
             parse_version.error = parse_result.error
-            pipeline.status = PipelineStatus.FAILED
+            pipeline.update_pipeline_status()
             db.commit()
             return False
 
         parse_version.status = "completed"
-        pipeline.status = PipelineStatus.COMPLETED
+        pipeline.update_pipeline_status()
         db.commit()
         logger.info("Parse completed successfully")
         return True
@@ -193,18 +194,14 @@ async def process_parse(
         logger.error(f"Error in parse processing: {str(e)}", exc_info=True)
         parse_version.status = "failed"
         parse_version.error = str(e)
-        pipeline.status = PipelineStatus.FAILED
+        pipeline.update_pipeline_status()
         db.commit()
         return False
 
 
 async def process_extract(
-    parse_version_id: UUID,
-    extract_version_id: UUID,
-    config: ConfigManager,
-    db: Session,
+    parse_version_id: UUID, extract_version_id: UUID, config: ConfigManager, db: Session
 ) -> bool:
-    """Process a single file through entity extraction stage"""
     try:
         logger.info(f"Starting extract for parse version {parse_version_id}")
 
@@ -218,35 +215,40 @@ async def process_extract(
             .filter(ExtractVersion.version_id == extract_version_id)
             .first()
         )
-
         pipeline = extract_version.pipeline
-        pipeline.status = PipelineStatus.RUNNING
+
+        # Verify dependencies
+        if not pipeline.can_start_stage(PipelineStage.EXTRACT):
+            logger.error("Cannot start extract - dependencies not met")
+            extract_version.status = "failed"
+            extract_version.error = "Parse stage not completed"
+            db.commit()
+            return False
+
         pipeline.stage = PipelineStage.EXTRACT
+        pipeline.status = PipelineStatus.RUNNING
         db.commit()
 
-        # Process entities with base prompt from extract version
         extract_processor = ExtractProcessor(parse_version, extract_version, config)
         extract_result = extract_processor.process()
 
         if not extract_result.success:
             extract_version.status = extract_result.status
             extract_version.error = extract_result.error
-            pipeline.status = PipelineStatus.FAILED
+            pipeline.update_pipeline_status()
             db.commit()
             return False
 
-        # Update extract version with output information
         extract_version.status = extract_result.status
+        pipeline.update_pipeline_status()
         db.commit()
         return True
 
     except Exception as e:
-        logger.error(
-            f"Error in extract processing for parse version {parse_version.version_id}: {str(e)}"
-        )
+        logger.error(f"Error in extract processing: {str(e)}")
         extract_version.status = "failed"
         extract_version.error = str(e)
-        pipeline.status = PipelineStatus.FAILED
+        pipeline.update_pipeline_status()
         db.commit()
         return False
 
@@ -257,7 +259,6 @@ async def process_merge(
     config: ConfigManager,
     db: Session,
 ) -> bool:
-    """process multiple extract version through merging stage"""
     try:
         logger.info(f"Starting merge for {len(extract_version_ids)} extract versions")
 
@@ -271,46 +272,47 @@ async def process_merge(
             .filter(ExtractVersion.version_id.in_(extract_version_ids))
             .all()
         )
-
         pipeline = merge_version.pipeline
-        pipeline.status = PipelineStatus.RUNNING
+
+        # Verify dependencies
+        if not pipeline.can_start_stage(PipelineStage.MERGE):
+            logger.error("Cannot start merge - extract stage not completed")
+            merge_version.status = "failed"
+            merge_version.error = "Extract stage not completed"
+            db.commit()
+            return False
+
         pipeline.stage = PipelineStage.MERGE
+        pipeline.status = PipelineStatus.RUNNING
         db.commit()
 
-        # Process entities with base prompt from extract version
         merge_processor = MergeProcessor(extract_versions, merge_version, config)
         merge_result = merge_processor.process()
 
         if not merge_result.success:
             merge_version.status = merge_result.status
             merge_version.error = merge_result.error
-            pipeline.status = PipelineStatus.FAILED
+            pipeline.update_pipeline_status()
             db.commit()
             return False
 
-        # Update extract version with output information
         merge_version.status = merge_result.status
+        pipeline.update_pipeline_status()
         db.commit()
         return True
 
     except Exception as e:
-        logger.error(
-            f"Error in merge processing for merge version {merge_version.version_id}: {str(e)}"
-        )
+        logger.error(f"Error in merge processing: {str(e)}")
         merge_version.status = "failed"
         merge_version.error = str(e)
-        pipeline.status = PipelineStatus.FAILED
+        pipeline.update_pipeline_status()
         db.commit()
         return False
 
 
 async def process_group(
-    merge_version_id: UUID,
-    group_version_id: UUID,
-    config: ConfigManager,
-    db: Session,
+    merge_version_id: UUID, group_version_id: UUID, config: ConfigManager, db: Session
 ) -> bool:
-    """Process entity grouping stage"""
     try:
         logger.info(f"Starting group processing for merge version {merge_version_id}")
 
@@ -324,35 +326,40 @@ async def process_group(
             .filter(GroupVersion.version_id == group_version_id)
             .first()
         )
-
         pipeline = group_version.pipeline
-        pipeline.status = PipelineStatus.RUNNING
+
+        # Verify dependencies
+        if not pipeline.can_start_stage(PipelineStage.GROUP):
+            logger.error("Cannot start group - merge stage not completed")
+            group_version.status = "failed"
+            group_version.error = "Merge stage not completed"
+            db.commit()
+            return False
+
         pipeline.stage = PipelineStage.GROUP
+        pipeline.status = PipelineStatus.RUNNING
         db.commit()
 
-        # Process entities with base prompt from extract version
         group_processor = GroupProcessor(merge_version, group_version, config)
         group_result = group_processor.process()
 
         if not group_result.success:
             group_version.status = group_result.status
             group_version.error = group_result.error
-            pipeline.status = PipelineStatus.FAILED
+            pipeline.update_pipeline_status()
             db.commit()
             return False
 
-        # Update extract version with output information
         group_version.status = group_result.status
+        pipeline.update_pipeline_status()
         db.commit()
         return True
 
     except Exception as e:
-        logger.error(
-            f"Error in extract processing for merge version {merge_version.version_id}: {str(e)}"
-        )
+        logger.error(f"Error in group processing: {str(e)}")
         group_version.status = "failed"
         group_version.error = str(e)
-        pipeline.status = PipelineStatus.FAILED
+        pipeline.update_pipeline_status()
         db.commit()
         return False
 
@@ -364,11 +371,8 @@ async def process_ontology(
     config: ConfigManager,
     db: Session,
 ) -> bool:
-    """Process ontology generation stage"""
     try:
-        logger.info(
-            f"Starting ontology for group version {group_version_id} and ontology version {ontology_version_id}"
-        )
+        logger.info(f"Starting ontology for group version {group_version_id}")
 
         merge_version = (
             db.query(MergeVersion)
@@ -385,13 +389,20 @@ async def process_ontology(
             .filter(OntologyVersion.version_id == ontology_version_id)
             .first()
         )
-
         pipeline = ontology_version.pipeline
-        pipeline.status = PipelineStatus.RUNNING
+
+        # Verify dependencies
+        if not pipeline.can_start_stage(PipelineStage.ONTOLOGY):
+            logger.error("Cannot start ontology - dependencies not met")
+            ontology_version.status = "failed"
+            ontology_version.error = "Previous stages not completed"
+            db.commit()
+            return False
+
         pipeline.stage = PipelineStage.ONTOLOGY
+        pipeline.status = PipelineStatus.RUNNING
         db.commit()
 
-        # Process entities with base prompt from extract version
         ontology_processor = OntologyProcessor(
             merge_version, group_version, ontology_version, config
         )
@@ -400,22 +411,20 @@ async def process_ontology(
         if not ontology_result.success:
             ontology_version.status = ontology_result.status
             ontology_version.error = ontology_result.error
-            pipeline.status = PipelineStatus.FAILED
+            pipeline.update_pipeline_status()
             db.commit()
             return False
 
-        # Update extract version with output information
-        group_version.status = ontology_version.status
+        ontology_version.status = ontology_result.status
+        pipeline.update_pipeline_status()
         db.commit()
         return True
 
     except Exception as e:
-        logger.error(
-            f"Error in group or merge processing for ontology version merge -> {merge_version.version_id}, group -> {group_version.version_id}: {str(e)}"
-        )
+        logger.error(f"Error in ontology processing: {str(e)}")
         ontology_version.status = "failed"
         ontology_version.error = str(e)
-        pipeline.status = PipelineStatus.FAILED
+        pipeline.update_pipeline_status()
         db.commit()
         return False
 
@@ -434,7 +443,6 @@ async def start_parse_processing(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Start PDF parsing for a single file version"""
     # Check domain version exists and is in DRAFT
     domain_version_obj = (
         db.query(DomainVersion)
@@ -456,6 +464,21 @@ async def start_parse_processing(
             detail="Can only parse files for domain versions in DRAFT status",
         )
 
+    # Get or create pipeline
+    pipeline = domain_version_obj.processing_pipeline
+    if not pipeline:
+        pipeline = ProcessingPipeline(domain_id=domain_id)
+        domain_version_obj.processing_pipeline = pipeline
+        db.add(pipeline)
+        db.commit()
+
+    # Verify we can start parse
+    if not pipeline.can_start_stage(PipelineStage.PARSE):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot start parse stage - pipeline in invalid state",
+        )
+
     config = ConfigManager(db, str(tenant_id), str(domain_id))
 
     # Check file version exists
@@ -474,14 +497,6 @@ async def start_parse_processing(
     if not file_version:
         raise HTTPException(status_code=404, detail="File version not found")
 
-    # Get or create processing pipeline for this domain version
-    pipeline = domain_version_obj.processing_pipeline
-    if not pipeline:
-        pipeline = ProcessingPipeline(domain_id=domain_id)
-        domain_version_obj.processing_pipeline = pipeline
-        db.add(pipeline)
-        db.commit()
-
     # Create parse version
     parse_version = ParseVersion(
         pipeline_id=pipeline.pipeline_id,
@@ -497,6 +512,7 @@ async def start_parse_processing(
     db.add(parse_version)
     db.commit()
 
+    # Set output paths
     output_dir = os.path.join(
         config.get("processing_dir", "processing_output"),
         str(pipeline.domain_id),
@@ -539,8 +555,6 @@ async def start_extract_processing(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Start entity extraction from parse output"""
-    # Check domain version exists and is in DRAFT
     domain_version_obj = (
         db.query(DomainVersion)
         .join(Domain)
@@ -561,6 +575,19 @@ async def start_extract_processing(
             detail="Can only extract entities for domain versions in DRAFT status",
         )
 
+    pipeline = domain_version_obj.processing_pipeline
+    if not pipeline:
+        raise HTTPException(
+            status_code=404,
+            detail="No processing pipeline found for this domain version",
+        )
+
+    # Verify we can start extract
+    if not pipeline.can_start_stage(PipelineStage.EXTRACT):
+        raise HTTPException(
+            status_code=400, detail="Cannot start extract - parse stage not completed"
+        )
+
     config = ConfigManager(db, str(tenant_id), str(domain_id))
 
     # Check parse version exists and completed
@@ -576,14 +603,6 @@ async def start_extract_processing(
     if not parse_version:
         raise HTTPException(
             status_code=404, detail="Parse version not found or not completed"
-        )
-
-    # Get pipeline
-    pipeline = domain_version_obj.processing_pipeline
-    if not pipeline:
-        raise HTTPException(
-            status_code=404,
-            detail="No processing pipeline found for this domain version",
         )
 
     # Create extract version
@@ -616,10 +635,10 @@ async def start_extract_processing(
     # Start processing
     background_tasks.add_task(
         process_extract,
-        parse_version.version_id,
-        extract_version.version_id,
-        config,
-        db,
+        parse_version_id=parse_version.version_id,
+        extract_version_id=extract_version.version_id,
+        config=config,
+        db=db,
     )
 
     return {
@@ -643,8 +662,6 @@ async def start_merge_processing(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Start merging entities from specified extract versions"""
-    # Check domain version exists and is in DRAFT
     domain_version_obj = (
         db.query(DomainVersion)
         .join(Domain)
@@ -665,12 +682,17 @@ async def start_merge_processing(
             detail="Can only merge entities for domain versions in DRAFT status",
         )
 
-    # Get pipeline
     pipeline = domain_version_obj.processing_pipeline
     if not pipeline:
         raise HTTPException(
             status_code=404,
             detail="No processing pipeline found for this domain version",
+        )
+
+    # Verify we can start merge
+    if not pipeline.can_start_stage(PipelineStage.MERGE):
+        raise HTTPException(
+            status_code=400, detail="Cannot start merge - extract stage not completed"
         )
 
     # Verify all extract versions exist and are completed
@@ -747,7 +769,6 @@ async def start_group_processing(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Start grouping entities from merged results"""
     domain_version_obj = (
         db.query(DomainVersion)
         .join(Domain)
@@ -765,10 +786,9 @@ async def start_group_processing(
     if domain_version_obj.status != DomainVersionStatus.DRAFT:
         raise HTTPException(
             status_code=400,
-            detail="Can only extract entities for domain versions in DRAFT status",
+            detail="Can only group entities for domain versions in DRAFT status",
         )
 
-    # Get pipeline
     pipeline = domain_version_obj.processing_pipeline
     if not pipeline:
         raise HTTPException(
@@ -776,7 +796,13 @@ async def start_group_processing(
             detail="No processing pipeline found for this domain version",
         )
 
-    # Check parse version exists and completed
+    # Verify we can start group
+    if not pipeline.can_start_stage(PipelineStage.GROUP):
+        raise HTTPException(
+            status_code=400, detail="Cannot start group - merge stage not completed"
+        )
+
+    # Check merge version exists and completed
     merge_version = (
         db.query(MergeVersion)
         .filter(
@@ -793,7 +819,7 @@ async def start_group_processing(
 
     config = ConfigManager(db, str(tenant_id), str(domain_id))
 
-    # Create extract version
+    # Create group version
     group_version = GroupVersion(
         pipeline_id=pipeline.pipeline_id,
         version_number=len(pipeline.group_versions) + 1,
@@ -818,17 +844,13 @@ async def start_group_processing(
     group_version.output_path = f"{output_dir}/output.json"
     db.commit()
 
-    # Get pipeline
-    pipeline = domain_version_obj.processing_pipeline
-    if not pipeline:
-        raise HTTPException(
-            status_code=404,
-            detail="No processing pipeline found for this domain version",
-        )
-
     # Start processing
     background_tasks.add_task(
-        process_group, merge_version.version_id, group_version.version_id, config, db
+        process_group,
+        merge_version_id=merge_version.version_id,
+        group_version_id=group_version.version_id,
+        config=config,
+        db=db,
     )
 
     return {
@@ -852,7 +874,6 @@ async def start_ontology_processing(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Start generating ontology from grouped entities"""
     domain_version_obj = (
         db.query(DomainVersion)
         .join(Domain)
@@ -870,10 +891,9 @@ async def start_ontology_processing(
     if domain_version_obj.status != DomainVersionStatus.DRAFT:
         raise HTTPException(
             status_code=400,
-            detail="Can only extract entities for domain versions in DRAFT status",
+            detail="Can only generate ontology for domain versions in DRAFT status",
         )
 
-    # Get pipeline
     pipeline = domain_version_obj.processing_pipeline
     if not pipeline:
         raise HTTPException(
@@ -881,7 +901,28 @@ async def start_ontology_processing(
             detail="No processing pipeline found for this domain version",
         )
 
-    # Check group version exists and completed
+    # Verify we can start ontology
+    if not pipeline.can_start_stage(PipelineStage.ONTOLOGY):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot start ontology - previous stages not completed",
+        )
+
+    # Check merge and group versions exist and completed
+    merge_version = (
+        db.query(MergeVersion)
+        .filter(
+            MergeVersion.version_id == ontology_request.merge_version_id,
+            MergeVersion.status == "completed",
+        )
+        .first()
+    )
+
+    if not merge_version:
+        raise HTTPException(
+            status_code=404, detail="Merge version not found or not completed"
+        )
+
     group_version = (
         db.query(GroupVersion)
         .filter(
@@ -898,22 +939,7 @@ async def start_ontology_processing(
 
     config = ConfigManager(db, str(tenant_id), str(domain_id))
 
-    # Check merge version exists and completed
-    merge_version = (
-        db.query(MergeVersion)
-        .filter(
-            MergeVersion.version_id == ontology_request.merge_version_id,
-            MergeVersion.status == "completed",
-        )
-        .first()
-    )
-
-    if not merge_version:
-        raise HTTPException(
-            status_code=404, detail="Merge version not found or not completed"
-        )
-
-    # Create extract version
+    # Create ontology version
     ontology_version = OntologyVersion(
         pipeline_id=pipeline.pipeline_id,
         version_number=len(pipeline.ontology_versions) + 1,
@@ -939,22 +965,14 @@ async def start_ontology_processing(
     ontology_version.output_path = f"{output_dir}/output.json"
     db.commit()
 
-    # Get pipeline
-    pipeline = domain_version_obj.processing_pipeline
-    if not pipeline:
-        raise HTTPException(
-            status_code=404,
-            detail="No processing pipeline found for this domain version",
-        )
-
     # Start processing
     background_tasks.add_task(
         process_ontology,
-        merge_version.version_id,
-        group_version.version_id,
-        ontology_version.version_id,
-        config,
-        db,
+        merge_version_id=merge_version.version_id,
+        group_version_id=group_version.version_id,
+        ontology_version_id=ontology_version.version_id,
+        config=config,
+        db=db,
     )
 
     return {
@@ -1553,3 +1571,190 @@ async def get_processing_output_content(
     except Exception as e:
         logger.error(f"Error reading output file: {str(e)}")
         raise HTTPException(status_code=500, detail="Error reading output file")
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/stage/{stage}/status",
+    response_model=StageStatusResponse,
+)
+async def get_stage_status(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    stage: PipelineStage,
+    db: Session = Depends(get_db),
+):
+    """Get detailed status for a specific pipeline stage"""
+    pipeline = (
+        db.query(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            Domain.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+        )
+        .first()
+    )
+
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    return {
+        "stage": stage,
+        "status": pipeline.get_stage_status(stage),
+        "can_start": pipeline.can_start_stage(stage),
+        "versions": pipeline.get_stage_versions(stage),
+        "latest_version_id": pipeline.get_latest_version_by_stage(stage),
+    }
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/stage/{stage}/dependencies",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=StageDependenciesResponse,
+)
+async def get_stage_dependencies(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    stage: PipelineStage,
+    db: Session = Depends(get_db),
+):
+    """Get dependency information for a specific stage"""
+    pipeline = (
+        db.query(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            Domain.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+        )
+        .first()
+    )
+
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    dependencies = {
+        PipelineStage.PARSE: [],
+        PipelineStage.EXTRACT: [
+            {
+                "stage": PipelineStage.PARSE,
+                "completed": pipeline.get_stage_status(PipelineStage.PARSE)
+                == PipelineStatus.COMPLETED,
+            }
+        ],
+        PipelineStage.MERGE: [
+            {
+                "stage": PipelineStage.EXTRACT,
+                "completed": pipeline.get_stage_status(PipelineStage.EXTRACT)
+                == PipelineStatus.COMPLETED,
+            }
+        ],
+        PipelineStage.GROUP: [
+            {
+                "stage": PipelineStage.MERGE,
+                "completed": pipeline.get_stage_status(PipelineStage.MERGE)
+                == PipelineStatus.COMPLETED,
+            }
+        ],
+        PipelineStage.ONTOLOGY: [
+            {
+                "stage": PipelineStage.MERGE,
+                "completed": pipeline.get_stage_status(PipelineStage.MERGE)
+                == PipelineStatus.COMPLETED,
+            },
+            {
+                "stage": PipelineStage.GROUP,
+                "completed": pipeline.get_stage_status(PipelineStage.GROUP)
+                == PipelineStatus.COMPLETED,
+            },
+        ],
+    }
+
+    return {
+        "stage": stage,
+        "dependencies": dependencies.get(stage, []),
+        "can_start": pipeline.can_start_stage(stage),
+    }
+
+
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/stage/{stage}/start-batch",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=StageBatchResponse,
+)
+async def start_stage_batch(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    stage: PipelineStage,
+    version_ids: List[UUID],
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Start multiple processes for a stage"""
+    pipeline = (
+        db.query(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            Domain.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+        )
+        .first()
+    )
+
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    if not pipeline.can_start_stage(stage):
+        raise HTTPException(
+            status_code=400, detail=f"Cannot start {stage} - dependencies not met"
+        )
+
+    config = ConfigManager(db, str(tenant_id), str(domain_id))
+    started_versions = []
+
+    if stage == PipelineStage.PARSE:
+        # Start parse for each file version
+        for file_version_id in version_ids:
+            response = await start_parse_processing(
+                tenant_id=tenant_id,
+                domain_id=domain_id,
+                domain_version=pipeline.domain_version.version_number,
+                file_version_id=file_version_id,
+                background_tasks=background_tasks,
+                db=db,
+            )
+            started_versions.append(response)
+
+    elif stage == PipelineStage.EXTRACT:
+        # Start extract for each parse version
+        for parse_version_id in version_ids:
+            response = await start_extract_processing(
+                tenant_id=tenant_id,
+                domain_id=domain_id,
+                domain_version=pipeline.domain_version.version_number,
+                parse_version_id=parse_version_id,
+                background_tasks=background_tasks,
+                db=db,
+            )
+            started_versions.append(response)
+
+    elif stage == PipelineStage.MERGE:
+        # Start single merge with multiple extract versions
+        response = await start_merge_processing(
+            tenant_id=tenant_id,
+            domain_id=domain_id,
+            domain_version=pipeline.domain_version.version_number,
+            merge_request=MergeRequest(extract_version_ids=version_ids),
+            background_tasks=background_tasks,
+            db=db,
+        )
+        started_versions.append(response)
+
+    return {
+        "message": f"Started {stage} processing",
+        "started_versions": started_versions,
+    }

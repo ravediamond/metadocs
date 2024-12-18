@@ -20,13 +20,13 @@ const ProcessingWorkspace = () => {
   const [domainVersions, setDomainVersions] = useState([]);
   const [selectedVersion, setSelectedVersion] = useState(null);
   const [domainFiles, setDomainFiles] = useState([]);
-  const [pipeline, setPipeline] = useState(null);
   const [activeStage, setActiveStage] = useState('parse');
   const [results, setResults] = useState({});
 
-  // Pipeline automation state
+  // Pipeline state
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState(null);
+  const [pipeline, setPipeline] = useState(null);
 
   const phases = [
     { id: 'parse', label: 'Parse', status: 'pending' },
@@ -62,265 +62,209 @@ const ProcessingWorkspace = () => {
 
   // Pipeline status polling
   const pollPipelineStatus = useCallback(async () => {
-    if (!selectedVersion?.pipeline_id || !isRunning) {
-      console.log('🔍 Poll conditions not met:', {
-        hasPipelineId: !!selectedVersion?.pipeline_id,
-        isRunning,
-        selectedVersion
-      });
-      return;
-    }
+    if (!isRunning || !selectedVersion?.pipeline_id) return;
 
     try {
-      console.log('📡 Fetching pipeline data:', {
-        pipelineId: selectedVersion.pipeline_id,
-        tenant: currentTenant,
-        domainId: domain_id
-      });
-
+      // Get pipeline status
       const pipelineData = await processing.getPipeline(
         currentTenant,
         domain_id,
         selectedVersion.pipeline_id,
         token
       );
-
       setPipeline(pipelineData);
-      console.log('🔄 Pipeline Status:', {
-        stage: pipelineData.stage,
-        status: pipelineData.status,
-        parseId: pipelineData.current_parse_id,
-        extractId: pipelineData.current_extract_id,
-        mergeId: pipelineData.current_merge_id,
-        groupId: pipelineData.current_group_id,
-        ontologyId: pipelineData.current_ontology_id
-      });
 
-      if (pipelineData.status === 'COMPLETED') {
-        console.log('✅ Stage completed:', pipelineData.stage);
+      // Get stage status
+      const stageStatus = await processing.getStageStatus(
+        currentTenant,
+        domain_id,
+        selectedVersion.pipeline_id,
+        pipelineData.stage,
+        token
+      );
 
-        try {
-          switch (pipelineData.stage) {
-            case 'PARSE':
-              console.log('🚀 Starting Extract stage with:', {
-                parseId: pipelineData.current_parse_id
-              });
-              if (pipelineData.current_parse_id) {
-                await processing.startExtract(
-                  currentTenant,
-                  domain_id,
-                  selectedVersion.version_number,
-                  pipelineData.current_parse_id,
-                  token
-                );
-                console.log('✨ Extract stage started successfully');
-              } else {
-                console.warn('⚠️ No parse ID available to start Extract stage');
-              }
-              break;
-
-            case 'EXTRACT':
-              console.log('🚀 Starting Merge stage with:', {
-                extractId: pipelineData.current_extract_id
-              });
-              if (pipelineData.current_extract_id) {
-                await processing.startMerge(
-                  currentTenant,
-                  domain_id,
-                  selectedVersion.version_number,
-                  { extract_version_ids: [pipelineData.current_extract_id] },
-                  token
-                );
-                console.log('✨ Merge stage started successfully');
-              } else {
-                console.warn('⚠️ No extract ID available to start Merge stage');
-              }
-              break;
-
-            case 'MERGE':
-              console.log('🚀 Starting Group stage with:', {
-                mergeId: pipelineData.current_merge_id
-              });
-              if (pipelineData.current_merge_id) {
-                await processing.startGroup(
-                  currentTenant,
-                  domain_id,
-                  selectedVersion.version_number,
-                  pipelineData.current_merge_id,
-                  token
-                );
-                console.log('✨ Group stage started successfully');
-              } else {
-                console.warn('⚠️ No merge ID available to start Group stage');
-              }
-              break;
-
-            case 'GROUP':
-              console.log('🚀 Starting Ontology stage with:', {
-                mergeId: pipelineData.current_merge_id,
-                groupId: pipelineData.current_group_id
-              });
-              if (pipelineData.current_merge_id && pipelineData.current_group_id) {
-                await processing.startOntology(
-                  currentTenant,
-                  domain_id,
-                  selectedVersion.version_number,
-                  {
-                    merge_version_id: pipelineData.current_merge_id,
-                    group_version_id: pipelineData.current_group_id
-                  },
-                  token
-                );
-                console.log('✨ Ontology stage started successfully');
-              } else {
-                console.warn('⚠️ Missing IDs required to start Ontology stage');
-              }
-              break;
-
-            case 'ONTOLOGY':
-              console.log('🚀 Starting Validate stage');
-              await processing.startValidate(
-                currentTenant,
-                domain_id,
-                selectedVersion.version_number,
-                token
-              );
-              console.log('✨ Validate stage started successfully');
-              break;
-
-            case 'VALIDATE':
-              console.log('🎉 Pipeline validation completed, finalizing...');
-              await processing.complete(
-                currentTenant,
-                domain_id,
-                selectedVersion.version_number,
-                token
-              );
-              setIsRunning(false);
-              console.log('✨ Pipeline completed successfully');
-              break;
-
-            default:
-              console.log('❓ Unknown stage:', pipelineData.stage);
-          }
-        } catch (error) {
-          console.error('❌ Stage transition error:', {
-            stage: pipelineData.stage,
-            error: error.message,
-            fullError: error
-          });
-          setError(`Failed to transition from ${pipelineData.stage}: ${error.message}`);
-          setIsRunning(false);
-        }
-      } else if (pipelineData.status === 'FAILED') {
-        console.error('❌ Pipeline failed:', {
-          stage: pipelineData.stage,
-          error: pipelineData.error,
-          fullPipelineData: pipelineData
-        });
-        setIsRunning(false);
-        setError(`Pipeline failed at stage ${pipelineData.stage}`);
-      } else {
-        console.log('⏳ Pipeline in progress:', {
-          stage: pipelineData.stage,
-          status: pipelineData.status,
-          fullPipelineData: pipelineData
-        });
+      // Fetch results if there's a latest version
+      if (stageStatus.latest_version_id) {
+        await fetchResults(pipelineData.stage.toLowerCase(), stageStatus.latest_version_id);
       }
 
-      // Fetch current stage results if available
-      const currentVersionId = pipelineData[`current_${pipelineData.stage.toLowerCase()}_id`];
-      if (currentVersionId) {
-        console.log('📥 Fetching results for:', {
-          stage: pipelineData.stage,
-          versionId: currentVersionId
-        });
-        await fetchResults(pipelineData.stage.toLowerCase(), currentVersionId);
+      // Check if we can start next stage
+      const stageDeps = await processing.getStageDependencies(
+        currentTenant,
+        domain_id,
+        selectedVersion.pipeline_id,
+        pipelineData.stage,
+        token
+      );
+
+      if (stageDeps.can_start && stageStatus.status === 'COMPLETED') {
+        startNextStage(pipelineData.stage, stageStatus);
       }
 
     } catch (error) {
-      console.error('❌ Pipeline polling error:', {
-        error: error.message,
-        fullError: error
-      });
+      console.error('Pipeline polling error:', error);
+      setError('Failed to update pipeline status');
       setIsRunning(false);
-      setError('Failed to get pipeline status');
     }
-  }, [currentTenant, domain_id, selectedVersion?.pipeline_id, token, isRunning, fetchResults]);
+  }, [currentTenant, domain_id, selectedVersion?.pipeline_id, token, isRunning]);
 
-  // Add logs to the polling setup
-  useEffect(() => {
-    console.log('🔄 Polling effect triggered:', { isRunning });
-    if (isRunning) {
-      console.log('🚀 Starting polling...');
-      pollPipelineStatus();
-      const interval = setInterval(pollPipelineStatus, 5000);
-      return () => {
-        console.log('🛑 Stopping polling...');
-        clearInterval(interval);
-      };
+  // Function to start next stage
+  const startNextStage = async (currentStage, stageStatus) => {
+    try {
+      switch (currentStage) {
+        case 'PARSE':
+          // For each completed parse, start its corresponding extract
+          const completedParses = stageStatus.versions.filter(v => v.status === "completed");
+          console.log(`Found ${completedParses.length} completed parse versions:`,
+            completedParses.map(v => v.version_id));
+
+          // Check if extract is already running for these parse versions
+          for (const parseVersion of completedParses) {
+            // Get existing extract versions
+            const existingExtracts = await processing.getStageVersions(
+              currentTenant,
+              domain_id,
+              selectedVersion.pipeline_id,
+              'EXTRACT',
+              token
+            );
+
+            const hasExtract = existingExtracts.some(
+              e => e.input_version_ids?.includes(parseVersion.version_id)
+            );
+
+            console.log(`Parse version ${parseVersion.version_id}:`, {
+              hasExistingExtract: hasExtract,
+              parseStatus: parseVersion.status
+            });
+
+            // Only start extract if one doesn't exist for this parse
+            if (!hasExtract) {
+              console.log(`Starting new extract for parse version ${parseVersion.version_id}`);
+              await processing.startStageBatch(
+                currentTenant,
+                domain_id,
+                selectedVersion.pipeline_id,
+                'EXTRACT',
+                [parseVersion.version_id], // Single parse version instead of all
+                token
+              );
+            } else {
+              console.log(`Extract already exists for parse version ${parseVersion.version_id}, skipping`);
+            }
+          }
+          break;
+
+        case 'EXTRACT':
+          // Once all extracts are complete, start merge
+          const extractVersions = stageStatus.versions
+            .filter(v => v.status === "completed")
+            .map(v => v.version_id);
+
+          console.log('Completed extract versions:', extractVersions);
+
+          // Check if all files have been extracted (compare with parse versions)
+          const parseVersions = await processing.getStageVersions(
+            currentTenant,
+            domain_id,
+            selectedVersion.pipeline_id,
+            'PARSE',
+            token
+          );
+
+          const completedParseCount = parseVersions.filter(v => v.status === "completed").length;
+
+          console.log('Pipeline status:', {
+            completedExtractCount: extractVersions.length,
+            completedParseCount,
+            readyForMerge: extractVersions.length === completedParseCount
+          });
+
+          // Only start merge when all files have been extracted
+          if (extractVersions.length === completedParseCount) {
+            console.log('Starting merge with extract versions:', extractVersions);
+            await processing.startMerge(
+              currentTenant,
+              domain_id,
+              selectedVersion.version_number,
+              { extract_version_ids: extractVersions },
+              token
+            );
+          }
+          break;
+
+        case 'MERGE':
+          console.log('Merge status:', {
+            latestVersionId: stageStatus.latest_version_id,
+            status: stageStatus.status
+          });
+          // Start group only when merge is complete
+          if (stageStatus.latest_version_id) {
+            console.log('Starting group for merge version:', stageStatus.latest_version_id);
+            await processing.startGroup(
+              currentTenant,
+              domain_id,
+              selectedVersion.version_number,
+              stageStatus.latest_version_id,
+              token
+            );
+          }
+          break;
+
+        case 'GROUP':
+          console.log('Group status:', {
+            groupVersionId: stageStatus.latest_version_id,
+            mergeVersionId: pipeline.latest_merge_version_id,
+            status: stageStatus.status
+          });
+          // Start ontology only when both merge and group are complete
+          if (stageStatus.latest_version_id && pipeline.latest_merge_version_id) {
+            console.log('Starting ontology with versions:', {
+              mergeVersionId: pipeline.latest_merge_version_id,
+              groupVersionId: stageStatus.latest_version_id
+            });
+            await processing.startOntology(
+              currentTenant,
+              domain_id,
+              selectedVersion.version_number,
+              {
+                merge_version_id: pipeline.latest_merge_version_id,
+                group_version_id: stageStatus.latest_version_id
+              },
+              token
+            );
+          }
+          break;
+
+        default:
+          break;
+      }
+    } catch (error) {
+      console.error('Error starting next stage:', error);
+      setError(`Failed to start next stage after ${currentStage}`);
     }
-  }, [isRunning, pollPipelineStatus]);
+  };
 
-  // Set up polling
-  useEffect(() => {
-    if (isRunning) {
-      console.log('Starting polling...');
-      pollPipelineStatus();
-      const interval = setInterval(pollPipelineStatus, 5000);
-      return () => {
-        console.log('Stopping polling...');
-        clearInterval(interval);
-      };
-    }
-  }, [isRunning, pollPipelineStatus]);
-
-  useEffect(() => {
-    console.log('Component mounted with:', {
-      isRunning,
-      selectedVersion,
-      domainFiles: domainFiles?.length,
-      pipeline
-    });
-  }, [isRunning, selectedVersion, domainFiles, pipeline]);
-
-  // Start automated pipeline
+  // Start pipeline function
   const startPipeline = async () => {
     if (!selectedVersion || !domainFiles.length) {
       console.log('Cannot start pipeline:', { selectedVersion, domainFilesLength: domainFiles.length });
       return;
     }
 
-    console.log('Starting pipeline with:', {
-      version: selectedVersion,
-      files: domainFiles
-    });
-
     setIsRunning(true);
     setError(null);
 
     try {
-      // Start parsing for each file
-      for (const file of domainFiles) {
-        console.log('Starting parse for file:', file);
-        const response = await processing.startParse(
-          currentTenant,
-          domain_id,
-          selectedVersion.version_number,
-          file.file_version_id,
-          token
-        );
-        console.log('Parse started with response:', response);
-
-        // Update selectedVersion with pipeline ID from response
-        if (response.pipeline_id) {
-          setSelectedVersion(prev => ({
-            ...prev,
-            pipeline_id: response.pipeline_id
-          }));
-          console.log('Updated selectedVersion with pipeline_id:', response.pipeline_id);
-        }
-      }
+      // Start parse for each file
+      await processing.startStageBatch(
+        currentTenant,
+        domain_id,
+        selectedVersion.pipeline_id,
+        'PARSE',
+        domainFiles.map(file => file.file_version_id),
+        token
+      );
 
       toast({
         title: 'Pipeline started',
@@ -339,6 +283,19 @@ const ProcessingWorkspace = () => {
       });
     }
   };
+
+  // Set up polling
+  useEffect(() => {
+    if (isRunning) {
+      console.log('Starting polling...');
+      pollPipelineStatus();
+      const interval = setInterval(pollPipelineStatus, 5000);
+      return () => {
+        console.log('Stopping polling...');
+        clearInterval(interval);
+      };
+    }
+  }, [isRunning, pollPipelineStatus]);
 
   // Stop pipeline
   const stopPipeline = async () => {
@@ -401,8 +358,12 @@ const ProcessingWorkspace = () => {
   }
 
   const getStageContent = (stage) => {
-    if (!pipeline?.[`current_${stage}_id`]) return null;
-    return results[stage];
+    return results[stage] || null;
+  };
+
+  const getCurrentPhaseStatus = () => {
+    if (!pipeline) return 'pending';
+    return pipeline.status;
   };
 
   return (
@@ -417,7 +378,7 @@ const ProcessingWorkspace = () => {
 
           <ProcessingControls
             isRunning={isRunning}
-            currentStage={pipeline?.stage}
+            currentStage={activeStage.toUpperCase()}
             error={error}
             onStart={startPipeline}
             onStop={stopPipeline}
@@ -428,7 +389,7 @@ const ProcessingWorkspace = () => {
             phases={phases}
             activePhase={activeStage}
             setActivePhase={setActiveStage}
-            pipeline={pipeline}
+            currentStatus={pipeline?.status || 'pending'}
             currentWorkflowVersion={selectedVersion?.version_number}
           />
 
@@ -436,11 +397,11 @@ const ProcessingWorkspace = () => {
             stage={{
               id: activeStage,
               label: phases.find(p => p.id === activeStage)?.label,
-              status: pipeline?.stage === activeStage.toUpperCase() ? pipeline.status : 'pending'
+              status: pipeline?.status || 'pending'
             }}
             files={domainFiles}
             results={getStageContent(activeStage)}
-            isLoading={isRunning && pipeline?.stage === activeStage.toUpperCase()}
+            isLoading={isRunning}
           />
         </VStack>
       </Box>

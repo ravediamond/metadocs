@@ -230,7 +230,7 @@ class ExtractProcessor(BaseProcessor):
                 status="completed",
                 message="Entity extraction completed successfully",
                 data=extraction,
-                analysis_path=extraction_path,
+                output_path=extraction_path,
             )
 
         except Exception as e:

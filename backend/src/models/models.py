@@ -1,5 +1,6 @@
 import uuid
 import secrets
+from typing import List, Optional, Dict
 from enum import Enum
 from sqlalchemy import (
     Column,
@@ -490,35 +491,237 @@ class ProcessingPipeline(Base):
 
     # Version relationships
     parse_versions = relationship(
-        "ParseVersion",
-        back_populates="pipeline",
-        cascade="all, delete-orphan",
+        "ParseVersion", back_populates="pipeline", cascade="all, delete-orphan"
     )
     extract_versions = relationship(
-        "ExtractVersion",
-        back_populates="pipeline",
-        cascade="all, delete-orphan",
+        "ExtractVersion", back_populates="pipeline", cascade="all, delete-orphan"
     )
     merge_versions = relationship(
-        "MergeVersion",
-        back_populates="pipeline",
-        cascade="all, delete-orphan",
+        "MergeVersion", back_populates="pipeline", cascade="all, delete-orphan"
     )
     group_versions = relationship(
-        "GroupVersion",
-        back_populates="pipeline",
-        cascade="all, delete-orphan",
+        "GroupVersion", back_populates="pipeline", cascade="all, delete-orphan"
     )
     ontology_versions = relationship(
-        "OntologyVersion",
-        back_populates="pipeline",
-        cascade="all, delete-orphan",
+        "OntologyVersion", back_populates="pipeline", cascade="all, delete-orphan"
     )
     graph_versions = relationship(
-        "GraphVersion",
-        back_populates="pipeline",
-        cascade="all, delete-orphan",
+        "GraphVersion", back_populates="pipeline", cascade="all, delete-orphan"
     )
+
+    def get_stage_status(self, stage: PipelineStage) -> PipelineStatus:
+        """Get the status of a specific stage based on its versions"""
+        if stage == PipelineStage.NOT_STARTED:
+            return PipelineStatus.UNINITIALIZED
+
+        elif stage == PipelineStage.PARSE:
+            if not self.parse_versions:
+                return PipelineStatus.UNINITIALIZED
+            if any(parse.status == "failed" for parse in self.parse_versions):
+                return PipelineStatus.FAILED
+            if all(parse.status == "completed" for parse in self.parse_versions):
+                return PipelineStatus.COMPLETED
+            return PipelineStatus.RUNNING
+
+        elif stage == PipelineStage.EXTRACT:
+            if not self.extract_versions:
+                return PipelineStatus.UNINITIALIZED
+            if any(extract.status == "failed" for extract in self.extract_versions):
+                return PipelineStatus.FAILED
+            if all(extract.status == "completed" for extract in self.extract_versions):
+                return PipelineStatus.COMPLETED
+            return PipelineStatus.RUNNING
+
+        elif stage == PipelineStage.MERGE:
+            latest_merge = self.get_latest_merge_version()
+            if not latest_merge:
+                return PipelineStatus.UNINITIALIZED
+            if latest_merge.status == "failed":
+                return PipelineStatus.FAILED
+            if latest_merge.status == "completed":
+                return PipelineStatus.COMPLETED
+            return PipelineStatus.RUNNING
+
+        elif stage == PipelineStage.GROUP:
+            latest_group = self.get_latest_group_version()
+            if not latest_group:
+                return PipelineStatus.UNINITIALIZED
+            if latest_group.status == "failed":
+                return PipelineStatus.FAILED
+            if latest_group.status == "completed":
+                return PipelineStatus.COMPLETED
+            return PipelineStatus.RUNNING
+
+        elif stage == PipelineStage.ONTOLOGY:
+            latest_ontology = self.get_latest_ontology_version()
+            if not latest_ontology:
+                return PipelineStatus.UNINITIALIZED
+            if latest_ontology.status == "failed":
+                return PipelineStatus.FAILED
+            if latest_ontology.status == "completed":
+                return PipelineStatus.COMPLETED
+            return PipelineStatus.RUNNING
+
+        elif stage == PipelineStage.VALIDATE:
+            return self.status  # Validate stage uses pipeline status directly
+
+        return PipelineStatus.UNINITIALIZED
+
+    def can_start_stage(self, stage: PipelineStage) -> bool:
+        """Check if a stage can be started based on dependencies"""
+        if stage == PipelineStage.PARSE:
+            return True  # Parse can always start
+
+        elif stage == PipelineStage.EXTRACT:
+            return (
+                self.get_stage_status(PipelineStage.PARSE) == PipelineStatus.COMPLETED
+            )
+
+        elif stage == PipelineStage.MERGE:
+            return (
+                self.get_stage_status(PipelineStage.EXTRACT) == PipelineStatus.COMPLETED
+            )
+
+        elif stage == PipelineStage.GROUP:
+            return (
+                self.get_stage_status(PipelineStage.MERGE) == PipelineStatus.COMPLETED
+            )
+
+        elif stage == PipelineStage.ONTOLOGY:
+            return (
+                self.get_stage_status(PipelineStage.MERGE) == PipelineStatus.COMPLETED
+                and self.get_stage_status(PipelineStage.GROUP)
+                == PipelineStatus.COMPLETED
+            )
+
+        elif stage == PipelineStage.VALIDATE:
+            return (
+                self.get_stage_status(PipelineStage.ONTOLOGY)
+                == PipelineStatus.COMPLETED
+            )
+
+        return False
+
+    def get_latest_version_by_stage(self, stage: PipelineStage) -> Optional[UUIDType]:
+        """Get the latest version ID for a specific stage"""
+        if stage == PipelineStage.PARSE:
+            versions = sorted(
+                self.parse_versions, key=lambda x: x.version_number, reverse=True
+            )
+            return versions[0].version_id if versions else None
+
+        elif stage == PipelineStage.EXTRACT:
+            versions = sorted(
+                self.extract_versions, key=lambda x: x.version_number, reverse=True
+            )
+            return versions[0].version_id if versions else None
+
+        elif stage == PipelineStage.MERGE:
+            latest = self.get_latest_merge_version()
+            return latest.version_id if latest else None
+
+        elif stage == PipelineStage.GROUP:
+            latest = self.get_latest_group_version()
+            return latest.version_id if latest else None
+
+        elif stage == PipelineStage.ONTOLOGY:
+            latest = self.get_latest_ontology_version()
+            return latest.version_id if latest else None
+
+        return None
+
+    def get_latest_merge_version(self):
+        """Get the latest merge version"""
+        return next(
+            iter(
+                sorted(
+                    self.merge_versions, key=lambda x: x.version_number, reverse=True
+                )
+            ),
+            None,
+        )
+
+    def get_latest_group_version(self):
+        """Get the latest group version"""
+        return next(
+            iter(
+                sorted(
+                    self.group_versions, key=lambda x: x.version_number, reverse=True
+                )
+            ),
+            None,
+        )
+
+    def get_latest_ontology_version(self):
+        """Get the latest ontology version"""
+        return next(
+            iter(
+                sorted(
+                    self.ontology_versions, key=lambda x: x.version_number, reverse=True
+                )
+            ),
+            None,
+        )
+
+    def get_stage_versions(self, stage: PipelineStage) -> List[Dict]:
+        """Get all versions and their statuses for a stage"""
+        if stage == PipelineStage.PARSE:
+            return [
+                {
+                    "version_id": v.version_id,
+                    "status": v.status,
+                    "number": v.version_number,
+                    "created_at": v.created_at,  # Add this
+                }
+                for v in sorted(self.parse_versions, key=lambda x: x.version_number)
+            ]
+
+        elif stage == PipelineStage.EXTRACT:
+            return [
+                {
+                    "version_id": v.version_id,
+                    "status": v.status,
+                    "number": v.version_number,
+                }
+                for v in sorted(self.extract_versions, key=lambda x: x.version_number)
+            ]
+
+        elif stage == PipelineStage.MERGE:
+            return [
+                {
+                    "version_id": v.version_id,
+                    "status": v.status,
+                    "number": v.version_number,
+                }
+                for v in sorted(self.merge_versions, key=lambda x: x.version_number)
+            ]
+
+        elif stage == PipelineStage.GROUP:
+            return [
+                {
+                    "version_id": v.version_id,
+                    "status": v.status,
+                    "number": v.version_number,
+                }
+                for v in sorted(self.group_versions, key=lambda x: x.version_number)
+            ]
+
+        elif stage == PipelineStage.ONTOLOGY:
+            return [
+                {
+                    "version_id": v.version_id,
+                    "status": v.status,
+                    "number": v.version_number,
+                }
+                for v in sorted(self.ontology_versions, key=lambda x: x.version_number)
+            ]
+
+        return []
+
+    def update_pipeline_status(self) -> None:
+        """Update overall pipeline status based on current stage"""
+        current_stage_status = self.get_stage_status(self.stage)
+        self.status = current_stage_status
 
 
 class ParseVersion(Base):
