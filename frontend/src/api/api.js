@@ -373,6 +373,39 @@ export const processing = {
     if (!response.ok) throw new Error(`Failed to start ${stage} batch processing`);
     return response.json();
   },
+  getStageVersions: async (tenantId, domainId, pipelineId, stage, token) => {
+    const response = await fetch(
+      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/stage/${stage}/versions`,
+      {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+    if (!response.ok) throw new Error(`Failed to fetch ${stage} stage versions`);
+    return response.json();
+  },
+  startPipeline: async (tenantId, domainId, domainVersion, token) => {
+    const response = await fetch(
+      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/pipeline/start`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+    if (!response.ok) throw new Error('Failed to start pipeline');
+    return response.json();
+  },
+
+  stopPipeline: async (tenantId, domainId, domainVersion, token) => {
+    const response = await fetch(
+      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/pipeline/stop`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+    if (!response.ok) throw new Error('Failed to stop pipeline');
+    return response.json();
+  },
 };
 
 // User endpoints

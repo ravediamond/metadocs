@@ -665,13 +665,15 @@ class ProcessingPipeline(Base):
 
     def get_stage_versions(self, stage: PipelineStage) -> List[Dict]:
         """Get all versions and their statuses for a stage"""
+
         if stage == PipelineStage.PARSE:
             return [
                 {
                     "version_id": v.version_id,
                     "status": v.status,
                     "number": v.version_number,
-                    "created_at": v.created_at,  # Add this
+                    "created_at": v.created_at,  # Include created_at
+                    "error": v.errors,
                 }
                 for v in sorted(self.parse_versions, key=lambda x: x.version_number)
             ]
@@ -682,6 +684,8 @@ class ProcessingPipeline(Base):
                     "version_id": v.version_id,
                     "status": v.status,
                     "number": v.version_number,
+                    "created_at": v.created_at,  # Include created_at
+                    "error": v.errors,
                 }
                 for v in sorted(self.extract_versions, key=lambda x: x.version_number)
             ]
@@ -692,6 +696,8 @@ class ProcessingPipeline(Base):
                     "version_id": v.version_id,
                     "status": v.status,
                     "number": v.version_number,
+                    "created_at": v.created_at,  # Include created_at
+                    "error": v.error,
                 }
                 for v in sorted(self.merge_versions, key=lambda x: x.version_number)
             ]
@@ -702,6 +708,8 @@ class ProcessingPipeline(Base):
                     "version_id": v.version_id,
                     "status": v.status,
                     "number": v.version_number,
+                    "created_at": v.created_at,  # Include created_at
+                    "error": v.error,
                 }
                 for v in sorted(self.group_versions, key=lambda x: x.version_number)
             ]
@@ -712,6 +720,8 @@ class ProcessingPipeline(Base):
                     "version_id": v.version_id,
                     "status": v.status,
                     "number": v.version_number,
+                    "created_at": v.created_at,  # Include created_at
+                    "error": v.error,
                 }
                 for v in sorted(self.ontology_versions, key=lambda x: x.version_number)
             ]

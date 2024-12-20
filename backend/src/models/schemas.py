@@ -456,24 +456,6 @@ class GraphVersion(ProcessingVersionBase):
         from_attributes = True
 
 
-class ProcessingPipeline(BaseModel):
-    pipeline_id: UUID
-    domain_id: UUID
-    current_parse_id: Optional[UUID]
-    current_extract_id: Optional[UUID]
-    current_merge_id: Optional[UUID]
-    current_group_id: Optional[UUID]
-    current_ontology_id: Optional[UUID]
-    current_graph_id: Optional[UUID]
-    status: str
-    stage: str
-    error: Optional[str]
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
 class DomainBasicResponse(BaseModel):
     domain_id: UUID
     domain_name: str
@@ -539,29 +521,9 @@ class StageStartResponse(BaseModel):
     input_version_ids: List[UUID]
 
 
-class StageVersionInfo(BaseModel):
-    version_id: UUID
-    status: str
-    number: int
-    created_at: datetime
-    error: Optional[str] = None
-    created_at: datetime
-
-
 class StageDependencyInfo(BaseModel):
     stage: PipelineStage
     completed: bool
-
-
-class StageStatusResponse(BaseModel):
-    stage: PipelineStage
-    status: PipelineStatus
-    can_start: bool
-    versions: List[StageVersionInfo]
-    latest_version_id: Optional[UUID]
-
-    class Config:
-        from_attributes = True
 
 
 class StageDependenciesResponse(BaseModel):
@@ -580,9 +542,60 @@ class StartedVersionInfo(BaseModel):
     input_version_ids: List[UUID]
 
 
+class StageVersionInfo(BaseModel):
+    version_id: UUID
+    status: str
+    number: int
+    created_at: datetime
+    error: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class StageStatusResponse(BaseModel):
+    stage: PipelineStage
+    status: PipelineStatus
+    can_start: bool
+    versions: List[StageVersionInfo]
+    latest_version_id: Optional[UUID]
+
+    class Config:
+        from_attributes = True
+
+
 class StageBatchResponse(BaseModel):
     message: str
     started_versions: List[StartedVersionInfo]
+
+
+class PipelineActionResponse(BaseModel):
+    """Response model for pipeline actions (start, stop, restart)"""
+
+    message: str
+    pipeline_id: UUID
+
+    class Config:
+        from_attributes = True
+
+
+class PipelineStartRequest(BaseModel):
+    """Optional configuration for pipeline start"""
+
+    skip_stages: Optional[List[PipelineStage]] = None
+    custom_config: Optional[Dict[str, Any]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PipelineErrorResponse(BaseModel):
+    """Error response for pipeline operations"""
+
+    detail: str
+    error_code: Optional[str] = None
+    stage: Optional[PipelineStage] = None
+    version_id: Optional[UUID] = None
 
     class Config:
         from_attributes = True

@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Dict
 import json
 import os
@@ -21,7 +20,6 @@ class GroupProcessor(BaseProcessor):
         self.group_version = group_version
         self.system_prompt = self.group_version.system_prompt
         self.entity_group_prompt = self.group_version.entity_group_prompt
-        # TODO: Implement custom instructions
         self.custom_instructions = self.group_version.custom_instructions
         super().__init__(config_manager)
 
@@ -31,12 +29,10 @@ class GroupProcessor(BaseProcessor):
 
     @property
     def _get_output_dir(self) -> str:
-        return os.path.join(
-            os.path.dirname(self.merge_version.output_path),
-            f"group_{self.group_version.version_id}",
-        )
+        return self.group_version.output_dir
 
     def _analyze_groups(self, entities_data: Dict) -> Dict:
+        """Analyze entity groups using the LLM"""
         self.logger.info("Analyzing entity groups")
         try:
             content = [
@@ -53,7 +49,11 @@ class GroupProcessor(BaseProcessor):
 
             chain = prompt | self.model
             response = chain.invoke({})
-            return json.loads(response.content)
+            try:
+                return json.loads(response.content)
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse group analysis response: {str(e)}")
+                raise
 
         except Exception as e:
             self.logger.error(f"Error in group analysis: {str(e)}")
@@ -66,21 +66,18 @@ class GroupProcessor(BaseProcessor):
             )
             os.makedirs(self.output_dir, exist_ok=True)
 
-            # Load merged entities results
-            merge_version = next(
-                (
-                    v
-                    for v in self.group_version.merge_versions
-                    if v.version_id == self.group_version.current_merge_id
-                ),
-                None,
-            )
-
-            if not merge_version or not merge_version.output_path:
-                raise ValueError("No merged entities data available")
+            # Verify merge version output exists
+            if not os.path.exists(self.merge_version.output_path):
+                error_msg = (
+                    f"Merge output file not found: {self.merge_version.output_path}"
+                )
+                self.logger.error(error_msg)
+                return ProcessingResult(
+                    success=False, status="failed", message=error_msg, error=error_msg
+                )
 
             # Load merged entities results
-            with open(merge_version.output_path, "r", encoding="utf-8") as f:
+            with open(self.merge_version.output_path, "r", encoding="utf-8") as f:
                 merged_data = json.load(f)
 
             # Analyze groups
@@ -95,6 +92,7 @@ class GroupProcessor(BaseProcessor):
                 success=True,
                 status="completed",
                 message="Group analysis completed successfully",
+                output_path=groups_path,
             )
 
         except Exception as e:

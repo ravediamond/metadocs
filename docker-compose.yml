@@ -5,7 +5,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: sh -c "./create_tables.sh && poetry run uvicorn src.main:app --host 0.0.0.0 --port 8080"
+    command: sh -c "./create_tables.sh && poetry run uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload"
     volumes:
       - ./backend:/app
       - ~/.aws:/root/.aws:ro # To have the AWS profile for local dev
@@ -16,6 +16,7 @@ services:
       - POSTGRES_HOST=postgres  # This resolves to the 'postgres' service below
       - POSTGRES_PORT=5432
       - SECRET_KEY=${SECRET_KEY}
+      - WATCHFILES_FORCE_POLLING=true
     ports:
       - "8080:8080"
     depends_on:

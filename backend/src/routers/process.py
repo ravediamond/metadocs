@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, status
 from sqlalchemy.orm import Session
 from uuid import UUID
 from datetime import datetime
-from typing import List, Union
+from typing import List, Union, Optional
 import logging
 import os
 import sys
@@ -23,6 +23,7 @@ from ..models.models import (
     FileVersion,
     PipelineStatus,
     PipelineStage,
+    DomainVersionFile,
 )
 from ..models.schemas import (
     ProcessingPipeline as ProcessingPipelineSchema,
@@ -38,6 +39,11 @@ from ..models.schemas import (
     StageStatusResponse,
     StageDependenciesResponse,
     StageBatchResponse,
+    StartedVersionInfo,
+    StageVersionInfo,
+    PipelineActionResponse,
+    PipelineStartRequest,
+    PipelineErrorResponse,
 )
 from ..processors.prompts.parse_prompts import (
     SYSTEM_PROMPT as PARSE_SYSTEM_PROMPT,
@@ -69,6 +75,7 @@ from ..processors.extract_processor import ExtractProcessor
 from ..processors.group_processor import GroupProcessor
 from ..processors.ontology_processor import OntologyProcessor
 from ..processors.merge_processor import MergeProcessor
+from ..processors.pipeline_orchestrator import PipelineOrchestrator
 from ..core.config import ConfigManager, FILE_SYSTEM
 
 logging.basicConfig(
@@ -427,563 +434,6 @@ async def process_ontology(
         pipeline.update_pipeline_status()
         db.commit()
         return False
-
-
-# API Endpoints
-@router.post(
-    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/files/{file_version_id}/parse",
-    status_code=status.HTTP_202_ACCEPTED,
-    response_model=StageStartResponse,
-)
-async def start_parse_processing(
-    tenant_id: UUID,
-    domain_id: UUID,
-    domain_version: int,
-    file_version_id: UUID,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-):
-    # Check domain version exists and is in DRAFT
-    domain_version_obj = (
-        db.query(DomainVersion)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            DomainVersion.domain_id == domain_id,
-            DomainVersion.version_number == domain_version,
-        )
-        .first()
-    )
-
-    if not domain_version_obj:
-        raise HTTPException(status_code=404, detail="Domain version not found")
-
-    if domain_version_obj.status != DomainVersionStatus.DRAFT:
-        raise HTTPException(
-            status_code=400,
-            detail="Can only parse files for domain versions in DRAFT status",
-        )
-
-    # Get or create pipeline
-    pipeline = domain_version_obj.processing_pipeline
-    if not pipeline:
-        pipeline = ProcessingPipeline(domain_id=domain_id)
-        domain_version_obj.processing_pipeline = pipeline
-        db.add(pipeline)
-        db.commit()
-
-    # Verify we can start parse
-    if not pipeline.can_start_stage(PipelineStage.PARSE):
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot start parse stage - pipeline in invalid state",
-        )
-
-    config = ConfigManager(db, str(tenant_id), str(domain_id))
-
-    # Check file version exists
-    file_version = (
-        db.query(FileVersion)
-        .join(File)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            Domain.domain_id == domain_id,
-            FileVersion.file_version_id == file_version_id,
-        )
-        .first()
-    )
-
-    if not file_version:
-        raise HTTPException(status_code=404, detail="File version not found")
-
-    # Create parse version
-    parse_version = ParseVersion(
-        pipeline_id=pipeline.pipeline_id,
-        version_number=len(pipeline.parse_versions) + 1,
-        system_prompt=PARSE_SYSTEM_PROMPT,
-        readability_prompt=CHECK_READABILITY_PROMPT,
-        convert_prompt=CONVERT_TO_MARKDOWN_PROMPT,
-        input_file_version_id=file_version_id,
-        output_dir="",
-        output_path="",
-        status="processing",
-    )
-    db.add(parse_version)
-    db.commit()
-
-    # Set output paths
-    output_dir = os.path.join(
-        config.get("processing_dir", "processing_output"),
-        str(pipeline.domain_id),
-        str(pipeline.domain_version.version_number),
-        "parse",
-        str(parse_version.version_number),
-        str(parse_version.input_file_version_id),
-    )
-    parse_version.output_dir = output_dir
-    parse_version.output_path = f"{output_dir}/output.md"
-    db.commit()
-
-    # Start processing
-    background_tasks.add_task(
-        process_parse,
-        file_version_id=file_version.file_version_id,
-        parse_version_id=parse_version.version_id,
-        config=config,
-        db=db,
-    )
-
-    return {
-        "message": "PDF parsing started",
-        "pipeline_id": pipeline.pipeline_id,
-        "version_id": parse_version.version_id,
-        "input_version_ids": [file_version_id],
-    }
-
-
-@router.post(
-    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/parse/{parse_version_id}/extract",
-    status_code=status.HTTP_202_ACCEPTED,
-    response_model=StageStartResponse,
-)
-async def start_extract_processing(
-    tenant_id: UUID,
-    domain_id: UUID,
-    domain_version: int,
-    parse_version_id: UUID,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-):
-    domain_version_obj = (
-        db.query(DomainVersion)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            DomainVersion.domain_id == domain_id,
-            DomainVersion.version_number == domain_version,
-        )
-        .first()
-    )
-
-    if not domain_version_obj:
-        raise HTTPException(status_code=404, detail="Domain version not found")
-
-    if domain_version_obj.status != DomainVersionStatus.DRAFT:
-        raise HTTPException(
-            status_code=400,
-            detail="Can only extract entities for domain versions in DRAFT status",
-        )
-
-    pipeline = domain_version_obj.processing_pipeline
-    if not pipeline:
-        raise HTTPException(
-            status_code=404,
-            detail="No processing pipeline found for this domain version",
-        )
-
-    # Verify we can start extract
-    if not pipeline.can_start_stage(PipelineStage.EXTRACT):
-        raise HTTPException(
-            status_code=400, detail="Cannot start extract - parse stage not completed"
-        )
-
-    config = ConfigManager(db, str(tenant_id), str(domain_id))
-
-    # Check parse version exists and completed
-    parse_version = (
-        db.query(ParseVersion)
-        .filter(
-            ParseVersion.version_id == parse_version_id,
-            ParseVersion.status == "completed",
-        )
-        .first()
-    )
-
-    if not parse_version:
-        raise HTTPException(
-            status_code=404, detail="Parse version not found or not completed"
-        )
-
-    # Create extract version
-    extract_version = ExtractVersion(
-        pipeline_id=pipeline.pipeline_id,
-        version_number=len(pipeline.extract_versions) + 1,
-        input_parse_version_id=parse_version_id,
-        system_prompt=EXTRACT_SYSTEM_PROMPT,
-        initial_entity_extraction_prompt=INITIAL_ENTITY_EXTRACTION_PROMPT,
-        iterative_extract_entities_prompt=ITERATIVE_ENTITY_EXTRACTION_PROMPT,
-        entity_details_prompt=EXTRACT_ENTITY_DETAILS_PROMPT,
-        output_dir="",
-        output_path="",
-        status="processing",
-    )
-    db.add(extract_version)
-    db.commit()
-
-    output_dir = os.path.join(
-        config.get("processing_dir", "processing_output"),
-        str(pipeline.domain_id),
-        str(pipeline.domain_version.version_number),
-        "extract",
-        str(extract_version.version_number),
-    )
-    extract_version.output_dir = output_dir
-    extract_version.output_path = f"{output_dir}/output.json"
-    db.commit()
-
-    # Start processing
-    background_tasks.add_task(
-        process_extract,
-        parse_version_id=parse_version.version_id,
-        extract_version_id=extract_version.version_id,
-        config=config,
-        db=db,
-    )
-
-    return {
-        "message": "Entity extraction started",
-        "pipeline_id": pipeline.pipeline_id,
-        "version_id": extract_version.version_id,
-        "input_version_ids": [parse_version_id],
-    }
-
-
-@router.post(
-    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/merge",
-    status_code=status.HTTP_202_ACCEPTED,
-    response_model=StageStartResponse,
-)
-async def start_merge_processing(
-    tenant_id: UUID,
-    domain_id: UUID,
-    domain_version: int,
-    merge_request: MergeRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-):
-    domain_version_obj = (
-        db.query(DomainVersion)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            DomainVersion.domain_id == domain_id,
-            DomainVersion.version_number == domain_version,
-        )
-        .first()
-    )
-
-    if not domain_version_obj:
-        raise HTTPException(status_code=404, detail="Domain version not found")
-
-    if domain_version_obj.status != DomainVersionStatus.DRAFT:
-        raise HTTPException(
-            status_code=400,
-            detail="Can only merge entities for domain versions in DRAFT status",
-        )
-
-    pipeline = domain_version_obj.processing_pipeline
-    if not pipeline:
-        raise HTTPException(
-            status_code=404,
-            detail="No processing pipeline found for this domain version",
-        )
-
-    # Verify we can start merge
-    if not pipeline.can_start_stage(PipelineStage.MERGE):
-        raise HTTPException(
-            status_code=400, detail="Cannot start merge - extract stage not completed"
-        )
-
-    # Verify all extract versions exist and are completed
-    extract_versions = (
-        db.query(ExtractVersion)
-        .filter(
-            ExtractVersion.version_id.in_(merge_request.extract_version_ids),
-            ExtractVersion.status == "completed",
-        )
-        .all()
-    )
-
-    if len(extract_versions) != len(merge_request.extract_version_ids):
-        raise HTTPException(
-            status_code=404,
-            detail="One or more extract versions not found or not completed",
-        )
-
-    config = ConfigManager(db, str(tenant_id), str(domain_id))
-
-    # Create merge version
-    merge_version = MergeVersion(
-        pipeline_id=pipeline.pipeline_id,
-        version_number=len(pipeline.merge_versions) + 1,
-        input_extract_version_ids=merge_request.extract_version_ids,
-        system_prompt=MERGE_SYSTEM_PROMPT,
-        entity_merge_prompt=ENTITY_MERGE_PROMPT,
-        entity_details_prompt=MERGE_ENTITY_DETAILS_PROMPT,
-        output_dir="",
-        output_path="",
-        status="processing",
-    )
-    db.add(merge_version)
-    db.commit()
-
-    output_dir = os.path.join(
-        config.get("processing_dir", "processing_output"),
-        str(pipeline.domain_id),
-        str(pipeline.domain_version.version_number),
-        "merge",
-        str(merge_version.version_number),
-    )
-    merge_version.output_dir = output_dir
-    merge_version.output_path = f"{output_dir}/output.json"
-    db.commit()
-
-    # Start processing
-    background_tasks.add_task(
-        process_merge,
-        merge_version_id=merge_version.version_id,
-        extract_version_ids=merge_request.extract_version_ids,
-        config=config,
-        db=db,
-    )
-
-    return {
-        "message": "Entity merging started",
-        "pipeline_id": pipeline.pipeline_id,
-        "version_id": merge_version.version_id,
-        "input_version_ids": merge_request.extract_version_ids,
-    }
-
-
-@router.post(
-    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/merge/{merge_version_id}/group",
-    status_code=status.HTTP_202_ACCEPTED,
-    response_model=StageStartResponse,
-)
-async def start_group_processing(
-    tenant_id: UUID,
-    domain_id: UUID,
-    domain_version: int,
-    merge_version_id: UUID,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-):
-    domain_version_obj = (
-        db.query(DomainVersion)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            DomainVersion.domain_id == domain_id,
-            DomainVersion.version_number == domain_version,
-        )
-        .first()
-    )
-
-    if not domain_version_obj:
-        raise HTTPException(status_code=404, detail="Domain version not found")
-
-    if domain_version_obj.status != DomainVersionStatus.DRAFT:
-        raise HTTPException(
-            status_code=400,
-            detail="Can only group entities for domain versions in DRAFT status",
-        )
-
-    pipeline = domain_version_obj.processing_pipeline
-    if not pipeline:
-        raise HTTPException(
-            status_code=404,
-            detail="No processing pipeline found for this domain version",
-        )
-
-    # Verify we can start group
-    if not pipeline.can_start_stage(PipelineStage.GROUP):
-        raise HTTPException(
-            status_code=400, detail="Cannot start group - merge stage not completed"
-        )
-
-    # Check merge version exists and completed
-    merge_version = (
-        db.query(MergeVersion)
-        .filter(
-            MergeVersion.version_id == merge_version_id,
-            MergeVersion.status == "completed",
-        )
-        .first()
-    )
-
-    if not merge_version:
-        raise HTTPException(
-            status_code=404, detail="Merge version not found or not completed"
-        )
-
-    config = ConfigManager(db, str(tenant_id), str(domain_id))
-
-    # Create group version
-    group_version = GroupVersion(
-        pipeline_id=pipeline.pipeline_id,
-        version_number=len(pipeline.group_versions) + 1,
-        input_merge_version_id=merge_version_id,
-        system_prompt=GROUP_SYSTEM_PROMPT,
-        entity_group_prompt=GROUP_PROMPT,
-        output_dir="",
-        output_path="",
-        status="processing",
-    )
-    db.add(group_version)
-    db.commit()
-
-    output_dir = os.path.join(
-        config.get("processing_dir", "processing_output"),
-        str(pipeline.domain_id),
-        str(pipeline.domain_version.version_number),
-        "group",
-        str(group_version.version_number),
-    )
-    group_version.output_dir = output_dir
-    group_version.output_path = f"{output_dir}/output.json"
-    db.commit()
-
-    # Start processing
-    background_tasks.add_task(
-        process_group,
-        merge_version_id=merge_version.version_id,
-        group_version_id=group_version.version_id,
-        config=config,
-        db=db,
-    )
-
-    return {
-        "message": "Entity grouping started",
-        "pipeline_id": pipeline.pipeline_id,
-        "version_id": group_version.version_id,
-        "input_version_ids": [merge_version_id],
-    }
-
-
-@router.post(
-    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/ontology",
-    status_code=status.HTTP_202_ACCEPTED,
-    response_model=StageStartResponse,
-)
-async def start_ontology_processing(
-    tenant_id: UUID,
-    domain_id: UUID,
-    domain_version: int,
-    ontology_request: OntologyRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-):
-    domain_version_obj = (
-        db.query(DomainVersion)
-        .join(Domain)
-        .filter(
-            Domain.tenant_id == tenant_id,
-            DomainVersion.domain_id == domain_id,
-            DomainVersion.version_number == domain_version,
-        )
-        .first()
-    )
-
-    if not domain_version_obj:
-        raise HTTPException(status_code=404, detail="Domain version not found")
-
-    if domain_version_obj.status != DomainVersionStatus.DRAFT:
-        raise HTTPException(
-            status_code=400,
-            detail="Can only generate ontology for domain versions in DRAFT status",
-        )
-
-    pipeline = domain_version_obj.processing_pipeline
-    if not pipeline:
-        raise HTTPException(
-            status_code=404,
-            detail="No processing pipeline found for this domain version",
-        )
-
-    # Verify we can start ontology
-    if not pipeline.can_start_stage(PipelineStage.ONTOLOGY):
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot start ontology - previous stages not completed",
-        )
-
-    # Check merge and group versions exist and completed
-    merge_version = (
-        db.query(MergeVersion)
-        .filter(
-            MergeVersion.version_id == ontology_request.merge_version_id,
-            MergeVersion.status == "completed",
-        )
-        .first()
-    )
-
-    if not merge_version:
-        raise HTTPException(
-            status_code=404, detail="Merge version not found or not completed"
-        )
-
-    group_version = (
-        db.query(GroupVersion)
-        .filter(
-            GroupVersion.version_id == ontology_request.group_version_id,
-            GroupVersion.status == "completed",
-        )
-        .first()
-    )
-
-    if not group_version:
-        raise HTTPException(
-            status_code=404, detail="Group version not found or not completed"
-        )
-
-    config = ConfigManager(db, str(tenant_id), str(domain_id))
-
-    # Create ontology version
-    ontology_version = OntologyVersion(
-        pipeline_id=pipeline.pipeline_id,
-        version_number=len(pipeline.ontology_versions) + 1,
-        input_group_version_id=ontology_request.group_version_id,
-        input_merge_version_id=ontology_request.merge_version_id,
-        system_prompt=ONTOLOGY_SYSTEM_PROMPT,
-        ontology_prompt=ONTOLOGY_PROMPT,
-        output_dir="",
-        output_path="",
-        status="processing",
-    )
-    db.add(ontology_version)
-    db.commit()
-
-    output_dir = os.path.join(
-        config.get("processing_dir", "processing_output"),
-        str(pipeline.domain_id),
-        str(pipeline.domain_version.version_number),
-        "ontology",
-        str(ontology_version.version_number),
-    )
-    ontology_version.output_dir = output_dir
-    ontology_version.output_path = f"{output_dir}/output.json"
-    db.commit()
-
-    # Start processing
-    background_tasks.add_task(
-        process_ontology,
-        merge_version_id=merge_version.version_id,
-        group_version_id=group_version.version_id,
-        ontology_version_id=ontology_version.version_id,
-        config=config,
-        db=db,
-    )
-
-    return {
-        "message": "Ontology generation started",
-        "pipeline_id": pipeline.pipeline_id,
-        "version_id": ontology_version.version_id,
-        "input_version_ids": [
-            ontology_request.merge_version_id,
-            ontology_request.group_version_id,
-        ],
-    }
 
 
 @router.get(
@@ -1714,47 +1164,390 @@ async def start_stage_batch(
         )
 
     config = ConfigManager(db, str(tenant_id), str(domain_id))
-    started_versions = []
+    started_versions: List[StartedVersionInfo] = []
 
-    if stage == PipelineStage.PARSE:
-        # Start parse for each file version
-        for file_version_id in version_ids:
-            response = await start_parse_processing(
-                tenant_id=tenant_id,
-                domain_id=domain_id,
-                domain_version=pipeline.domain_version.version_number,
-                file_version_id=file_version_id,
-                background_tasks=background_tasks,
+    try:
+        if stage == PipelineStage.PARSE:
+            for file_version_id in version_ids:
+                parse_version = ParseVersion(
+                    pipeline_id=pipeline.pipeline_id,
+                    version_number=get_next_version_number(
+                        db, pipeline.pipeline_id, ParseVersion
+                    ),
+                    input_file_version_id=file_version_id,
+                    status="processing",
+                    system_prompt=PARSE_SYSTEM_PROMPT,
+                    readability_prompt=CHECK_READABILITY_PROMPT,
+                    convert_prompt=CONVERT_TO_MARKDOWN_PROMPT,
+                    custom_instructions=[],
+                    output_dir="",
+                    output_path="",
+                )
+                db.add(parse_version)
+                db.commit()
+
+                output_dir = os.path.join(
+                    config.get("processing_dir", "processing_output"),
+                    str(pipeline.domain_id),
+                    str(pipeline.domain_version.version_number),
+                    "parse",
+                    str(parse_version.version_number),
+                    str(parse_version.input_file_version_id),
+                )
+                parse_version.output_dir = output_dir
+                parse_version.output_path = f"{output_dir}/output.md"
+                db.commit()
+
+                background_tasks.add_task(
+                    process_parse,
+                    file_version_id=file_version_id,
+                    parse_version_id=parse_version.version_id,
+                    config=config,
+                    db=db,
+                )
+
+                started_versions.append(
+                    StartedVersionInfo(
+                        message="Parse started",
+                        pipeline_id=pipeline.pipeline_id,
+                        version_id=parse_version.version_id,
+                        input_version_ids=[file_version_id],
+                    )
+                )
+
+        elif stage == PipelineStage.EXTRACT:
+            for parse_version_id in version_ids:
+                extract_version = ExtractVersion(
+                    pipeline_id=pipeline.pipeline_id,
+                    version_number=get_next_version_number(
+                        db, pipeline.pipeline_id, ExtractVersion
+                    ),
+                    input_parse_version_id=parse_version_id,
+                    status="processing",
+                    system_prompt=EXTRACT_SYSTEM_PROMPT,
+                    initial_entity_extraction_prompt=INITIAL_ENTITY_EXTRACTION_PROMPT,
+                    iterative_extract_entities_prompt=ITERATIVE_ENTITY_EXTRACTION_PROMPT,
+                    entity_details_prompt=EXTRACT_ENTITY_DETAILS_PROMPT,
+                    custom_instructions=[],
+                    output_dir="",
+                    output_path="",
+                )
+                db.add(extract_version)
+                db.commit()
+
+                output_dir = os.path.join(
+                    config.get("processing_dir", "processing_output"),
+                    str(pipeline.domain_id),
+                    str(pipeline.domain_version.version_number),
+                    "extract",
+                    str(extract_version.version_number),
+                )
+                extract_version.output_dir = output_dir
+                extract_version.output_path = f"{output_dir}/output.json"
+                db.commit()
+
+                background_tasks.add_task(
+                    process_extract,
+                    parse_version_id=parse_version_id,
+                    extract_version_id=extract_version.version_id,
+                    config=config,
+                    db=db,
+                )
+
+                started_versions.append(
+                    StartedVersionInfo(
+                        message="Extract started",
+                        pipeline_id=pipeline.pipeline_id,
+                        version_id=extract_version.version_id,
+                        input_version_ids=[parse_version_id],
+                    )
+                )
+
+        elif stage == PipelineStage.GROUP:
+            merge_version_id = version_ids[0] if version_ids else None
+            if not merge_version_id:
+                raise HTTPException(
+                    status_code=400, detail="Merge version ID required for group stage"
+                )
+
+            group_version = GroupVersion(
+                pipeline_id=pipeline.pipeline_id,
+                version_number=get_next_version_number(
+                    db, pipeline.pipeline_id, GroupVersion
+                ),
+                input_merge_version_id=merge_version_id,
+                status="processing",
+                system_prompt=GROUP_SYSTEM_PROMPT,
+                entity_group_prompt=GROUP_PROMPT,
+                custom_instructions=[],
+                output_dir="",
+                output_path="",
+            )
+            db.add(group_version)
+            db.commit()
+
+            output_dir = os.path.join(
+                config.get("processing_dir", "processing_output"),
+                str(pipeline.domain_id),
+                str(pipeline.domain_version.version_number),
+                "group",
+                str(group_version.version_number),
+            )
+            group_version.output_dir = output_dir
+            group_version.output_path = f"{output_dir}/output.json"
+            db.commit()
+
+            background_tasks.add_task(
+                process_group,
+                merge_version_id=merge_version_id,
+                group_version_id=group_version.version_id,
+                config=config,
                 db=db,
             )
-            started_versions.append(response)
 
-    elif stage == PipelineStage.EXTRACT:
-        # Start extract for each parse version
-        for parse_version_id in version_ids:
-            response = await start_extract_processing(
-                tenant_id=tenant_id,
-                domain_id=domain_id,
-                domain_version=pipeline.domain_version.version_number,
-                parse_version_id=parse_version_id,
-                background_tasks=background_tasks,
+            started_versions.append(
+                StartedVersionInfo(
+                    message="Group started",
+                    pipeline_id=pipeline.pipeline_id,
+                    version_id=group_version.version_id,
+                    input_version_ids=[merge_version_id],
+                )
+            )
+
+        elif stage == PipelineStage.ONTOLOGY:
+            if len(version_ids) != 2:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Both merge and group version IDs required for ontology stage",
+                )
+
+            merge_version_id, group_version_id = version_ids
+
+            ontology_version = OntologyVersion(
+                pipeline_id=pipeline.pipeline_id,
+                version_number=get_next_version_number(
+                    db, pipeline.pipeline_id, OntologyVersion
+                ),
+                input_merge_version_id=merge_version_id,
+                input_group_version_id=group_version_id,
+                status="processing",
+                system_prompt=ONTOLOGY_SYSTEM_PROMPT,
+                ontology_prompt=ONTOLOGY_PROMPT,
+                custom_instructions=[],
+                output_dir="",
+                output_path="",
+            )
+            db.add(ontology_version)
+            db.commit()
+
+            output_dir = os.path.join(
+                config.get("processing_dir", "processing_output"),
+                str(pipeline.domain_id),
+                str(pipeline.domain_version.version_number),
+                "ontology",
+                str(ontology_version.version_number),
+            )
+            ontology_version.output_dir = output_dir
+            ontology_version.output_path = f"{output_dir}/output.json"
+            db.commit()
+
+            background_tasks.add_task(
+                process_ontology,
+                merge_version_id=merge_version_id,
+                group_version_id=group_version_id,
+                ontology_version_id=ontology_version.version_id,
+                config=config,
                 db=db,
             )
-            started_versions.append(response)
 
-    elif stage == PipelineStage.MERGE:
-        # Start single merge with multiple extract versions
-        response = await start_merge_processing(
-            tenant_id=tenant_id,
-            domain_id=domain_id,
-            domain_version=pipeline.domain_version.version_number,
-            merge_request=MergeRequest(extract_version_ids=version_ids),
-            background_tasks=background_tasks,
-            db=db,
+            started_versions.append(
+                StartedVersionInfo(
+                    message="Ontology started",
+                    pipeline_id=pipeline.pipeline_id,
+                    version_id=ontology_version.version_id,
+                    input_version_ids=[merge_version_id, group_version_id],
+                )
+            )
+
+        return StageBatchResponse(
+            message=f"Started {stage} processing", started_versions=started_versions
         )
-        started_versions.append(response)
 
-    return {
-        "message": f"Started {stage} processing",
-        "started_versions": started_versions,
-    }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error in start_stage_batch: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to start {stage} processing: {str(e)}"
+        )
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/pipeline/{pipeline_id}/stage/{stage}/versions",
+    response_model=List[StageVersionInfo],
+)
+async def get_stage_versions(
+    tenant_id: UUID,
+    domain_id: UUID,
+    pipeline_id: UUID,
+    stage: PipelineStage,
+    db: Session = Depends(get_db),
+):
+    """Get all versions for a specific stage"""
+    pipeline = (
+        db.query(ProcessingPipeline)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            Domain.domain_id == domain_id,
+            ProcessingPipeline.pipeline_id == pipeline_id,
+        )
+        .first()
+    )
+
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    versions = pipeline.get_stage_versions(stage)
+    return versions
+
+
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/pipeline/start",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=PipelineActionResponse,
+    responses={
+        400: {"model": PipelineErrorResponse},
+        404: {"model": PipelineErrorResponse},
+    },
+)
+async def start_pipeline_processing(
+    tenant_id: UUID,
+    domain_id: UUID,
+    domain_version: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    pipeline_config: Optional[PipelineStartRequest] = None,
+):
+    """Start the full processing pipeline"""
+    try:
+        domain_version_obj = (
+            db.query(DomainVersion)
+            .join(Domain)
+            .filter(
+                Domain.tenant_id == tenant_id,
+                DomainVersion.domain_id == domain_id,
+                DomainVersion.version_number == domain_version,
+            )
+            .first()
+        )
+
+        if not domain_version_obj:
+            raise HTTPException(
+                status_code=404,
+                detail=PipelineErrorResponse(
+                    detail="Domain version not found",
+                    error_code="DOMAIN_VERSION_NOT_FOUND",
+                ).dict(),
+            )
+
+        # Create or get pipeline
+        pipeline = domain_version_obj.processing_pipeline
+        if not pipeline:
+            pipeline = ProcessingPipeline(domain_id=domain_id)
+            domain_version_obj.processing_pipeline = pipeline
+            db.add(pipeline)
+            db.commit()
+
+        # Get files
+        files = (
+            db.query(DomainVersionFile)
+            .filter(
+                DomainVersionFile.domain_id == domain_id,
+                DomainVersionFile.version_number == domain_version,
+            )
+            .all()
+        )
+
+        if not files:
+            raise HTTPException(
+                status_code=400,
+                detail=PipelineErrorResponse(
+                    detail="No files found for processing", error_code="NO_FILES_FOUND"
+                ).dict(),
+            )
+
+        # Set up orchestrator with SessionLocal
+        config = ConfigManager(db, str(tenant_id), str(domain_id))
+        from ..core.database import SessionLocal  # Import the session factory
+
+        orchestrator = PipelineOrchestrator(
+            SessionLocal=SessionLocal, config=config, pipeline_id=pipeline.pipeline_id
+        )
+
+        # Start pipeline in background
+        file_version_ids = [file.file_version_id for file in files]
+
+        async def run_pipeline():
+            try:
+                await orchestrator.process_pipeline(file_version_ids)
+            except Exception as e:
+                logger.error(f"Pipeline processing failed: {str(e)}")
+
+        background_tasks.add_task(run_pipeline)
+
+        logger.info(f"Pipeline started with {len(file_version_ids)} files")
+        return PipelineActionResponse(
+            message="Pipeline processing started", pipeline_id=pipeline.pipeline_id
+        )
+
+    except Exception as e:
+        logger.error(f"Error starting pipeline: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=PipelineErrorResponse(
+                detail=f"Failed to start pipeline: {str(e)}",
+                error_code="PIPELINE_START_ERROR",
+            ).dict(),
+        )
+
+
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/versions/{domain_version}/pipeline/stop",
+    status_code=status.HTTP_200_OK,
+    response_model=PipelineActionResponse,
+    responses={404: {"model": PipelineErrorResponse}},
+)
+async def stop_pipeline_processing(
+    tenant_id: UUID,
+    domain_id: UUID,
+    domain_version: int,
+    db: Session = Depends(get_db),
+):
+    """Stop the processing pipeline"""
+    domain_version_obj = (
+        db.query(DomainVersion)
+        .join(Domain)
+        .filter(
+            Domain.tenant_id == tenant_id,
+            DomainVersion.domain_id == domain_id,
+            DomainVersion.version_number == domain_version,
+        )
+        .first()
+    )
+
+    if not domain_version_obj or not domain_version_obj.processing_pipeline:
+        raise HTTPException(
+            status_code=404,
+            detail=PipelineErrorResponse(
+                detail="Pipeline not found", error_code="PIPELINE_NOT_FOUND"
+            ).dict(),
+        )
+
+    pipeline = domain_version_obj.processing_pipeline
+    pipeline.status = PipelineStatus.FAILED
+    pipeline.error = "Pipeline stopped by user"
+    db.commit()
+
+    return PipelineActionResponse(
+        message="Pipeline processing stopped", pipeline_id=pipeline.pipeline_id
+    )

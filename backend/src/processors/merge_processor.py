@@ -22,7 +22,16 @@ class MergeProcessor(BaseProcessor):
         self.system_prompt = self.merge_version.system_prompt
         self.entity_details_prompt = self.merge_version.entity_details_prompt
         self.entity_merge_prompt = self.merge_version.entity_merge_prompt
-        # TODO: Implement custom instructions
+
+        # Get domain_id from merge_version's pipeline
+        self.domain_id = merge_version.pipeline.domain_id
+
+        # Validate all extract versions are from same pipeline/domain
+        if not all(
+            v.pipeline_id == merge_version.pipeline_id for v in extract_versions
+        ):
+            raise ValueError("All extract versions must be from the same pipeline")
+
         self.custom_instructions = self.merge_version.custom_instructions
         super().__init__(config_manager)
 
@@ -32,11 +41,10 @@ class MergeProcessor(BaseProcessor):
 
     @property
     def _get_output_dir(self) -> str:
-        # Since we have multiple extract versions, use the directory of the first one
-        base_dir = os.path.dirname(self.extract_versions[0].output_path)
-        return os.path.join(base_dir, f"merge_{self.merge_version.version_id}")
+        return self.merge_version.output_dir
 
     def _merge_batch(self, entities_batch: List[Dict]) -> Dict:
+        """Merge a batch of entities using the LLM"""
         content = [
             {"type": "text", "text": json.dumps(entities_batch)},
             {"type": "text", "text": self.entity_merge_prompt},
@@ -46,11 +54,16 @@ class MergeProcessor(BaseProcessor):
         )
         chain = prompt | self.model
         response = chain.invoke({})
-        return json.loads(response.content)
+        try:
+            return json.loads(response.content)
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse merge response: {str(e)}")
+            raise
 
     def _process_merged_entities(
         self, merged_ids: List[str], all_entities: Dict
     ) -> Dict:
+        """Process the merged entities to generate final output"""
         content = [
             {
                 "type": "text",
@@ -65,20 +78,36 @@ class MergeProcessor(BaseProcessor):
         )
         chain = prompt | self.model
         response = chain.invoke({})
-        return json.loads(response.content)
+        try:
+            return json.loads(response.content)
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse entity details response: {str(e)}")
+            raise
 
     def process(self) -> ProcessingResult:
         try:
             self.logger.info(f"Starting entity merging for domain {self.domain_id}")
             os.makedirs(self.output_dir, exist_ok=True)
 
+            # Handle single file case
             if len(self.extract_versions) == 1:
                 self.logger.info(
                     "Single file detected, returning entities without merging"
                 )
-                with open(self.extract_versions[0].output_path, "r") as f:
+                extract_path = self.extract_versions[0].output_path
+
+                if not os.path.exists(extract_path):
+                    error_msg = f"Extract output file not found: {extract_path}"
+                    self.logger.error(error_msg)
+                    return ProcessingResult(
+                        success=False,
+                        status="failed",
+                        message=error_msg,
+                        error=error_msg,
+                    )
+
+                with open(extract_path, "r") as f:
                     entities_data = json.load(f)
-                    # Check if 'entities' key exists and get its value, otherwise use the whole data
                     entities_to_return = entities_data.get("entities", entities_data)
 
                 merged_path = os.path.join(self.output_dir, "output.json")
@@ -89,16 +118,27 @@ class MergeProcessor(BaseProcessor):
                     success=True,
                     status="completed",
                     message="Single file processed without merging",
+                    output_path=merged_path,
                 )
 
             # Collect all entities
             all_entities = {}
             for extract in self.extract_versions:
+                if not os.path.exists(extract.output_path):
+                    error_msg = f"Extract output file not found: {extract.output_path}"
+                    self.logger.error(error_msg)
+                    return ProcessingResult(
+                        success=False,
+                        status="failed",
+                        message=error_msg,
+                        error=error_msg,
+                    )
+
                 with open(extract.output_path, "r") as f:
                     data = json.load(f)
                     all_entities.update(data.get("entities", {}))
 
-            # Process in batches
+            # Process in batches of 10 entities
             entity_batches = [
                 list(all_entities.items())[i : i + 10]
                 for i in range(0, len(all_entities), 10)
@@ -114,6 +154,7 @@ class MergeProcessor(BaseProcessor):
                 merged_entity_ids, all_entities
             )
 
+            # Save results
             merged_path = os.path.join(self.output_dir, "output.json")
             with open(merged_path, "w") as f:
                 json.dump(final_entities, f, indent=2)
@@ -122,6 +163,7 @@ class MergeProcessor(BaseProcessor):
                 success=True,
                 status="completed",
                 message="Entity merging completed",
+                output_path=merged_path,
             )
 
         except Exception as e:

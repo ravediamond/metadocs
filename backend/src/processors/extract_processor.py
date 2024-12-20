@@ -51,11 +51,7 @@ class ExtractProcessor(BaseProcessor):
 
     @property
     def _get_output_dir(self) -> str:
-        """Return the output directory for this processor."""
-        return os.path.join(
-            os.path.dirname(self.parse_version.output_path),
-            f"extract_{self.extract_version.version_id}",
-        )
+        return self.extract_version.output_dir
 
     def _initial_extraction(self, content: str) -> tuple[List[str], List[Dict]]:
         """Perform initial extraction of entities and relationships."""
