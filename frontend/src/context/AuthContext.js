@@ -18,10 +18,6 @@ export const AuthProvider = ({ children }) => {
       const decodedToken = jwtDecode(token);
       const tenants = decodedToken.tenant_ids || [];
       setTenantIds(tenants);
-
-      console.log(decodedToken);
-      console.log(currentTenant);
-      console.log(currentUserRole);
     }
   }, [token]);
 
@@ -40,8 +36,6 @@ export const AuthProvider = ({ children }) => {
         },
       });
       const data = await response.json();
-      console.log("AAAAA");
-      console.log(data);
       if (response.ok) {
         setUser(data);
         // Once user profile is fetched, fetch their role

@@ -591,7 +591,9 @@ This architecture provides a flexible, maintainable system for domain knowledge 
 
 ## Dev
 
+### Launch locally
+
 ```
-docker-compose down -v
-docker-compose up --build
+docker-compose down -v && docker-compose up --build
 ```
+

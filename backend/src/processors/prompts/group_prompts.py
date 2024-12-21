@@ -1,6 +1,6 @@
 SYSTEM_PROMPT = """You are an expert system specialized in analyzing and grouping related entities based on their characteristics, relationships, and semantic meaning."""
 
-GROUP_ANALYSIS_PROMPT = """Analyze the provided entities and their relationships to identify meaningful groups and clusters.
+GROUP_PROMPT = """Analyze the provided entities and their relationships to identify meaningful groups and clusters.
 
 Consider:
 1. Entity types and categories

@@ -153,3 +153,42 @@ def revoke_role_from_user(
     db.delete(user_role)
     db.commit()
     return {"detail": "Role revoked successfully"}
+
+
+@router.get(
+    "/tenants/{tenant_id}/users/{user_id}/roles", response_model=List[UserRoleResponse]
+)
+def get_user_roles(
+    tenant_id: UUID = Path(...),
+    user_id: UUID = Path(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Verify the user exists and belongs to the tenant
+    user_tenant = (
+        db.query(UserTenant)
+        .filter(UserTenant.user_id == user_id, UserTenant.tenant_id == tenant_id)
+        .first()
+    )
+    if not user_tenant:
+        raise HTTPException(status_code=404, detail="User not found in this tenant")
+
+    # Get all user roles
+    user_roles = (
+        db.query(UserRole, Role)
+        .join(Role, UserRole.role_id == Role.role_id)
+        .filter(UserRole.user_id == user_id, Role.tenant_id == tenant_id)
+        .all()
+    )
+
+    # Format the response
+    return [
+        UserRoleResponse(
+            user_id=user_id,
+            domain_id=user_role.UserRole.domain_id,
+            role_name=user_role.Role.role_name,
+            email=user_tenant.user.email,
+            name=user_tenant.user.name,
+        )
+        for user_role in user_roles
+    ]
