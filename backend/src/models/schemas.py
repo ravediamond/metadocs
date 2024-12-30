@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional, Dict, Any
-from uuid import UUID
+from enum import Enum
+from uuid import UUID, uuid4
 from datetime import datetime
 from .models import DomainVersionStatus, PipelineStage, PipelineStatus
 
@@ -599,3 +600,165 @@ class PipelineErrorResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ChatMessage(BaseModel):
+    content: str = Field(description="The message content from the user")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "content": "How are entities X and Y related in the knowledge graph?"
+            }
+        }
+
+
+class ChatVersionState(BaseModel):
+    """Schema for providing version information"""
+
+    parse_versions: Dict[UUID, UUID]  # file_version_id -> parse_version_id
+    extract_versions: Dict[UUID, UUID]  # parse_version_id -> extract_version_id
+    merge_version_id: Optional[UUID]
+    group_version_id: Optional[UUID]
+    ontology_version_id: Optional[UUID]
+
+
+class ChatMessage(BaseModel):
+    """Schema for chat messages"""
+
+    content: str
+
+
+class ChatRequest(BaseModel):
+    """Schema for chat requests"""
+
+    message: ChatMessage
+    versions: ChatVersionState
+
+
+class ChatResponse(BaseModel):
+    """Schema for chat responses"""
+
+    message_id: UUID = Field(default_factory=uuid4)
+    message_type: str = Field(
+        description="Type of message: 'question' or 'modification'"
+    )
+    intent: str = Field(description="Specific intent of the message")
+    response: str = Field(description="Assistant's response")
+    todo_list: Optional[List[Dict]] = Field(
+        default=None, description="Updated todo list if changes were approved"
+    )
+
+
+class MessageType(str, Enum):
+    """Enum for different types of messages"""
+
+    TEXT = "text"
+    ERROR = "error"
+    SUGGESTION = "suggestion"
+    WARNING = "warning"
+    ACTION = "action"
+
+
+class IntentType(str, Enum):
+    """Enum for different types of intents"""
+
+    CREATE_VERSION = "create_version"
+    MODIFY_PROMPT = "modify_prompt"
+    ANALYZE_RESULTS = "analyze_results"
+    START_PROCESSING = "start_processing"
+    GET_STATUS = "get_status"
+    HELP = "help"
+    UNKNOWN = "unknown"
+    ERROR = "error"
+
+
+class MessageContent(BaseModel):
+    """Schema for message content"""
+
+    content: str = Field(..., description="The actual message content")
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Optional metadata for the message"
+    )
+
+
+class VersionInfo(BaseModel):
+    """Schema for version information"""
+
+    parse_versions: Dict[str, str] = Field(
+        default_factory=dict, description="Map of file IDs to parse version IDs"
+    )
+    extract_versions: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of parse version IDs to extract version IDs",
+    )
+    merge_version_id: Optional[str] = Field(
+        default=None, description="ID of the merge version"
+    )
+    group_version_id: Optional[str] = Field(
+        default=None, description="ID of the group version"
+    )
+    ontology_version_id: Optional[str] = Field(
+        default=None, description="ID of the ontology version"
+    )
+
+
+class ChatRequest(BaseModel):
+    """Schema for chat requests"""
+
+    message: MessageContent
+    versions: VersionInfo = Field(default_factory=VersionInfo)
+
+
+class ChatResponse(BaseModel):
+    """Schema for chat responses"""
+
+    message_type: MessageType
+    intent: IntentType
+    response: str
+    suggestions: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    todo_list: List[str] = Field(default_factory=list)
+
+
+class GraphState(BaseModel):
+    """Schema for graph processing state"""
+
+    message: str
+    tenant_id: UUID
+    domain_id: UUID
+    domain_version: int
+    parse_versions: Dict[str, str] = Field(default_factory=dict)
+    extract_versions: Dict[str, str] = Field(default_factory=dict)
+    merge_version_id: Optional[str] = None
+    group_version_id: Optional[str] = None
+    ontology_version_id: Optional[str] = None
+    message_type: Optional[MessageType] = None
+    intent: Optional[IntentType] = None
+    loaded_data: Dict[str, Any] = Field(default_factory=dict)
+    proposed_changes: List[Dict[str, Any]] = Field(default_factory=list)
+    todo_list: List[str] = Field(default_factory=list)
+
+    class Config:
+        arbitrary_types_allowed = True  # To allow SQLAlchemy Session
+
+
+class IntentDetectionResult(BaseModel):
+    """Schema for intent detection results"""
+
+    success: bool
+    intent: IntentType
+    confidence: float = Field(ge=0.0, le=1.0)
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class ResponseGenerationResult(BaseModel):
+    """Schema for response generation results"""
+
+    success: bool
+    message_type: MessageType
+    response: str
+    suggestions: List[str] = Field(default_factory=list)
+    todo_list: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    metadata: Optional[Dict[str, Any]] = None

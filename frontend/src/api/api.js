@@ -602,3 +602,85 @@ export const roles = {
     return response.json();
   }
 };
+
+export const chat = {
+  analyzeQuery: async (tenantId, domainId, query, token, versions = {}) => {
+    const response = await fetch(
+      `${BASE_URL}/chat/tenants/${tenantId}/domains/${domainId}/chat`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: { content: query },
+          versions: {
+            parse_versions: versions.parseVersions || {},
+            extract_versions: versions.extractVersions || {},
+            merge_version_id: versions.mergeVersionId || null,
+            group_version_id: versions.groupVersionId || null,
+            ontology_version_id: versions.ontologyVersionId || null
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || 'Failed to analyze query');
+    }
+
+    return response.json();
+  },
+
+  getTodoList: async (tenantId, domainId, token) => {
+    const response = await fetch(
+      `${BASE_URL}/chat/tenants/${tenantId}/domains/${domainId}/chat/todo`,
+      {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || 'Failed to fetch todo list');
+    }
+
+    return response.json();
+  },
+
+  removeTodoItem: async (tenantId, domainId, itemId, token) => {
+    const response = await fetch(
+      `${BASE_URL}/chat/tenants/${tenantId}/domains/${domainId}/chat/todo/${itemId}`,
+      {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || 'Failed to remove todo item');
+    }
+
+    return response.json();
+  },
+
+  updateTodoItem: async (tenantId, domainId, itemId, token) => {
+    const response = await fetch(
+      `${BASE_URL}/chat/tenants/${tenantId}/domains/${domainId}/chat/todo/${itemId}`,
+      {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || 'Failed to update todo item');
+    }
+
+    return response.json();
+  }
+};
