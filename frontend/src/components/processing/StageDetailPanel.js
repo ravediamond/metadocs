@@ -1,46 +1,50 @@
-import React from 'react';
-import {
-    Box,
-    Flex,
-    Text,
-    Spinner,
-    Heading
-} from '@chakra-ui/react';
-import ReactMarkdown from 'react-markdown';
-import { MermaidDiagram } from './MermaidDiagram';
+import React from "react";
+import { Box, Flex, Text, Spinner, Heading } from "@chakra-ui/react";
+import ReactMarkdown from "react-markdown";
+import MermaidDiagram from "./MermaidDiagram";
+import ForceGraph from "./ForceGraph";
 
 const StageDetailPanel = ({ stage, files, results, isLoading }) => {
     const renderContent = () => {
         if (isLoading) {
-            return <Spinner />;
+            return (
+                <Flex justify="center" align="center" height="100%">
+                    <Spinner />
+                </Flex>
+            );
         }
 
         if (!results) {
-            return <Text>No results available</Text>;
+            return (
+                <Flex justify="center" align="center" height="100%">
+                    <Text>No results available</Text>
+                </Flex>
+            );
         }
 
         switch (stage.id) {
-            case 'parse':
+            case "parse":
                 return (
                     <Box overflowY="auto" p={4}>
                         <ReactMarkdown>{results}</ReactMarkdown>
                     </Box>
                 );
-
-            case 'extract':
-            case 'merge':
-            case 'group':
+            case "extract":
+            case "merge":
+            case "group":
                 return (
-                    <Box overflowY="auto" p={4}>
-                        <pre>{typeof results === 'string' ? results : JSON.stringify(results, null, 2)}</pre>
+                    <Box overflowY="auto" p={4} height="100%">
+                        <ForceGraph data={results} />
                     </Box>
                 );
-
-            case 'ontology':
+            case "ontology":
                 return <MermaidDiagram diagram={results} />;
-
             default:
-                return <Text>Unsupported stage type</Text>;
+                return (
+                    <Flex justify="center" align="center" height="100%">
+                        <Text>Unsupported stage type</Text>
+                    </Flex>
+                );
         }
     };
 
