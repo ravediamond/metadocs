@@ -108,7 +108,16 @@ const ChatPanel = () => {
   };
 
   return (
-    <Flex w="96" bg="white" borderLeftWidth="1px" direction="column">
+    <Flex
+      direction="column"
+      h="full"
+      bg="white"
+      borderWidth="1px"
+      borderColor="gray.200"
+      rounded="lg"
+      shadow="sm"
+    >
+      {/* Header */}
       <Flex p="4" borderBottomWidth="1px" align="center" justify="space-between">
         <Flex align="center" gap="2">
           <Icon as={MessageSquare} boxSize="5" color="blue.500" />
@@ -123,11 +132,12 @@ const ChatPanel = () => {
         />
       </Flex>
 
+      {/* Messages Area */}
       <Box flex="1" overflowY="auto" p="4">
         <VStack spacing="4" align="stretch">
           {/* Initial welcome message */}
           {messages.length === 0 && (
-            <Box bg="blue.50" rounded="lg" p="3" ml="8">
+            <Box bg="blue.50" rounded="lg" p="3">
               <Text fontSize="sm">
                 I can help you with:
                 - Creating new versions
@@ -147,8 +157,8 @@ const ChatPanel = () => {
               bg={msg.role === 'user' ? 'gray.100' : 'blue.50'}
               rounded="lg"
               p="3"
-              ml={msg.role === 'user' ? '0' : '8'}
-              mr={msg.role === 'user' ? '8' : '0'}
+              ml={msg.role === 'user' ? '0' : '4'}
+              mr={msg.role === 'user' ? '4' : '0'}
             >
               <Text fontSize="sm" whiteSpace="pre-wrap">
                 {msg.content}
@@ -158,6 +168,7 @@ const ChatPanel = () => {
         </VStack>
       </Box>
 
+      {/* Input Area */}
       <Box p="4" borderTopWidth="1px">
         <Flex gap="2">
           <Input

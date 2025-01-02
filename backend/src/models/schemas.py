@@ -762,3 +762,38 @@ class ResponseGenerationResult(BaseModel):
     todo_list: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
     metadata: Optional[Dict[str, Any]] = None
+
+
+class BaseGraphState(BaseModel):
+    """Base state model for graph processing"""
+
+    # Core message and identification details
+    message: str
+    tenant_id: UUID
+    domain_id: UUID
+    domain_version: int
+
+    # Processing version tracking
+    parse_versions: Dict[str, str] = Field(default_factory=dict)
+    extract_versions: Dict[str, str] = Field(default_factory=dict)
+    merge_version_id: Optional[str] = None
+    group_version_id: Optional[str] = None
+    ontology_version_id: Optional[str] = None
+
+    # Message metadata
+    message_type: Optional[MessageType] = None
+    intent: Optional[IntentType] = None
+
+    # Additional processing metadata
+    loaded_data: Dict[str, Any] = Field(default_factory=dict)
+    proposed_changes: List[Dict[str, Any]] = Field(default_factory=list)
+    todo_list: List[str] = Field(default_factory=list)
+
+    # Database connection (if needed)
+    db: Optional[Any] = None
+
+    class Config:
+        """Pydantic configuration"""
+
+        arbitrary_types_allowed = True
+        from_attributes = True

@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { Box, Flex, useToast, VStack, Text } from '@chakra-ui/react';
+import { Box, Flex, useToast, VStack, Text, IconButton } from '@chakra-ui/react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { processing, domains } from '../api/api';
 import AuthContext from '../context/AuthContext';
 import ChatPanel from '../components/chat/ChatPanel';
-import WorkflowStatus from '../components/processing/WorkflowStatus';
 import DomainVersionControl from '../components/processing/DomainVersionControl';
-import { ResizablePanel } from '../components/processing/ResizablePanel';
-import StageDetailPanel from '../components/processing/StageDetailPanel';
 import ProcessingControls from '../components/processing/ProcessingControls';
+import ProcessingStatusPanel from '../components/processing/ProcessingStatusPanel'
 
 const ProcessingWorkspace = () => {
   const { domain_id } = useParams();
@@ -22,6 +21,7 @@ const ProcessingWorkspace = () => {
   const [domainFiles, setDomainFiles] = useState([]);
   const [activeStage, setActiveStage] = useState('parse');
   const [results, setResults] = useState({});
+  const [isRightPanelVisible, setIsRightPanelVisible] = useState(true);
 
   // Pipeline state
   const [isRunning, setIsRunning] = useState(false);
@@ -427,9 +427,10 @@ const ProcessingWorkspace = () => {
   };
 
   return (
-    <Flex h="100vh" bg="gray.50">
-      <Box flex="1" p="6">
-        <VStack spacing={6} align="stretch">
+    <Box h="100vh" bg="gray.50">
+      <Box p="6">
+        {/* Top Controls */}
+        <VStack spacing={6} align="stretch" mb="6">
           <DomainVersionControl
             versions={domainVersions}
             selectedVersion={selectedVersion}
@@ -444,34 +445,46 @@ const ProcessingWorkspace = () => {
             onStop={stopPipeline}
             isStartDisabled={!selectedVersion || domainFiles.length === 0}
           />
-
-          <WorkflowStatus
-            phases={phases}
-            activePhase={activeStage}
-            setActivePhase={setActiveStage}
-            currentStatus={pipeline?.status || 'pending'}
-            currentWorkflowVersion={selectedVersion?.version_number}
-          />
-
-          <StageDetailPanel
-            stage={{
-              id: activeStage,
-              label: phases.find(p => p.id === activeStage)?.label,
-              status: pipeline?.status || 'pending'
-            }}
-            files={domainFiles}
-            results={getStageContent(activeStage)}
-            isLoading={isRunning}
-          />
         </VStack>
-      </Box>
 
-      <ResizablePanel>
-        <Box w="full" borderLeftWidth="1px">
-          <ChatPanel />
-        </Box>
-      </ResizablePanel>
-    </Flex>
+        {/* Main Two-Panel Layout */}
+        <Flex gap="6" h="calc(100vh - 200px)">
+          {/* Chat Panel - Equal size with right panel when visible */}
+          <Box flex={isRightPanelVisible ? 1 : 2} minW="0">
+            <ChatPanel />
+          </Box>
+
+          {/* Right Panel with Toggle */}
+          <Flex flex={1} minW="0">
+            <IconButton
+              aria-label={isRightPanelVisible ? "Hide panel" : "Show panel"}
+              icon={isRightPanelVisible ? <ChevronRight /> : <ChevronLeft />}
+              onClick={() => setIsRightPanelVisible(!isRightPanelVisible)}
+              position="relative"
+              right={0}
+              top="50%"
+              transform="translateY(-50%)"
+              zIndex={2}
+              size="sm"
+              variant="solid"
+              colorScheme="gray"
+              border="1px solid"
+              borderColor="gray.200"
+              borderRadius="md 0 0 md"
+            />
+            {isRightPanelVisible && (
+              <Box flex={1} minW="0">
+                <ProcessingStatusPanel
+                  isRunning={isRunning}
+                  currentStage={activeStage.toUpperCase()}
+                  results={results}
+                />
+              </Box>
+            )}
+          </Flex>
+        </Flex>
+      </Box>
+    </Box>
   );
 };
 
