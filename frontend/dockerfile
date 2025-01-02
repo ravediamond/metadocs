@@ -1,20 +1,38 @@
-# Frontend Dockerfile
-FROM node:18-alpine
+# Build stage
+FROM node:18-alpine AS builder
 
 # Set working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json
+# Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm config set strict-ssl false
-RUN npm install
+# Install dependencies with specific optimizations
+RUN npm config set strict-ssl false && \
+    npm ci --only=production
 
-# Copy the rest of the frontend files
+# Copy source files
 COPY . .
 
-# Expose the port
+# Development stage
+FROM node:18-alpine
+
+# Add non-root user for security
+RUN addgroup -S appgroup && \
+    adduser -S appuser -G appgroup
+
+WORKDIR /app
+
+# Copy only necessary files from builder
+COPY --from=builder --chown=appuser:appgroup /app/package*.json ./
+COPY --from=builder --chown=appuser:appgroup /app/node_modules ./node_modules
+COPY --from=builder --chown=appuser:appgroup /app/public ./public
+COPY --from=builder --chown=appuser:appgroup /app/src ./src
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
 EXPOSE 3000
 
 # Command to run the React app
