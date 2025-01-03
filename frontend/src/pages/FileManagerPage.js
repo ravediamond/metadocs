@@ -7,13 +7,13 @@ import {
   Flex,
   Button,
   Input,
+  Textarea,
   useToast,
-  Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
+  Accordion,
+  AccordionItem,
+  AccordionButton,
+  AccordionPanel,
+  AccordionIcon,
   IconButton,
   Modal,
   ModalOverlay,
@@ -23,85 +23,53 @@ import {
   ModalBody,
   ModalCloseButton,
   useDisclosure,
-  Accordion,
-  AccordionItem,
-  AccordionButton,
-  AccordionPanel,
-  AccordionIcon,
+  FormControl,
+  FormLabel,
+  FormErrorMessage,
   Spinner,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
 } from '@chakra-ui/react';
 import { DeleteIcon, AddIcon, DownloadIcon } from '@chakra-ui/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
+import { files } from '../api/api';
 
-const FileUploadPage = () => {
+const FileManagerPage = () => {
   const { domain_id } = useParams();
   const { token, currentTenant } = useContext(AuthContext);
   const navigate = useNavigate();
   const toast = useToast();
 
-  const [files, setFiles] = useState([]);
+  const [fileList, setFileList] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [description, setDescription] = useState('');
   const [uploading, setUploading] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [error, setError] = useState(null);
+  const [descriptionError, setDescriptionError] = useState('');
+  const [newVersionFile, setNewVersionFile] = useState(null);
 
-  // Modals
-  const {
-    isOpen: isDeleteOpen,
-    onOpen: onDeleteOpen,
-    onClose: onDeleteClose
-  } = useDisclosure();
-  const {
-    isOpen: isVersionOpen,
-    onOpen: onVersionOpen,
-    onClose: onVersionClose,
-  } = useDisclosure();
+  const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure();
+  const { isOpen: isVersionOpen, onOpen: onVersionOpen, onClose: onVersionClose } = useDisclosure();
 
   const [fileToDelete, setFileToDelete] = useState(null);
   const [selectedFileForVersion, setSelectedFileForVersion] = useState(null);
-  const [newVersionFile, setNewVersionFile] = useState(null);
 
-  // Fetch files on component mount
   useEffect(() => {
     fetchFiles();
   }, [currentTenant, domain_id, token]);
 
-  const DateFormatter = ({ dateString }) => {
-    const formatDate = (date) => {
-      try {
-        return new Date(Date.parse(date)).toLocaleString();
-      } catch (error) {
-        console.error('Date parsing error:', error);
-        return 'Invalid date';
-      }
-    };
-
-    return <>{formatDate(dateString)}</>;
-  };
-
   const fetchFiles = async () => {
     setLoadingFiles(true);
-    setError(null);
     try {
-      const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/files`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setFiles(data);
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to fetch files.');
-      }
+      const data = await files.getAll(currentTenant, domain_id, token);
+      setFileList(data);
     } catch (err) {
-      console.error('Error fetching files:', err);
       setError(err.message);
       toast({
         title: 'Error fetching files',
@@ -123,6 +91,52 @@ const FileUploadPage = () => {
     setNewVersionFile(e.target.files[0]);
   };
 
+  const handleDescriptionChange = (e) => {
+    setDescription(e.target.value);
+    if (e.target.value.trim()) {
+      setDescriptionError('');
+    }
+  };
+
+  const handleAddVersion = async () => {
+    if (!newVersionFile || !selectedFileForVersion) return;
+
+    try {
+      const newVersion = await files.upload(
+        currentTenant,
+        domain_id,
+        newVersionFile,
+        token
+      );
+
+      toast({
+        title: 'New version uploaded successfully',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+
+      setFileList(prevFiles =>
+        prevFiles.map(file =>
+          file.file_id === selectedFileForVersion.file_id
+            ? { ...file, versions: [...file.versions, newVersion] }
+            : file
+        )
+      );
+
+      onVersionClose();
+      setNewVersionFile(null);
+    } catch (error) {
+      toast({
+        title: 'Failed to add version',
+        description: error.message,
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  };
+
   const handleUpload = async () => {
     if (!selectedFile) {
       toast({
@@ -135,38 +149,32 @@ const FileUploadPage = () => {
       return;
     }
 
-    setUploading(true);
-    const formData = new FormData();
-    formData.append('uploaded_file', selectedFile);
+    if (!description.trim()) {
+      setDescriptionError('Description is required');
+      return;
+    }
 
+    setUploading(true);
     try {
-      const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/upload`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        }
+      const uploadedFile = await files.upload(
+        currentTenant,
+        domain_id,
+        selectedFile,
+        description.trim(),
+        token
       );
 
-      if (response.ok) {
-        const uploadedFile = await response.json();
-        toast({
-          title: 'File uploaded successfully',
-          status: 'success',
-          duration: 3000,
-          isClosable: true,
-        });
-        setSelectedFile(null);
-        setFiles(prevFiles => [...prevFiles, uploadedFile]);
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'File upload failed.');
-      }
+      toast({
+        title: 'File uploaded successfully',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+
+      setSelectedFile(null);
+      setDescription('');
+      setFileList(prevFiles => [...prevFiles, uploadedFile]);
     } catch (error) {
-      console.error('Error uploading file:', error);
       toast({
         title: 'Upload failed',
         description: error.message,
@@ -179,87 +187,24 @@ const FileUploadPage = () => {
     }
   };
 
-  const handleAddVersion = async () => {
-    if (!newVersionFile || !selectedFileForVersion) return;
-
-    const formData = new FormData();
-    formData.append('uploaded_file', newVersionFile);
-
-    try {
-      const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/files/${selectedFileForVersion.file_id}/versions`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        }
-      );
-
-      if (response.ok) {
-        const newVersion = await response.json();
-        toast({
-          title: 'New version uploaded successfully',
-          status: 'success',
-          duration: 3000,
-          isClosable: true,
-        });
-
-        setFiles(prevFiles =>
-          prevFiles.map(file =>
-            file.file_id === selectedFileForVersion.file_id
-              ? { ...file, versions: [...file.versions, newVersion] }
-              : file
-          )
-        );
-
-        onVersionClose();
-        setNewVersionFile(null);
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to upload new version.');
-      }
-    } catch (error) {
-      toast({
-        title: 'Failed to add version',
-        description: error.message,
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
-    }
-  };
-
   const handleDelete = async () => {
     if (!fileToDelete) return;
 
     try {
-      const response = await fetch(
-        `${process.env.REACT_APP_BACKEND_URL}/files/tenants/${currentTenant}/domains/${domain_id}/files/${fileToDelete.file_id}`,
-        {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      await files.delete(currentTenant, domain_id, fileToDelete.file_id, token);
 
-      if (response.ok) {
-        toast({
-          title: 'File deleted successfully',
-          status: 'success',
-          duration: 3000,
-          isClosable: true,
-        });
-        setFiles(prevFiles => prevFiles.filter(file => file.file_id !== fileToDelete.file_id));
-        onDeleteClose();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to delete file.');
-      }
+      toast({
+        title: 'File deleted successfully',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+
+      setFileList(prevFiles =>
+        prevFiles.filter(file => file.file_id !== fileToDelete.file_id)
+      );
+      onDeleteClose();
     } catch (error) {
-      console.error('Error deleting file:', error);
       toast({
         title: 'Deletion failed',
         description: error.message,
@@ -270,24 +215,50 @@ const FileUploadPage = () => {
     }
   };
 
+  const DateFormatter = ({ dateString }) => {
+    const formatDate = (date) => {
+      try {
+        return new Date(date).toLocaleString();
+      } catch (error) {
+        return 'Invalid date';
+      }
+    };
+    return <>{formatDate(dateString)}</>;
+  };
+
   return (
     <Box minH="100vh" bg="gray.50" py={10}>
       <Container maxW="container.xl">
         <Heading mb={8} textAlign="center">File Manager</Heading>
 
-        {/* Upload Section */}
         <Box bg="white" borderRadius="xl" boxShadow="lg" p={8} mb={8}>
           <Flex direction="column" gap={4}>
-            <Input
-              type="file"
-              onChange={handleFileChange}
-              padding={1}
-            />
+            <FormControl isInvalid={!!descriptionError}>
+              <FormLabel>File Description</FormLabel>
+              <Textarea
+                value={description}
+                onChange={handleDescriptionChange}
+                placeholder="Enter file description"
+                resize="vertical"
+              />
+              <FormErrorMessage>{descriptionError}</FormErrorMessage>
+            </FormControl>
+
+            <FormControl>
+              <FormLabel>Select File</FormLabel>
+              <Input
+                type="file"
+                onChange={handleFileChange}
+                padding={1}
+              />
+            </FormControl>
+
             {selectedFile && (
               <Text color="gray.600">
                 Selected: <strong>{selectedFile.name}</strong>
               </Text>
             )}
+
             <Flex gap={4}>
               <Button
                 colorScheme="blue"
@@ -307,7 +278,6 @@ const FileUploadPage = () => {
           </Flex>
         </Box>
 
-        {/* Files List */}
         <Box bg="white" borderRadius="xl" boxShadow="lg" p={8}>
           <Heading size="md" mb={6}>Uploaded Files</Heading>
 
@@ -317,13 +287,13 @@ const FileUploadPage = () => {
             </Flex>
           ) : error ? (
             <Text color="red.500" textAlign="center" py={8}>{error}</Text>
-          ) : files.length === 0 ? (
+          ) : fileList.length === 0 ? (
             <Text color="gray.500" textAlign="center" py={8}>
               No files uploaded yet
             </Text>
           ) : (
             <Accordion allowMultiple>
-              {files.map((file) => (
+              {fileList.map((file) => (
                 <AccordionItem key={file.filename}>
                   <AccordionButton>
                     <Flex flex="1" justify="space-between" align="center">
@@ -335,6 +305,7 @@ const FileUploadPage = () => {
                     <AccordionIcon />
                   </AccordionButton>
                   <AccordionPanel pb={4}>
+                    <Text mb={4} color="gray.600">{file.description}</Text>
                     <Flex justify="space-between" mb={4}>
                       <Button
                         leftIcon={<AddIcon />}
@@ -367,7 +338,7 @@ const FileUploadPage = () => {
                         </Tr>
                       </Thead>
                       <Tbody>
-                        {file.versions.map((version) => (
+                        {file.versions && file.versions.map((version) => (
                           <Tr key={version.file_version_id}>
                             <Td>v{version.version_number}</Td>
                             <Td><DateFormatter dateString={version.created_at} /></Td>
@@ -446,4 +417,4 @@ const FileUploadPage = () => {
   );
 };
 
-export default FileUploadPage;
+export default FileManagerPage;

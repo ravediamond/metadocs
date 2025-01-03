@@ -14,7 +14,14 @@ import { chat } from '../../api/api';
 import AuthContext from '../../context/AuthContext';
 import { useParams } from 'react-router-dom';
 
-const ChatPanel = () => {
+const ChatPanel = ({
+  parseVersions = [],
+  extractVersions = [],
+  mergeVersionId = null,
+  groupVersionId = null,
+  ontologyVersionId = null,
+  pipeline = null
+}) => {
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -22,30 +29,40 @@ const ChatPanel = () => {
   const { domain_id } = useParams();
   const toast = useToast();
 
+  console.log('ChatPanel input props:', {
+    parseVersions,
+    extractVersions,
+    mergeVersionId,
+    groupVersionId,
+    ontologyVersionId,
+    pipeline: pipeline?.pipeline_id ? {
+      id: pipeline.pipeline_id,
+      stage: pipeline.stage,
+      status: pipeline.status,
+      latest_versions: {
+        parse: pipeline.latest_parse_version_id,
+        extract: pipeline.latest_extract_version_id,
+        merge: pipeline.latest_merge_version_id,
+        group: pipeline.latest_group_version_id,
+        ontology: pipeline.latest_ontology_version_id
+      }
+    } : null
+  });
+
   const formatAssistantResponse = (analysis) => {
     let content = [];
 
-    // Add intent if present
     if (analysis.intent) {
       content.push(`Intent: ${analysis.intent}`);
     }
 
-    // Add main response
     content.push(analysis.response);
 
-    // Add suggestions if present
     if (analysis.suggestions?.length > 0) {
       content.push('\nSuggestions:');
       content.push(analysis.suggestions.map(s => `• ${s}`).join('\n'));
     }
 
-    // Add todo list if present
-    if (analysis.todo_list?.length > 0) {
-      content.push('\nNext steps:');
-      content.push(analysis.todo_list.map(t => `• ${t}`).join('\n'));
-    }
-
-    // Add warnings if present
     if (analysis.warnings?.length > 0) {
       content.push('\nWarnings:');
       content.push(analysis.warnings.map(w => `• ${w}`).join('\n'));
@@ -58,10 +75,45 @@ const ChatPanel = () => {
         messageType: analysis.message_type,
         intent: analysis.intent,
         suggestions: analysis.suggestions,
-        todoList: analysis.todo_list,
         warnings: analysis.warnings
       }
     };
+  };
+
+  const getCurrentVersions = () => {
+    // Pipeline completed - return all versions
+    if (pipeline?.status === 'COMPLETED') {
+      console.log('Pipeline completed, sending all versions:', {
+        parseVersions,
+        extractVersions,
+        mergeVersionId,
+        groupVersionId,
+        ontologyVersionId
+      });
+      return {
+        parseVersions,
+        extractVersions,
+        mergeVersionId,
+        groupVersionId,
+        ontologyVersionId
+      };
+    }
+
+    // No pipeline or not completed - use stage-based logic
+    const currentStage = pipeline?.stage?.toLowerCase();
+    const stages = ['parse', 'extract', 'merge', 'group', 'ontology'];
+    const stageIndex = stages.indexOf(currentStage);
+
+    const versions = {
+      parseVersions: stageIndex >= 0 ? parseVersions : [],
+      extractVersions: stageIndex >= 1 ? extractVersions : [],
+      mergeVersionId: stageIndex >= 2 ? mergeVersionId : null,
+      groupVersionId: stageIndex >= 3 ? groupVersionId : null,
+      ontologyVersionId: stageIndex >= 4 ? ontologyVersionId : null
+    };
+
+    console.log('Stage-based versions:', versions);
+    return versions;
   };
 
   const handleSend = async () => {
@@ -70,26 +122,20 @@ const ChatPanel = () => {
     try {
       setIsLoading(true);
 
-      // Add user message to chat
       const userMessage = { role: 'user', content: message };
       setMessages(prev => [...prev, userMessage]);
 
-      // Analyze the query with version information
+      const versions = getCurrentVersions();
+      console.log('Sending versions to backend:', versions);
+
       const analysis = await chat.analyzeQuery(
         currentTenant,
         domain_id,
         message,
         token,
-        {
-          parseVersions: {},
-          extractVersions: {},
-          mergeVersionId: null,
-          groupVersionId: null,
-          ontologyVersionId: null
-        }
+        versions
       );
 
-      // Format and add assistant message
       const assistantMessage = formatAssistantResponse(analysis);
       setMessages(prev => [...prev, assistantMessage]);
       setMessage('');
@@ -117,7 +163,6 @@ const ChatPanel = () => {
       rounded="lg"
       shadow="sm"
     >
-      {/* Header */}
       <Flex p="4" borderBottomWidth="1px" align="center" justify="space-between">
         <Flex align="center" gap="2">
           <Icon as={MessageSquare} boxSize="5" color="blue.500" />
@@ -132,25 +177,24 @@ const ChatPanel = () => {
         />
       </Flex>
 
-      {/* Messages Area */}
       <Box flex="1" overflowY="auto" p="4">
         <VStack spacing="4" align="stretch">
-          {/* Initial welcome message */}
           {messages.length === 0 && (
             <Box bg="blue.50" rounded="lg" p="3">
               <Text fontSize="sm">
-                I can help you with:
-                - Creating new versions
-                - Modifying prompts
-                - Analyzing results
-                - Starting next phases
+                I can help you understand and analyze the processing results.
+                Ask me about:
+                • Document parsing status
+                • Extracted entities
+                • Entity groups
+                • Ontology structure
+                • Processing errors
 
-                What would you like to do?
+                What would you like to know?
               </Text>
             </Box>
           )}
 
-          {/* Chat messages */}
           {messages.map((msg, idx) => (
             <Box
               key={idx}
@@ -168,7 +212,6 @@ const ChatPanel = () => {
         </VStack>
       </Box>
 
-      {/* Input Area */}
       <Box p="4" borderTopWidth="1px">
         <Flex gap="2">
           <Input

@@ -152,13 +152,16 @@ export const domains = {
 
 // File endpoints
 export const files = {
-  upload: async (tenantId, domainId, file, token) => {
+  upload: async (tenantId, domainId, file, description, token) => {
     const formData = new FormData();
     formData.append('uploaded_file', file);
+    formData.append('description', description);
 
-    const response = await fetch(`${BASE_URL}/files/tenants/${tenantId}/domains/${domainId}/upload`, {
+    const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/files/tenants/${tenantId}/domains/${domainId}/upload`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
       body: formData
     });
     if (!response.ok) throw new Error('Failed to upload file');

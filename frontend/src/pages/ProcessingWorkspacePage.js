@@ -107,6 +107,7 @@ const ProcessingWorkspace = () => {
           return newResults;
         });
       }
+      console.log(results);
       console.log(`[Results] Successfully fetched ${stage} results`);
     } catch (error) {
       console.error(`[Results] Error fetching ${stage} results:`, error);
@@ -451,7 +452,23 @@ const ProcessingWorkspace = () => {
         <Flex gap="6" h="calc(100vh - 200px)">
           {/* Chat Panel - Equal size with right panel when visible */}
           <Box flex={isRightPanelVisible ? 1 : 2} minW="0">
-            <ChatPanel />
+            {console.log('[ChatPanel] Props:', {
+              parseVersions: pipeline?.latest_parse_version_id,
+              extractVersions: pipeline?.latest_extract_version_id,
+              mergeVersionId: pipeline?.latest_merge_version_id,
+              groupVersionId: pipeline?.latest_group_version_id,
+              ontologyVersionId: pipeline?.latest_ontology_version_id,
+              results,
+              pipeline
+            })}
+            <ChatPanel
+              parseVersions={[pipeline?.latest_parse_version_id].filter(Boolean)}
+              extractVersions={[pipeline?.latest_extract_version_id].filter(Boolean)}
+              mergeVersionId={pipeline?.latest_merge_version_id || null}
+              groupVersionId={pipeline?.latest_group_version_id || null}
+              ontologyVersionId={pipeline?.latest_ontology_version_id || null}
+              pipeline={pipeline}
+            />
           </Box>
 
           {/* Right Panel with Toggle */}

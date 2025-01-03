@@ -347,7 +347,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-'EOSQL'
   ('77777777-7777-7777-7777-777777777777', '11111111-1111-1111-1111-111111111111', 'viewer', 'Can view domain content');
 
   INSERT INTO domains (domain_id, tenant_id, domain_name, owner_user_id, description) VALUES
-  ('88888888-8888-8888-8888-888888888888', '11111111-1111-1111-1111-111111111111', 'Sales', '22222222-2222-2222-2222-222222222222', 'This is a Sales example domain');
+  ('88888888-8888-8888-8888-888888888888', '11111111-1111-1111-1111-111111111111', 'Smart Pricing', '22222222-2222-2222-2222-222222222222', 'Smart Pricing is a system managing price campaigns where sales representatives review and modify pricing proposals for customers. It handles both master and local contracts, calculating price effects from various sources (inflation, minimum pricing, peer pricing). The system allows tracking of price acceptance rates and includes approval workflows between sales reps and managers. It integrates with Salesforce for customer contact management and automated price increase communications.');
 
   INSERT INTO user_tenants (user_id, tenant_id, role_id) VALUES
   ('22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111', '44444444-4444-4444-4444-444444444444'),
