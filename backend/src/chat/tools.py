@@ -1,6 +1,6 @@
-from typing import Optional
-from uuid import UUID
 import json
+from typing import Optional, Dict, Any
+from uuid import UUID
 from langchain_core.tools import BaseTool
 from ..models.models import (
     ParseVersion,
@@ -8,12 +8,10 @@ from ..models.models import (
     MergeVersion,
     GroupVersion,
     OntologyVersion,
-    Domain,
-    DomainVersionFile,
 )
 
 
-def get_version_output(version_obj):
+def get_version_output(version_obj: Any) -> Optional[Dict]:
     """Helper to load version output data"""
     if not version_obj or not version_obj.output_path:
         return None
@@ -28,41 +26,6 @@ def get_version_output(version_obj):
 def create_data_loading_tools(db):
     """Create tools for loading different types of version data"""
 
-    class DomainInfoTool(BaseTool):
-        name: str = "get_domain_info"
-        description: str = "Get information about the current domain"
-        return_direct: bool = True
-
-        def _run(self, domain_id: UUID) -> Optional[dict]:
-            domain = db.query(Domain).filter_by(domain_id=domain_id).first()
-            if not domain:
-                return None
-            return {
-                "name": domain.name,
-                "description": domain.description,
-                "created_at": domain.created_at,
-                "updated_at": domain.updated_at,
-            }
-
-    class FileInfoTool(BaseTool):
-        name: str = "get_file_info"
-        description: str = "Get information about files in the domain"
-        return_direct: bool = True
-
-        def _run(self, domain_id: UUID) -> Optional[dict]:
-            files = db.query(DomainVersionFile).filter_by(domain_id=domain_id).all()
-            if not files:
-                return None
-            return {
-                file.file_id: {
-                    "name": file.name,
-                    "description": file.description,
-                    "file_type": file.file_type,
-                    "created_at": file.created_at,
-                }
-                for file in files
-            }
-
     class ParseDataTool(BaseTool):
         name: str = "load_parse_data"
         description: str = "Load parsed data from a specific version"
@@ -74,8 +37,9 @@ def create_data_loading_tools(db):
                 return None
             return {
                 "data": get_version_output(version),
-                "description": version.description,
-                "file_version_id": version.file_version_id,
+                "file_version_id": version.input_file_version_id,
+                "status": version.status,
+                "errors": version.errors,
             }
 
     class ExtractDataTool(BaseTool):
@@ -89,8 +53,9 @@ def create_data_loading_tools(db):
                 return None
             return {
                 "data": get_version_output(version),
-                "description": version.description,
-                "parse_version_id": version.parse_version_id,
+                "parse_version_id": version.input_parse_version_id,
+                "status": version.status,
+                "errors": version.errors,
             }
 
     class MergeDataTool(BaseTool):
@@ -104,8 +69,9 @@ def create_data_loading_tools(db):
                 return None
             return {
                 "data": get_version_output(version),
-                "description": version.description,
-                "extract_version_ids": version.extract_version_ids,
+                "extract_version_ids": version.input_extract_version_ids,
+                "status": version.status,
+                "error": version.error,
             }
 
     class GroupDataTool(BaseTool):
@@ -119,8 +85,9 @@ def create_data_loading_tools(db):
                 return None
             return {
                 "data": get_version_output(version),
-                "description": version.description,
-                "merge_version_id": version.merge_version_id,
+                "merge_version_id": version.input_merge_version_id,
+                "status": version.status,
+                "error": version.error,
             }
 
     class OntologyDataTool(BaseTool):
@@ -134,14 +101,13 @@ def create_data_loading_tools(db):
                 return None
             return {
                 "data": get_version_output(version),
-                "description": version.description,
-                "merge_version_id": version.merge_version_id,
-                "group_version_id": version.group_version_id,
+                "merge_version_id": version.input_merge_version_id,
+                "group_version_id": version.input_group_version_id,
+                "status": version.status,
+                "error": version.error,
             }
 
     return [
-        DomainInfoTool(),
-        FileInfoTool(),
         ParseDataTool(),
         ExtractDataTool(),
         MergeDataTool(),
