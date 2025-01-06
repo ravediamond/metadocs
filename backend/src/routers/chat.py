@@ -52,9 +52,6 @@ async def process_chat_message(
         # Create graph assistant
         assistant = GraphAssistant(llm_client=llm_client, db=db)
 
-        print(request)
-        print(request.versions)
-
         # Prepare state for processing
         state = {
             "messages": [HumanMessage(content=request.message.content)],
@@ -74,12 +71,15 @@ async def process_chat_message(
         # Process message through graph
         result = await assistant.process_message(state)
 
+        print(result)
+
         return ChatResponse(
             message_type=MessageType.TEXT,
             intent=IntentType.ANALYZE_RESULTS,
             response=result.get("response", ""),
             suggestions=result.get("suggestions", []),
             warnings=result.get("warnings", []),
+            visualization=result.get("visualization"),
         )
 
     except HTTPException:

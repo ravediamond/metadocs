@@ -1,64 +1,83 @@
 import React from 'react';
 import { Box, Flex, Text, Progress, VStack } from '@chakra-ui/react';
-import MermaidDiagram from './MermaidDiagram';
+import MermaidDiagram from '../visualizations/MermaidDiagram';
+import CodeVisualization from '../visualizations/CodeVisualization';
+import MarkdownVisualization from '../visualizations/MarkdownVisualization';
+import ProcessingProgress from './ProcessingProgress';
 
-const ProcessingStatusPanel = ({ isRunning, currentStage, results }) => {
-    // Show processing status or ontology diagram
-    if (isRunning) {
-        return (
-            <VStack spacing={6} w="full" p={6} bg="white" rounded="lg" h="full" shadow="sm">
-                <Text fontSize="lg" fontWeight="medium">Processing Pipeline</Text>
-                {['PARSE', 'EXTRACT', 'MERGE', 'GROUP', 'ONTOLOGY'].map((stage) => (
-                    <Box key={stage} w="full">
-                        <Flex justify="space-between" mb={2}>
-                            <Text>{stage}</Text>
-                        </Flex>
-                        <Progress
-                            size="sm"
-                            colorScheme={stage === currentStage ? "blue" :
-                                currentStage === 'COMPLETED' && results[stage.toLowerCase()] ? "green" : "gray"}
-                            isIndeterminate={stage === currentStage}
-                            value={currentStage === 'COMPLETED' && results[stage.toLowerCase()] ? 100 :
-                                stage === currentStage ? 0 :
-                                    results[stage.toLowerCase()] ? 100 : 0}
-                        />
-                    </Box>
-                ))}
-            </VStack>
-        );
-    }
+const ProcessingStatusPanel = ({ isRunning, currentStage, results, visualization }) => {
+    // Helper function to safely extract and validate Mermaid diagram content
 
-    // Show ontology diagram if we have results
-    const ontologyContent = results?.ontology;
-    if (ontologyContent) {
-        // Handle the case where ontologyContent is an object with an ontology property
-        const diagramContent = typeof ontologyContent === 'object' && 'ontology' in ontologyContent
-            ? ontologyContent.ontology
-            : ontologyContent;
+    console.log('ProcessingStatusPanel received props:', { visualization, results });
+    const getMermaidContent = (content) => {
+        if (!content) return null;
 
-        // If the diagram content is empty, show a message
-        if (!diagramContent || diagramContent === '') {
-            return (
-                <Flex justify="center" align="center" h="full" bg="white" rounded="lg" shadow="sm">
-                    <Text color="gray.500">
-                        No ontology diagram data available
-                    </Text>
-                </Flex>
-            );
+        // Handle string content
+        if (typeof content === 'string') {
+            return content.trim();
         }
 
+        // Handle object with ontology property
+        if (typeof content === 'object' && content.ontology) {
+            return content.ontology.trim();
+        }
+
+        return null;
+    };
+
+    // If processing is running, show progress
+    if (isRunning) {
+        return <ProcessingProgress currentStage={currentStage} results={results} />;
+    }
+
+    // If we have a specific visualization, show it
+    if (visualization.type !== 'none' && visualization.content) {
+        switch (visualization.type) {
+            case 'mermaid':
+                const mermaidContent = getMermaidContent(visualization.content);
+                return (
+                    <Box bg="white" rounded="lg" p={4} h="full" shadow="sm">
+                        {mermaidContent ? (
+                            <MermaidDiagram diagram={mermaidContent} />
+                        ) : (
+                            <Flex justify="center" align="center" h="full">
+                                <Text color="gray.500">Invalid diagram content</Text>
+                            </Flex>
+                        )}
+                    </Box>
+                );
+            case 'code':
+                return (
+                    <Box bg="white" rounded="lg" p={4} h="full" shadow="sm">
+                        <CodeVisualization code={visualization.content} />
+                    </Box>
+                );
+            case 'markdown':
+                return (
+                    <Box bg="white" rounded="lg" h="full" shadow="sm">
+                        <MarkdownVisualization content={visualization.content} />
+                    </Box>
+                );
+            default:
+                return null;
+        }
+    }
+
+    // Default to ontology diagram if available
+    const ontologyContent = getMermaidContent(results?.ontology);
+    if (ontologyContent) {
         return (
             <Box bg="white" rounded="lg" p={4} h="full" shadow="sm">
-                <MermaidDiagram diagram={diagramContent} />
+                <MermaidDiagram diagram={ontologyContent} />
             </Box>
         );
     }
 
-    // Default state
+    // Fallback state
     return (
         <Flex justify="center" align="center" h="full" bg="white" rounded="lg" shadow="sm">
             <Text color="gray.500">
-                Start processing to generate the ontology diagram
+                Start processing or ask a question to see visualizations
             </Text>
         </Flex>
     );

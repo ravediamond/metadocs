@@ -9,7 +9,7 @@ import {
   VStack,
   useToast,
 } from '@chakra-ui/react';
-import { MessageSquare, Settings } from 'lucide-react';
+import { MessageSquare, Settings, Eye } from 'lucide-react';
 import { chat } from '../../api/api';
 import AuthContext from '../../context/AuthContext';
 import { useParams } from 'react-router-dom';
@@ -20,7 +20,8 @@ const ChatPanel = ({
   mergeVersionId = null,
   groupVersionId = null,
   ontologyVersionId = null,
-  pipeline = null
+  pipeline = null,
+  onVisualizationUpdate // New prop for handling visualizations
 }) => {
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -28,26 +29,6 @@ const ChatPanel = ({
   const { token, currentTenant } = useContext(AuthContext);
   const { domain_id } = useParams();
   const toast = useToast();
-
-  console.log('ChatPanel input props:', {
-    parseVersions,
-    extractVersions,
-    mergeVersionId,
-    groupVersionId,
-    ontologyVersionId,
-    pipeline: pipeline?.pipeline_id ? {
-      id: pipeline.pipeline_id,
-      stage: pipeline.stage,
-      status: pipeline.status,
-      latest_versions: {
-        parse: pipeline.latest_parse_version_id,
-        extract: pipeline.latest_extract_version_id,
-        merge: pipeline.latest_merge_version_id,
-        group: pipeline.latest_group_version_id,
-        ontology: pipeline.latest_ontology_version_id
-      }
-    } : null
-  });
 
   const formatAssistantResponse = (analysis) => {
     let content = [];
@@ -75,7 +56,8 @@ const ChatPanel = ({
         messageType: analysis.message_type,
         intent: analysis.intent,
         suggestions: analysis.suggestions,
-        warnings: analysis.warnings
+        warnings: analysis.warnings,
+        visualization: analysis.visualization
       }
     };
   };
@@ -136,6 +118,21 @@ const ChatPanel = ({
         versions
       );
 
+      console.log('Raw analysis response:', analysis);
+
+      // Handle the visualization from the full response
+      if (analysis && analysis.visualization) {
+        console.log('Updating visualization with:', analysis.visualization);
+        onVisualizationUpdate(analysis.visualization);
+      } else {
+        // Reset visualization if none provided
+        onVisualizationUpdate({
+          type: 'none',
+          content: null,
+          title: null
+        });
+      }
+
       const assistantMessage = formatAssistantResponse(analysis);
       setMessages(prev => [...prev, assistantMessage]);
       setMessage('');
@@ -184,10 +181,11 @@ const ChatPanel = ({
               <Text fontSize="sm">
                 I can help you understand and analyze the processing results.
                 Ask me about:
-                • Document parsing status
-                • Extracted entities
-                • Entity groups
-                • Ontology structure
+                • Document parsing status and visualizations
+                • Entity relationships and diagrams
+                • Code structure and analysis
+                • Data tables and comparisons
+                • Ontology structure and visualization
                 • Processing errors
 
                 What would you like to know?
@@ -207,6 +205,12 @@ const ChatPanel = ({
               <Text fontSize="sm" whiteSpace="pre-wrap">
                 {msg.content}
               </Text>
+              {msg.metadata?.visualization && (
+                <Text fontSize="xs" color="blue.600" mt={2}>
+                  <Icon as={Eye} boxSize="4" mr={1} />
+                  Visualization available in right panel
+                </Text>
+              )}
             </Box>
           ))}
         </VStack>

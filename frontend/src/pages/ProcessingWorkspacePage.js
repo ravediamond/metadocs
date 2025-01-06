@@ -28,9 +28,20 @@ const ProcessingWorkspace = () => {
   const [error, setError] = useState(null);
   const [pipeline, setPipeline] = useState(null);
 
+  const [visualization, setVisualization] = useState({
+    type: 'none',  // none, mermaid, code, table
+    content: null,
+    title: null    // Optional title for the visualization
+  });
+
   const handleVersionChange = useCallback((newVersion) => {
     setResults({}); // Clear previous results
     setSelectedVersion(newVersion);
+  }, []);
+
+  const handleVisualizationUpdate = useCallback((vizData) => {
+    console.log('Setting visualization:', vizData);
+    setVisualization(vizData);
   }, []);
 
   const phases = [
@@ -427,6 +438,15 @@ const ProcessingWorkspace = () => {
     return content || null;
   };
 
+  console.log('ProcessingWorkspace visualization state:', {
+    visualization,
+    rawVisualizationProps: {
+      type: visualization.type,
+      content: visualization.content,
+      title: visualization.title
+    }
+  });
+
   return (
     <Box h="100vh" bg="gray.50">
       <Box p="6">
@@ -452,15 +472,6 @@ const ProcessingWorkspace = () => {
         <Flex gap="6" h="calc(100vh - 200px)">
           {/* Chat Panel - Equal size with right panel when visible */}
           <Box flex={isRightPanelVisible ? 1 : 2} minW="0">
-            {console.log('[ChatPanel] Props:', {
-              parseVersions: pipeline?.latest_parse_version_id,
-              extractVersions: pipeline?.latest_extract_version_id,
-              mergeVersionId: pipeline?.latest_merge_version_id,
-              groupVersionId: pipeline?.latest_group_version_id,
-              ontologyVersionId: pipeline?.latest_ontology_version_id,
-              results,
-              pipeline
-            })}
             <ChatPanel
               parseVersions={[pipeline?.latest_parse_version_id].filter(Boolean)}
               extractVersions={[pipeline?.latest_extract_version_id].filter(Boolean)}
@@ -468,6 +479,7 @@ const ProcessingWorkspace = () => {
               groupVersionId={pipeline?.latest_group_version_id || null}
               ontologyVersionId={pipeline?.latest_ontology_version_id || null}
               pipeline={pipeline}
+              onVisualizationUpdate={handleVisualizationUpdate}
             />
           </Box>
 
@@ -495,6 +507,7 @@ const ProcessingWorkspace = () => {
                   isRunning={isRunning}
                   currentStage={activeStage.toUpperCase()}
                   results={results}
+                  visualization={visualization}  // Add this prop
                 />
               </Box>
             )}

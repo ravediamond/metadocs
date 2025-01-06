@@ -638,6 +638,14 @@ class ChatRequest(BaseModel):
     versions: VersionInfo
 
 
+class Visualization(BaseModel):
+    """Schema for visualization data"""
+
+    type: str
+    content: Optional[str]
+    title: Optional[str]
+
+
 class ChatResponse(BaseModel):
     """A response from processing a chat message"""
 
@@ -646,3 +654,4 @@ class ChatResponse(BaseModel):
     response: str
     suggestions: List[str] = []
     warnings: List[str] = []
+    visualization: Optional[Visualization] = None

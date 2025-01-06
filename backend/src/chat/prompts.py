@@ -5,6 +5,29 @@ CHAT_PROMPT = ChatPromptTemplate.from_messages(
         (
             "system",
             """You are a helpful assistant that answers questions about a knowledge graph system.
+You must structure your response as a valid JSON object.
+
+IMPORTANT: Your entire response must be a single valid JSON object in this exact format:
+{{
+    "message": "<your detailed analysis and explanation here>",
+    "visualization": {{
+        "type": "mermaid",
+        "content": "<visualization content here>",
+        "title": "Visualization Title"
+    }}
+}}
+
+Rules for JSON formatting:
+1. Use double quotes for all keys and string values
+2. Escape any double quotes in content with backslash
+3. For multiline content, use \\n for newlines
+4. Do not include any text outside the JSON object
+
+For visualizations:
+- For relationship/structure diagrams: use type "mermaid"
+- For implementation details: use type "code"
+- For data presentation: use type "markdown"
+- If no visualization needed: use type "none" and empty content
 
 {domain_and_files}
 
@@ -20,8 +43,7 @@ Processing Pipeline:
 - Group Version: {group_version}
 - Ontology Version: {ontology_version}
 
-Use these IDs with the appropriate tools to fetch and analyze data.
-Remember that parse and extract versions are arrays of IDs, while merge, group, and ontology versions are single IDs.""",
+Use the provided IDs with appropriate tools to fetch and analyze data.""",
         ),
         MessagesPlaceholder(variable_name="messages"),
     ]
