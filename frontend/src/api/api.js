@@ -188,227 +188,27 @@ export const files = {
 
 // Processing endpoints
 export const processing = {
-  startParse: async (tenantId, domainId, domainVersion, fileVersionId, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/files/${fileVersionId}/parse`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to start parsing');
-    return response.json();
-  },
-
-  startExtract: async (tenantId, domainId, domainVersion, parseVersionId, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/parse/${parseVersionId}/extract`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to start extraction');
-    return response.json();
-  },
-
-  startMerge: async (tenantId, domainId, domainVersion, mergeRequest, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/merge`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(mergeRequest)
-    });
-    if (!response.ok) throw new Error('Failed to start merging');
-    return response.json();
-  },
-
-  startGroup: async (tenantId, domainId, domainVersion, mergeVersionId, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/merge/${mergeVersionId}/group`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to start grouping');
-    return response.json();
-  },
-
-  startOntology: async (tenantId, domainId, domainVersion, ontologyRequest, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/ontology`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(ontologyRequest)
-    });
-    if (!response.ok) throw new Error('Failed to start ontology generation');
-    return response.json();
-  },
-
   getPipeline: async (tenantId, domainId, pipelineId, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+    const response = await fetch(
+      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}`,
+      {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
     if (!response.ok) throw new Error('Failed to fetch pipeline');
     return response.json();
   },
 
-  getStagePrompts: async (tenantId, domainId, domainVersion, stage, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/prompts/${stage}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to fetch stage prompts');
-    return response.json();
-  },
-
-  updateStagePrompts: async (tenantId, domainId, domainVersion, stage, prompts, token) => {
-    // Validation des prompts selon le stage
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/prompts/${stage}`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(prompts)
-    });
-    if (!response.ok) throw new Error('Failed to update stage prompts');
-    return response.json();
-  },
-
-  startValidate: async (tenantId, domainId, domainVersion, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/validate`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to start validation');
-    return response.json();
-  },
-
-  complete: async (tenantId, domainId, domainVersion, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/complete`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to complete pipeline');
-    return response.json();
-  },
-
-  getParseVersion: async (tenantId, domainId, pipelineId, versionId, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/parse/${versionId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to fetch parse version');
-    return response.json();
-  },
-
-  getExtractVersion: async (tenantId, domainId, pipelineId, versionId, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/extract/${versionId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to fetch extract version');
-    return response.json();
-  },
-
-  getMergeVersion: async (tenantId, domainId, pipelineId, versionId, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/merge/${versionId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to fetch merge version');
-    return response.json();
-  },
-
-  getGroupVersion: async (tenantId, domainId, pipelineId, versionId, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/group/${versionId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to fetch group version');
-    return response.json();
-  },
-
-  getOntologyVersion: async (tenantId, domainId, pipelineId, versionId, token) => {
-    const response = await fetch(`${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/ontology/${versionId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error('Failed to fetch ontology version');
-    return response.json();
-  },
-  getProcessingContent: async (tenantId, domainId, pipelineId, stage, versionId, token) => {
+  getProcessingContent: async (tenantId, domainId, pipelineId, versionId, token) => {
     const response = await fetch(
-      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/${stage}/${versionId}/content`,
+      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/content/${versionId}`,
       {
         headers: { 'Authorization': `Bearer ${token}` }
       }
     );
     if (!response.ok) throw new Error('Failed to fetch processing content');
     return response.json();
-  },
-  getStageStatus: async (tenantId, domainId, pipelineId, stage, token) => {
-    const response = await fetch(
-      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/stage/${stage}/status`,
-      {
-        headers: { 'Authorization': `Bearer ${token}` }
-      }
-    );
-    if (!response.ok) throw new Error(`Failed to fetch ${stage} stage status`);
-    return response.json();
-  },
-
-  getStageDependencies: async (tenantId, domainId, pipelineId, stage, token) => {
-    const response = await fetch(
-      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/stage/${stage}/dependencies`,
-      {
-        headers: { 'Authorization': `Bearer ${token}` }
-      }
-    );
-    if (!response.ok) throw new Error(`Failed to fetch ${stage} stage dependencies`);
-    return response.json();
-  },
-
-  startStageBatch: async (tenantId, domainId, pipelineId, stage, versionIds, token) => {
-    const response = await fetch(
-      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/stage/${stage}/start-batch`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        // Send array directly instead of an object
-        body: JSON.stringify(versionIds)  // Changed this line
-      }
-    );
-    if (!response.ok) throw new Error(`Failed to start ${stage} batch processing`);
-    return response.json();
-  },
-  getStageVersions: async (tenantId, domainId, pipelineId, stage, token) => {
-    const response = await fetch(
-      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/pipeline/${pipelineId}/stage/${stage}/versions`,
-      {
-        headers: { 'Authorization': `Bearer ${token}` }
-      }
-    );
-    if (!response.ok) throw new Error(`Failed to fetch ${stage} stage versions`);
-    return response.json();
-  },
-  startPipeline: async (tenantId, domainId, domainVersion, token) => {
-    const response = await fetch(
-      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/pipeline/start`,
-      {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      }
-    );
-    if (!response.ok) throw new Error('Failed to start pipeline');
-    return response.json();
-  },
-
-  stopPipeline: async (tenantId, domainId, domainVersion, token) => {
-    const response = await fetch(
-      `${BASE_URL}/process/tenants/${tenantId}/domains/${domainId}/versions/${domainVersion}/pipeline/stop`,
-      {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      }
-    );
-    if (!response.ok) throw new Error('Failed to stop pipeline');
-    return response.json();
-  },
+  }
 };
 
 // User endpoints

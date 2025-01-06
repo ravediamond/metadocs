@@ -1,29 +1,12 @@
 import React from 'react';
-import { Box, Flex, Text, Progress, VStack } from '@chakra-ui/react';
+import { Box, Flex, Text } from '@chakra-ui/react';
 import MermaidDiagram from '../visualizations/MermaidDiagram';
 import CodeVisualization from '../visualizations/CodeVisualization';
 import MarkdownVisualization from '../visualizations/MarkdownVisualization';
 import ProcessingProgress from './ProcessingProgress';
 
 const ProcessingStatusPanel = ({ isRunning, currentStage, results, visualization }) => {
-    // Helper function to safely extract and validate Mermaid diagram content
-
     console.log('ProcessingStatusPanel received props:', { visualization, results });
-    const getMermaidContent = (content) => {
-        if (!content) return null;
-
-        // Handle string content
-        if (typeof content === 'string') {
-            return content.trim();
-        }
-
-        // Handle object with ontology property
-        if (typeof content === 'object' && content.ontology) {
-            return content.ontology.trim();
-        }
-
-        return null;
-    };
 
     // If processing is running, show progress
     if (isRunning) {
@@ -31,19 +14,12 @@ const ProcessingStatusPanel = ({ isRunning, currentStage, results, visualization
     }
 
     // If we have a specific visualization, show it
-    if (visualization.type !== 'none' && visualization.content) {
+    if (visualization?.type !== 'none' && visualization?.content) {
         switch (visualization.type) {
             case 'mermaid':
-                const mermaidContent = getMermaidContent(visualization.content);
                 return (
                     <Box bg="white" rounded="lg" p={4} h="full" shadow="sm">
-                        {mermaidContent ? (
-                            <MermaidDiagram diagram={mermaidContent} />
-                        ) : (
-                            <Flex justify="center" align="center" h="full">
-                                <Text color="gray.500">Invalid diagram content</Text>
-                            </Flex>
-                        )}
+                        <MermaidDiagram diagram={visualization.content} />
                     </Box>
                 );
             case 'code':
@@ -63,12 +39,11 @@ const ProcessingStatusPanel = ({ isRunning, currentStage, results, visualization
         }
     }
 
-    // Default to ontology diagram if available
-    const ontologyContent = getMermaidContent(results?.ontology);
-    if (ontologyContent) {
+    // Default to graph visualization if available
+    if (results?.graph?.visualization) {
         return (
             <Box bg="white" rounded="lg" p={4} h="full" shadow="sm">
-                <MermaidDiagram diagram={ontologyContent} />
+                <MermaidDiagram diagram={results.graph.visualization} />
             </Box>
         );
     }

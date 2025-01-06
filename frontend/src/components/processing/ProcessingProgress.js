@@ -2,14 +2,13 @@ import React from 'react';
 import { Box, Flex, Text, Progress, VStack } from '@chakra-ui/react';
 
 const ProcessingProgress = ({ currentStage, results }) => {
-    // List of all possible stages in order
-    const stages = ['PARSE', 'EXTRACT', 'MERGE', 'GROUP', 'ONTOLOGY'];
+    // Simplified list of stages
+    const stages = ['PARSE', 'EXTRACT', 'GRAPH'];
 
     const getStageStatus = (stage) => {
         const lowerStage = stage.toLowerCase();
         const stageIndex = stages.indexOf(stage);
         const currentStageIndex = stages.indexOf(currentStage);
-
         // Determine if stage has results
         const hasResults = results && results[lowerStage];
 
@@ -50,10 +49,8 @@ const ProcessingProgress = ({ currentStage, results }) => {
     return (
         <VStack spacing={6} w="full" p={6} bg="white" rounded="lg" h="full" shadow="sm">
             <Text fontSize="lg" fontWeight="medium">Processing Pipeline</Text>
-
             {stages.map((stage) => {
                 const status = getStageStatus(stage);
-
                 return (
                     <Box key={stage} w="full">
                         <Flex justify="space-between" mb={2}>

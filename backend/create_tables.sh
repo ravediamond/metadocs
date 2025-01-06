@@ -118,16 +118,13 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       accepted_at TIMESTAMP
   );
 
-  CREATE TYPE pipeline_stage AS ENUM (
-    'NOT_STARTED',
-    'PARSE',
-    'EXTRACT', 
-    'MERGE',
-    'GROUP',
-    'ONTOLOGY',
-    'VALIDATE',
-    'COMPLETED'
-  );
+    CREATE TYPE pipeline_stage AS ENUM (
+        'NOT_STARTED',
+        'PARSE',
+        'EXTRACT',
+        'GRAPH',
+        'COMPLETED'
+    );
 
   CREATE TYPE pipeline_status AS ENUM (
       'UNINITIALIZED',
@@ -235,70 +232,21 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- Merge Versions Table
-  CREATE TABLE merge_versions (
-      version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
-      version_number INTEGER NOT NULL,
-      system_prompt TEXT NOT NULL,
-      entity_details_prompt TEXT NOT NULL,
-      entity_merge_prompt TEXT NOT NULL,
-      custom_instructions TEXT[],
-      input_extract_version_ids UUID[] NOT NULL,
-      output_dir VARCHAR(1024) NOT NULL,
-      output_path VARCHAR(1024),
-      status VARCHAR(50),
-      error VARCHAR(1024),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
-
-  -- Group Versions Table
-  CREATE TABLE group_versions (
-      version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
-      version_number INTEGER NOT NULL,
-      system_prompt TEXT NOT NULL,
-      entity_group_prompt TEXT NOT NULL,
-      custom_instructions TEXT[],
-      input_merge_version_id UUID REFERENCES merge_versions(version_id) ON DELETE CASCADE NOT NULL,
-      output_dir VARCHAR(1024) NOT NULL,
-      output_path VARCHAR(1024),
-      status VARCHAR(50),
-      error VARCHAR(1024),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
-
-  -- Ontology Versions Table
-  CREATE TABLE ontology_versions (
-      version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
-      version_number INTEGER NOT NULL,
-      system_prompt TEXT NOT NULL,
-      ontology_prompt TEXT NOT NULL,
-      custom_instructions TEXT[],
-      input_group_version_id UUID REFERENCES group_versions(version_id) ON DELETE CASCADE NOT NULL,
-      input_merge_version_id UUID REFERENCES merge_versions(version_id) ON DELETE CASCADE NOT NULL,
-      output_dir VARCHAR(1024) NOT NULL,
-      output_path VARCHAR(1024),
-      status VARCHAR(50),
-      error VARCHAR(1024),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
-
   -- Graph Versions Table
-  CREATE TABLE graph_versions (
-      version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
-      version_number INTEGER NOT NULL,
-      input_group_version_id UUID REFERENCES group_versions(version_id) ON DELETE CASCADE NOT NULL,
-      input_merge_version_id UUID REFERENCES merge_versions(version_id) ON DELETE CASCADE NOT NULL,
-      input_ontology_version_id UUID REFERENCES ontology_versions(version_id) ON DELETE CASCADE NOT NULL,
-      output_dir VARCHAR(1024) NOT NULL,
-      output_path VARCHAR(1024),
-      status VARCHAR(50),
-      error VARCHAR(1024),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
+    CREATE TABLE graph_versions (
+        version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        pipeline_id UUID REFERENCES processing_pipeline(pipeline_id) ON DELETE CASCADE NOT NULL,
+        version_number INTEGER NOT NULL,
+        system_prompt TEXT NOT NULL,
+        input_extract_version_ids UUID[] NOT NULL,
+        custom_instructions TEXT[],
+        output_dir VARCHAR(1024) NOT NULL,
+        output_path VARCHAR(1024),
+        status VARCHAR(50),
+        error VARCHAR(1024),
+        visualization JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
   -- Indexes
   CREATE INDEX idx_files_domain_id ON files(domain_id);
@@ -309,9 +257,6 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
   CREATE INDEX idx_pipeline_status ON processing_pipeline(status);
   CREATE INDEX idx_parse_versions_pipeline ON parse_versions(pipeline_id);
   CREATE INDEX idx_extract_versions_pipeline ON extract_versions(pipeline_id);
-  CREATE INDEX idx_merge_versions_pipeline ON merge_versions(pipeline_id);
-  CREATE INDEX idx_group_versions_pipeline ON group_versions(pipeline_id);
-  CREATE INDEX idx_ontology_versions_pipeline ON ontology_versions(pipeline_id);
   CREATE INDEX idx_graph_versions_pipeline ON graph_versions(pipeline_id);
   CREATE INDEX idx_domain_versions_pipeline ON domain_versions(pipeline_id);
   CREATE INDEX idx_domain_version_files_domain ON domain_version_files(domain_id);

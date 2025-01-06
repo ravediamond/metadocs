@@ -445,10 +445,7 @@ class PipelineStage(str, Enum):
     NOT_STARTED = "NOT_STARTED"
     PARSE = "PARSE"
     EXTRACT = "EXTRACT"
-    MERGE = "MERGE"
-    GROUP = "GROUP"
-    ONTOLOGY = "ONTOLOGY"
-    VALIDATE = "VALIDATE"
+    GRAPH = "GRAPH"
     COMPLETED = "COMPLETED"
 
 
@@ -461,7 +458,6 @@ class PipelineStatus(str, Enum):
 
 class ProcessingPipeline(Base):
     __tablename__ = "processing_pipeline"
-
     pipeline_id = Column(
         UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
     )
@@ -496,15 +492,6 @@ class ProcessingPipeline(Base):
     extract_versions = relationship(
         "ExtractVersion", back_populates="pipeline", cascade="all, delete-orphan"
     )
-    merge_versions = relationship(
-        "MergeVersion", back_populates="pipeline", cascade="all, delete-orphan"
-    )
-    group_versions = relationship(
-        "GroupVersion", back_populates="pipeline", cascade="all, delete-orphan"
-    )
-    ontology_versions = relationship(
-        "OntologyVersion", back_populates="pipeline", cascade="all, delete-orphan"
-    )
     graph_versions = relationship(
         "GraphVersion", back_populates="pipeline", cascade="all, delete-orphan"
     )
@@ -514,219 +501,74 @@ class ProcessingPipeline(Base):
         if stage == PipelineStage.NOT_STARTED:
             return PipelineStatus.UNINITIALIZED
 
-        elif stage == PipelineStage.PARSE:
-            if not self.parse_versions:
-                return PipelineStatus.UNINITIALIZED
-            if any(parse.status == "failed" for parse in self.parse_versions):
-                return PipelineStatus.FAILED
-            if all(parse.status == "completed" for parse in self.parse_versions):
-                return PipelineStatus.COMPLETED
-            return PipelineStatus.RUNNING
+        version_map = {
+            PipelineStage.PARSE: self.parse_versions,
+            PipelineStage.EXTRACT: self.extract_versions,
+            PipelineStage.GRAPH: self.graph_versions,
+        }
 
-        elif stage == PipelineStage.EXTRACT:
-            if not self.extract_versions:
-                return PipelineStatus.UNINITIALIZED
-            if any(extract.status == "failed" for extract in self.extract_versions):
-                return PipelineStatus.FAILED
-            if all(extract.status == "completed" for extract in self.extract_versions):
-                return PipelineStatus.COMPLETED
-            return PipelineStatus.RUNNING
+        versions = version_map.get(stage, [])
+        if not versions:
+            return PipelineStatus.UNINITIALIZED
 
-        elif stage == PipelineStage.MERGE:
-            latest_merge = self.get_latest_merge_version()
-            if not latest_merge:
-                return PipelineStatus.UNINITIALIZED
-            if latest_merge.status == "failed":
-                return PipelineStatus.FAILED
-            if latest_merge.status == "completed":
-                return PipelineStatus.COMPLETED
-            return PipelineStatus.RUNNING
+        if any(v.status == "failed" for v in versions):
+            return PipelineStatus.FAILED
 
-        elif stage == PipelineStage.GROUP:
-            latest_group = self.get_latest_group_version()
-            if not latest_group:
-                return PipelineStatus.UNINITIALIZED
-            if latest_group.status == "failed":
-                return PipelineStatus.FAILED
-            if latest_group.status == "completed":
-                return PipelineStatus.COMPLETED
-            return PipelineStatus.RUNNING
+        if all(v.status == "completed" for v in versions):
+            return PipelineStatus.COMPLETED
 
-        elif stage == PipelineStage.ONTOLOGY:
-            latest_ontology = self.get_latest_ontology_version()
-            if not latest_ontology:
-                return PipelineStatus.UNINITIALIZED
-            if latest_ontology.status == "failed":
-                return PipelineStatus.FAILED
-            if latest_ontology.status == "completed":
-                return PipelineStatus.COMPLETED
-            return PipelineStatus.RUNNING
-
-        elif stage == PipelineStage.VALIDATE:
-            return self.status  # Validate stage uses pipeline status directly
-
-        return PipelineStatus.UNINITIALIZED
+        return PipelineStatus.RUNNING
 
     def can_start_stage(self, stage: PipelineStage) -> bool:
         """Check if a stage can be started based on dependencies"""
         if stage == PipelineStage.PARSE:
-            return True  # Parse can always start
+            return True
 
         elif stage == PipelineStage.EXTRACT:
             return (
                 self.get_stage_status(PipelineStage.PARSE) == PipelineStatus.COMPLETED
             )
 
-        elif stage == PipelineStage.MERGE:
+        elif stage == PipelineStage.GRAPH:
             return (
                 self.get_stage_status(PipelineStage.EXTRACT) == PipelineStatus.COMPLETED
-            )
-
-        elif stage == PipelineStage.GROUP:
-            return (
-                self.get_stage_status(PipelineStage.MERGE) == PipelineStatus.COMPLETED
-            )
-
-        elif stage == PipelineStage.ONTOLOGY:
-            return (
-                self.get_stage_status(PipelineStage.MERGE) == PipelineStatus.COMPLETED
-                and self.get_stage_status(PipelineStage.GROUP)
-                == PipelineStatus.COMPLETED
-            )
-
-        elif stage == PipelineStage.VALIDATE:
-            return (
-                self.get_stage_status(PipelineStage.ONTOLOGY)
-                == PipelineStatus.COMPLETED
             )
 
         return False
 
     def get_latest_version_by_stage(self, stage: PipelineStage) -> Optional[UUIDType]:
         """Get the latest version ID for a specific stage"""
-        if stage == PipelineStage.PARSE:
-            versions = sorted(
-                self.parse_versions, key=lambda x: x.version_number, reverse=True
-            )
-            return versions[0].version_id if versions else None
+        version_map = {
+            PipelineStage.PARSE: self.parse_versions,
+            PipelineStage.EXTRACT: self.extract_versions,
+            PipelineStage.GRAPH: self.graph_versions,
+        }
 
-        elif stage == PipelineStage.EXTRACT:
-            versions = sorted(
-                self.extract_versions, key=lambda x: x.version_number, reverse=True
-            )
-            return versions[0].version_id if versions else None
-
-        elif stage == PipelineStage.MERGE:
-            latest = self.get_latest_merge_version()
-            return latest.version_id if latest else None
-
-        elif stage == PipelineStage.GROUP:
-            latest = self.get_latest_group_version()
-            return latest.version_id if latest else None
-
-        elif stage == PipelineStage.ONTOLOGY:
-            latest = self.get_latest_ontology_version()
-            return latest.version_id if latest else None
-
-        return None
-
-    def get_latest_merge_version(self):
-        """Get the latest merge version"""
-        return next(
-            iter(
-                sorted(
-                    self.merge_versions, key=lambda x: x.version_number, reverse=True
-                )
-            ),
-            None,
+        versions = version_map.get(stage, [])
+        latest = next(
+            iter(sorted(versions, key=lambda x: x.version_number, reverse=True)), None
         )
-
-    def get_latest_group_version(self):
-        """Get the latest group version"""
-        return next(
-            iter(
-                sorted(
-                    self.group_versions, key=lambda x: x.version_number, reverse=True
-                )
-            ),
-            None,
-        )
-
-    def get_latest_ontology_version(self):
-        """Get the latest ontology version"""
-        return next(
-            iter(
-                sorted(
-                    self.ontology_versions, key=lambda x: x.version_number, reverse=True
-                )
-            ),
-            None,
-        )
+        return latest.version_id if latest else None
 
     def get_stage_versions(self, stage: PipelineStage) -> List[Dict]:
         """Get all versions and their statuses for a stage"""
+        version_map = {
+            PipelineStage.PARSE: self.parse_versions,
+            PipelineStage.EXTRACT: self.extract_versions,
+            PipelineStage.GRAPH: self.graph_versions,
+        }
 
-        if stage == PipelineStage.PARSE:
-            return [
-                {
-                    "version_id": v.version_id,
-                    "status": v.status,
-                    "number": v.version_number,
-                    "created_at": v.created_at,  # Include created_at
-                    "error": v.errors,
-                }
-                for v in sorted(self.parse_versions, key=lambda x: x.version_number)
-            ]
-
-        elif stage == PipelineStage.EXTRACT:
-            return [
-                {
-                    "version_id": v.version_id,
-                    "status": v.status,
-                    "number": v.version_number,
-                    "created_at": v.created_at,  # Include created_at
-                    "error": v.errors,
-                }
-                for v in sorted(self.extract_versions, key=lambda x: x.version_number)
-            ]
-
-        elif stage == PipelineStage.MERGE:
-            return [
-                {
-                    "version_id": v.version_id,
-                    "status": v.status,
-                    "number": v.version_number,
-                    "created_at": v.created_at,  # Include created_at
-                    "error": v.error,
-                }
-                for v in sorted(self.merge_versions, key=lambda x: x.version_number)
-            ]
-
-        elif stage == PipelineStage.GROUP:
-            return [
-                {
-                    "version_id": v.version_id,
-                    "status": v.status,
-                    "number": v.version_number,
-                    "created_at": v.created_at,  # Include created_at
-                    "error": v.error,
-                }
-                for v in sorted(self.group_versions, key=lambda x: x.version_number)
-            ]
-
-        elif stage == PipelineStage.ONTOLOGY:
-            return [
-                {
-                    "version_id": v.version_id,
-                    "status": v.status,
-                    "number": v.version_number,
-                    "created_at": v.created_at,  # Include created_at
-                    "error": v.error,
-                }
-                for v in sorted(self.ontology_versions, key=lambda x: x.version_number)
-            ]
-
-        return []
+        versions = version_map.get(stage, [])
+        return [
+            {
+                "version_id": v.version_id,
+                "status": v.status,
+                "number": v.version_number,
+                "created_at": v.created_at,
+                "error": v.errors if hasattr(v, "errors") else v.error,
+            }
+            for v in sorted(versions, key=lambda x: x.version_number)
+        ]
 
     def update_pipeline_status(self) -> None:
         """Update overall pipeline status based on current stage"""
@@ -800,112 +642,8 @@ class ExtractVersion(Base):
     parse_version = relationship("ParseVersion", back_populates="extract_versions")
 
 
-class MergeVersion(Base):
-    __tablename__ = "merge_versions"
-
-    version_id = Column(
-        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
-    )
-    pipeline_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("processing_pipeline.pipeline_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    version_number = Column(Integer, nullable=False)
-    system_prompt = Column(Text, nullable=False)
-    entity_details_prompt = Column(Text, nullable=False)
-    entity_merge_prompt = Column(Text, nullable=False)
-    custom_instructions = Column(ARRAY(Text))
-    input_extract_version_ids = Column(ARRAY(UUIDType(as_uuid=True)), nullable=False)
-    output_dir = Column(String(1024), nullable=False)
-    output_path = Column(String(1024))
-    status = Column(String(50))
-    error = Column(String(1024))
-    created_at = Column(TIMESTAMP, default=func.now())
-
-    # Relationship
-    pipeline = relationship("ProcessingPipeline", back_populates="merge_versions")
-    group_versions = relationship("GroupVersion", back_populates="merge_version")
-    ontology_versions = relationship("OntologyVersion", back_populates="merge_version")
-    graph_versions = relationship("GraphVersion", back_populates="input_merge_version")
-
-
-class GroupVersion(Base):
-    __tablename__ = "group_versions"
-
-    version_id = Column(
-        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
-    )
-    pipeline_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("processing_pipeline.pipeline_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    version_number = Column(Integer, nullable=False)
-    system_prompt = Column(Text, nullable=False)
-    entity_group_prompt = Column(Text, nullable=False)
-    custom_instructions = Column(ARRAY(Text))
-    input_merge_version_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("merge_versions.version_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    output_dir = Column(String(1024), nullable=False)
-    output_path = Column(String(1024))
-    status = Column(String(50))
-    error = Column(String(1024))
-    created_at = Column(TIMESTAMP, default=func.now())
-
-    # Relationship
-    pipeline = relationship("ProcessingPipeline", back_populates="group_versions")
-    merge_version = relationship("MergeVersion", back_populates="group_versions")
-    ontology_versions = relationship("OntologyVersion", back_populates="group_version")
-    graph_versions = relationship("GraphVersion", back_populates="input_group_version")
-
-
-class OntologyVersion(Base):
-    __tablename__ = "ontology_versions"
-
-    version_id = Column(
-        UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
-    )
-    pipeline_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("processing_pipeline.pipeline_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    version_number = Column(Integer, nullable=False)
-    system_prompt = Column(Text, nullable=False)
-    ontology_prompt = Column(Text, nullable=False)
-    custom_instructions = Column(ARRAY(Text))
-    input_group_version_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("group_versions.version_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    input_merge_version_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("merge_versions.version_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    output_dir = Column(String(1024), nullable=False)
-    output_path = Column(String(1024))
-    status = Column(String(50))
-    error = Column(String(1024))
-    created_at = Column(TIMESTAMP, default=func.now())
-
-    # Relationship
-    pipeline = relationship("ProcessingPipeline", back_populates="ontology_versions")
-    group_version = relationship("GroupVersion", back_populates="ontology_versions")
-    merge_version = relationship("MergeVersion", back_populates="ontology_versions")
-    graph_versions = relationship(
-        "GraphVersion", back_populates="input_ontology_version"
-    )
-
-
 class GraphVersion(Base):
     __tablename__ = "graph_versions"
-
     version_id = Column(
         UUIDType(as_uuid=True), primary_key=True, default=gen_random_uuid
     )
@@ -915,41 +653,12 @@ class GraphVersion(Base):
         nullable=False,
     )
     version_number = Column(Integer, nullable=False)
-    input_group_version_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("group_versions.version_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    input_merge_version_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("merge_versions.version_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    input_ontology_version_id = Column(
-        UUIDType(as_uuid=True),
-        ForeignKey("ontology_versions.version_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    output_dir = Column(ARRAY(String(1024)), nullable=False)
-    output_path = Column(String(1024))
+    input_extract_version_ids = Column(ARRAY(UUIDType(as_uuid=True)), nullable=False)
     status = Column(String(50))
     error = Column(String(1024))
+    output_dir = Column(String(1024), nullable=False)
+    output_path = Column(String(1024))
     created_at = Column(TIMESTAMP, default=func.now())
 
     # Relationship
     pipeline = relationship("ProcessingPipeline", back_populates="graph_versions")
-    input_merge_version = relationship(
-        "MergeVersion",
-        back_populates="graph_versions",
-        foreign_keys=[input_merge_version_id],
-    )
-    input_group_version = relationship(
-        "GroupVersion",
-        back_populates="graph_versions",
-        foreign_keys=[input_group_version_id],
-    )
-    input_ontology_version = relationship(
-        "OntologyVersion",
-        back_populates="graph_versions",
-        foreign_keys=[input_ontology_version_id],
-    )

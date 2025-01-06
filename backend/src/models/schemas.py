@@ -655,3 +655,15 @@ class ChatResponse(BaseModel):
     suggestions: List[str] = []
     warnings: List[str] = []
     visualization: Optional[Visualization] = None
+
+
+class ProcessingRequest(BaseModel):
+    files: List[UUID]
+
+
+class GraphUpdateRequest(BaseModel):
+    feedback: str
+
+
+class VisualizationRequest(BaseModel):
+    visualization_type: str = "mermaid"
