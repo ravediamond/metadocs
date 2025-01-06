@@ -23,20 +23,33 @@ def get_version_output(version_obj: Any) -> Optional[Dict]:
         return None
 
 
+def get_markdown_output(version_obj: Any) -> Optional[str]:
+    """Helper to load markdown output data"""
+    if not version_obj or not version_obj.output_path:
+        return None
+    try:
+        with open(version_obj.output_path, "r") as f:
+            return f.read()  # Read as plain text
+    except Exception as e:
+        print(f"Error reading markdown output: {str(e)}")
+        return None
+
+
 def create_data_loading_tools(db):
     """Create tools for loading different types of version data"""
 
     class ParseDataTool(BaseTool):
         name: str = "load_parse_data"
-        description: str = "Load parsed data from a specific version"
+        description: str = "Load parsed markdown data from a specific version"
         return_direct: bool = True
 
         def _run(self, version_id: UUID) -> Optional[dict]:
             version = db.query(ParseVersion).filter_by(version_id=version_id).first()
             if not version:
                 return None
+
             return {
-                "data": get_version_output(version),
+                "data": get_markdown_output(version),  # Use the new helper function
                 "file_version_id": version.input_file_version_id,
                 "status": version.status,
                 "errors": version.errors,
