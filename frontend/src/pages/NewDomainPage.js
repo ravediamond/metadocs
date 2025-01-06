@@ -14,6 +14,7 @@ import {
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import AuthContext from '../context/AuthContext';
+import { domains } from '../api/api';
 
 const NewDomainPage = () => {
   const { token, currentTenant } = useContext(AuthContext);
@@ -39,39 +40,23 @@ const NewDomainPage = () => {
     setLoading(true);
 
     try {
-      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/domains/tenants/${currentTenant}/domains`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          DomainName: domainName,
-          Description: description,
-        }),
+      // Use domains.create from api.js with correct schema
+      await domains.create(currentTenant, {
+        domain_name: domainName,
+        description: description,
+        tenant_id: currentTenant
+      }, token);
+
+      toast({
+        title: 'Domain created successfully.',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
       });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        toast({
-          title: 'Domain created successfully.',
-          status: 'success',
-          duration: 3000,
-          isClosable: true,
-        });
-        navigate('/dashboard');
-      } else {
-        toast({
-          title: data.message || 'Failed to create domain.',
-          status: 'error',
-          duration: 3000,
-          isClosable: true,
-        });
-      }
+      navigate('/dashboard');
     } catch (error) {
       toast({
-        title: 'Error creating domain.',
+        title: error.message || 'Failed to create domain.',
         status: 'error',
         duration: 3000,
         isClosable: true,

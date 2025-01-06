@@ -9,7 +9,7 @@ import traceback
 
 
 # Import your routers
-from src.routers import auth, domains, users, roles, config, files, process
+from src.routers import auth, domains, users, roles, config, files, process, chat
 from src.middleware.api_key_middleware import APIKeyMiddleware
 from src.core.database import (
     get_db,
@@ -60,6 +60,7 @@ app.include_router(roles.router, prefix="/roles", tags=["Roles"])
 app.include_router(config.router, prefix="/config", tags=["Config"])
 app.include_router(files.router, prefix="/files", tags=["Files"])
 app.include_router(process.router, prefix="/process", tags=["Process"])
+app.include_router(chat.router, prefix="/chat", tags=["Chat"])
 
 # AWS Lambda handler for serverless deployment
 handler = Mangum(app)

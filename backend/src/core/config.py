@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from ..models.models import DomainConfig
 
 SYSTEM_MODE = os.getenv("SYSTEM_MODE", "open_source")
+FILE_SYSTEM = os.getenv("FILE_SYSTEM", "local")
 
 
 class ConfigManager:
