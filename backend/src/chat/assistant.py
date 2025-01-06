@@ -175,7 +175,15 @@ class GraphAssistant:
             try:
                 # Clean the response string if needed
                 cleaned_content = llm_content.strip()
-                llm_response = json.loads(cleaned_content)
+                # Handle cases where response starts with { but isn't valid JSON
+                if cleaned_content.startswith("{") and cleaned_content.endswith("}"):
+                    llm_response = json.loads(cleaned_content)
+                else:
+                    # Wrap non-JSON responses in a proper structure
+                    llm_response = {
+                        "message": cleaned_content,
+                        "visualization": {"type": "none", "content": "", "title": ""},
+                    }
 
                 # Validate response structure
                 if not isinstance(llm_response, dict):
