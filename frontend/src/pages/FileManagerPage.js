@@ -101,11 +101,15 @@ const FileManagerPage = () => {
   const handleAddVersion = async () => {
     if (!newVersionFile || !selectedFileForVersion) return;
 
+    const formData = new FormData();
+    formData.append('file', newVersionFile);
+    formData.append('description', description);
+
     try {
       const newVersion = await files.upload(
         currentTenant,
         domain_id,
-        newVersionFile,
+        formData,  // Send the complete form data
         token
       );
 

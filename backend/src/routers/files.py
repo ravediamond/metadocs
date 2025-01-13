@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, status
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, status, Form
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 import os
 import shutil
@@ -41,6 +41,7 @@ def create_file_version(
     file_type: str,
     file_size: int,
     uploaded_by: UUID,
+    description: Optional[str] = None,
 ) -> FileVersion:
     latest_version = (
         db.query(func.max(FileVersion.version_number))
@@ -57,6 +58,7 @@ def create_file_version(
         filepath=filepath,
         file_size=file_size,
         uploaded_by=uploaded_by,
+        description=description,
     )
 
     db.add(new_version)
@@ -70,6 +72,7 @@ def create_file_version(
 def upload_file(
     tenant_id: UUID,
     domain_id: UUID,
+    description: str = Form(None),
     uploaded_file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -110,7 +113,13 @@ def upload_file(
                 buffer.write(file_contents)
 
             new_version = create_file_version(
-                db, existing_file, file_path, file_type, file_size, current_user.user_id
+                db,
+                existing_file,
+                file_path,
+                file_type,
+                file_size,
+                current_user.user_id,
+                description,
             )
             db.commit()
 
@@ -152,6 +161,7 @@ async def create_file_version_endpoint(
     tenant_id: UUID,
     domain_id: UUID,
     file_id: UUID,
+    description: str = Form(None),
     uploaded_file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -188,6 +198,7 @@ async def create_file_version_endpoint(
             file_type,
             file_size,
             current_user.user_id,
+            description=description,
         )
         db.commit()
 

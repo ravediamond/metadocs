@@ -161,6 +161,7 @@ psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<-EOSQL
       file_type VARCHAR(50) NOT NULL,
       filepath VARCHAR(1024) NOT NULL,
       file_size BIGINT NOT NULL,
+      description VARCHAR(1024),
       uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       uploaded_by UUID REFERENCES users(user_id) ON DELETE SET NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

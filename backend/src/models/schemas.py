@@ -235,6 +235,7 @@ class FileVersionBase(BaseModel):
     file_type: str
     file_size: int
     filepath: str
+    description: Optional[str] = None
 
 
 class FileVersionCreate(FileVersionBase):
@@ -277,6 +278,8 @@ class FileResponse(FileBase):
 
 
 class FileVersionResponse(FileVersion):
+    description: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -286,6 +289,14 @@ class FileWithVersionsResponse(File):
 
     class Config:
         from_attributes = True
+
+
+class FileUploadRequest(BaseModel):
+    description: Optional[str] = None
+
+
+class FileVersionUploadRequest(BaseModel):
+    description: Optional[str] = None
 
 
 class DomainVersionFile(BaseModel):

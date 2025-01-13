@@ -399,6 +399,7 @@ class FileVersion(Base):
     file_type = Column(String(50), nullable=False)
     filepath = Column(String(1024), nullable=False)
     file_size = Column(BigInteger, nullable=False)
+    description = Column(Text)
     uploaded_at = Column(TIMESTAMP, default=func.now())
     uploaded_by = Column(
         UUIDType(as_uuid=True), ForeignKey("users.user_id", ondelete="SET NULL")
