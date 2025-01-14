@@ -1,130 +1,215 @@
 import json
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
+from pathlib import Path
+from PIL import Image
+from datetime import datetime
 from langchain_core.tools import tool
 
 
-@tool("list_files")
-def list_files_with_descriptions() -> Dict[str, str]:
-    """
-    Lists all Python files in the project with their descriptions.
+class FileStorageTools:
+    def __init__(self, base_dir: str = "data"):
+        self.base_dir = Path(base_dir)
+        self.pdfs_dir = self.base_dir / "pdfs"
+        self.images_dir = self.base_dir / "images"
+        self.markdown_dir = self.base_dir / "markdown"
+        self.metadata_dir = self.base_dir / "metadata"
+        self.knowledge_dir = self.base_dir / "knowledge"
 
+
+@tool
+def list_files_with_descriptions() -> Dict[str, dict]:
+    """
+    Lists all imported PDF files and their descriptions by reading from disk.
     Returns:
-        Dict[str, str]: Dictionary mapping filenames to their descriptions
+        Dict[str, dict]: Dictionary mapping PDF filenames to their information
     """
-    file_descriptions = {
-        "app.py": "Main Streamlit application file that handles the UI, PDF management, and chat interface",
-        "assistant.py": "Handles the chat response generation and message formatting using LangChain and Claude",
-        "pdf_parser.py": "Manages PDF processing, including conversion to images and markdown using PyMuPDF",
-        "prompts.py": "Contains system prompts and templates for the chat interface",
-        "tools.py": "Utility tools for file operations and data handling",
-    }
-    return file_descriptions
+    storage = FileStorageTools()
+
+    if not storage.pdfs_dir.exists():
+        return {"message": "No PDFs have been imported yet"}
+
+    pdf_descriptions = {}
+
+    for pdf_path in storage.pdfs_dir.glob("*.pdf"):
+        filename = pdf_path.name
+        metadata_path = storage.metadata_dir / f"{filename}.json"
+
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+                    description = metadata.get("description", "No description provided")
+            except json.JSONDecodeError:
+                description = "Error reading metadata"
+        else:
+            description = "No description available"
+
+        pdf_descriptions[filename] = {
+            "description": description,
+            "size_kb": round(os.path.getsize(pdf_path) / 1024, 2),
+            "upload_date": (
+                metadata.get("upload_date", "Unknown")
+                if metadata_path.exists()
+                else "Unknown"
+            ),
+        }
+
+    return (
+        pdf_descriptions
+        if pdf_descriptions
+        else {"message": "No PDFs have been imported yet"}
+    )
 
 
-@tool("load_markdown")
-def load_markdown_file(filename: str) -> str:
+@tool
+def get_page_image(filename: str, page_number: int) -> Dict[str, str]:
     """
-    Loads and returns the content of a markdown file.
-
+    Retrieves a specific page image from a PDF file.
     Args:
-        filename: Name of the markdown file to load (with or without .md extension)
-
+        filename: Name of the PDF file
+        page_number: Page number to retrieve (1-based index)
     Returns:
-        str: Content of the markdown file
-
-    Raises:
-        FileNotFoundError: If the markdown file doesn't exist
+        Dict containing image information or error message
     """
-    if not filename.endswith(".md"):
-        filename += ".md"
+    storage = FileStorageTools()
+
+    if not storage.pdfs_dir.exists():
+        return {"error": "PDF directory not found"}
+
+    pdf_path = storage.pdfs_dir / filename
+    if not pdf_path.exists():
+        return {"error": f"PDF file {filename} not found"}
+
+    image_dir = storage.images_dir / filename.replace(".pdf", "")
+    image_path = image_dir / f"page_{page_number}.png"
+
+    if not image_path.exists():
+        return {"error": f"Page {page_number} not found for {filename}"}
 
     try:
-        with open(filename, "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Markdown file {filename} not found")
+        # Load image and convert to base64
+        with Image.open(image_path) as img:
+            import base64
+            from io import BytesIO
 
+            buffered = BytesIO()
+            img.save(buffered, format="PNG")
+            img_str = base64.b64encode(buffered.getvalue()).decode()
 
-@tool("write_json")
-def write_json_file(filename: str, data: dict) -> str:
-    """
-    Writes data to a JSON file.
-
-    Args:
-        filename: Name of the JSON file to write (with or without .json extension)
-        data: Dictionary data to write to the file
-
-    Returns:
-        str: Success message
-
-    Raises:
-        Exception: If there's an error writing the file
-    """
-    if not filename.endswith(".json"):
-        filename += ".json"
-
-    try:
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-        return f"Successfully wrote data to {filename}"
+            return {
+                "image": img_str,
+                "filename": filename,
+                "page_number": page_number,
+                "width": img.width,
+                "height": img.height,
+            }
     except Exception as e:
-        raise Exception(f"Error writing JSON file: {str(e)}")
+        return {"error": f"Error loading image: {str(e)}"}
 
 
-@tool("read_json")
-def read_json_file(filename: str) -> dict:
+@tool
+def load_markdown_content(filename: str) -> Dict[str, str]:
     """
-    Reads data from a JSON file.
-
+    Loads markdown content for a PDF file.
     Args:
-        filename: Name of the JSON file to read (with or without .json extension)
-
+        filename: Name of the PDF file (with or without .pdf extension)
     Returns:
-        dict: Data from the JSON file
-
-    Raises:
-        FileNotFoundError: If the JSON file doesn't exist
-        ValueError: If the file contains invalid JSON
+        Dict containing markdown content or error message
     """
+    storage = FileStorageTools()
+
+    if not filename.endswith(".pdf"):
+        filename += ".pdf"
+
+    md_path = storage.markdown_dir / f"{filename.replace('.pdf', '')}.md"
+
+    if not md_path.exists():
+        return {"error": f"Markdown content not found for {filename}"}
+
+    try:
+        with open(md_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Also get metadata if available
+        metadata_path = storage.metadata_dir / f"{filename}.json"
+        metadata = {}
+        if metadata_path.exists():
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+
+        return {"content": content, "filename": filename, "metadata": metadata}
+    except Exception as e:
+        return {"error": f"Error loading markdown content: {str(e)}"}
+
+
+@tool
+def write_knowledge_graph(filename: str, data: dict) -> Dict[str, str]:
+    """
+    Writes knowledge graph data to a JSON file.
+    Args:
+        filename: Name of the knowledge graph file (with or without .json extension)
+        data: Dictionary containing the knowledge graph data
+    Returns:
+        Dict containing success message or error
+    """
+    storage = FileStorageTools()
+
     if not filename.endswith(".json"):
         filename += ".json"
 
     try:
-        with open(filename, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"JSON file {filename} not found")
-    except json.JSONDecodeError:
-        raise ValueError(f"Invalid JSON format in file {filename}")
+        file_path = storage.knowledge_dir / filename
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+
+        return {
+            "success": True,
+            "message": f"Successfully wrote knowledge graph to {filename}",
+            "path": str(file_path),
+        }
+    except Exception as e:
+        return {"success": False, "error": f"Error writing knowledge graph: {str(e)}"}
+
+
+@tool
+def read_knowledge_graph(filename: str) -> Dict[str, any]:
+    """
+    Reads knowledge graph data from a JSON file.
+    Args:
+        filename: Name of the knowledge graph file (with or without .json extension)
+    Returns:
+        Dict containing the knowledge graph data or error message
+    """
+    storage = FileStorageTools()
+
+    if not filename.endswith(".json"):
+        filename += ".json"
+
+    file_path = storage.knowledge_dir / filename
+
+    if not file_path.exists():
+        return {"error": f"Knowledge graph file {filename} not found"}
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {
+            "data": data,
+            "filename": filename,
+            "last_modified": datetime.fromtimestamp(
+                os.path.getmtime(file_path)
+            ).isoformat(),
+        }
+    except Exception as e:
+        return {"error": f"Error reading knowledge graph: {str(e)}"}
 
 
 # List of all available tools
 tools = [
     list_files_with_descriptions,
-    load_markdown_file,
-    write_json_file,
-    read_json_file,
+    get_page_image,
+    load_markdown_content,
+    write_knowledge_graph,
+    read_knowledge_graph,
 ]
-
-if __name__ == "__main__":
-    # Example usage
-    print("Available files and descriptions:")
-    print(list_files_with_descriptions())
-
-    # Write JSON example
-    sample_data = {"name": "Test Data", "values": [1, 2, 3], "nested": {"key": "value"}}
-    print("\nWriting JSON:")
-    print(write_json_file("test.json", sample_data))
-
-    # Read JSON example
-    print("\nReading JSON:")
-    print(read_json_file("test.json"))
-
-    # Load markdown example
-    print("\nTrying to load markdown:")
-    try:
-        md_content = load_markdown_file("example.md")
-        print(md_content)
-    except FileNotFoundError as e:
-        print(f"Error: {e}")

@@ -60,14 +60,18 @@ Focus on:
         try:
             doc = fitz.open(pdf_path)
             markdown_content = []
+            page_images = {}
 
             for page_num in range(len(doc)):
+                print("#######")
+                print(f"Processing page {page_num}")
                 page = doc[page_num]
                 image = self._convert_page_to_image(page)
                 content = self._process_page(image)
                 markdown_content.append(f"## Page {page_num + 1}\n\n{content}")
+                page_images[page_num + 1] = image
 
-            return "\n\n---\n\n".join(markdown_content)
+            return "\n\n---\n\n".join(markdown_content), page_images
 
         except Exception as e:
             return f"Error processing PDF: {str(e)}"

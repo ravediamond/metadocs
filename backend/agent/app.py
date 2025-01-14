@@ -4,26 +4,37 @@ import tempfile
 import os
 from assistant import generate_response
 from pdf_parser import PDFParser
+from file_storage import FileStorage
 from langchain_aws.chat_models import ChatBedrock
 
 
 # Initialize session states and components
 def init_session_state():
+    """Initialize session state and load saved files."""
+    # Initialize file storage
+    if "file_storage" not in st.session_state:
+        st.session_state.file_storage = FileStorage()
+
     # Initialize messages if not exists
     if "messages" not in st.session_state:
         st.session_state.messages = [
             {
                 "role": "assistant",
                 "content": "Hello! I'm your AI programming assistant. I can help you with programming questions and analyze uploaded PDF documents. How can I help you today?",
-                "explanation": "Hello! I'm your AI programming assistant. I can help you with programming questions and analyze uploaded PDF documents. How can I help you today?",
                 "viz_content": "",
                 "viz_type": "markdown",
             }
         ]
 
-    # Initialize PDFs dict if not exists
+    # Initialize PDFs dict and load stored files
     if "pdfs" not in st.session_state:
         st.session_state.pdfs = {}
+
+    # Load stored files if pdfs dict is empty
+    if not st.session_state.pdfs:
+        stored_files = st.session_state.file_storage.load_stored_files()
+        if stored_files:
+            st.session_state.pdfs.update(stored_files)
 
     # Initialize PDF parser if not exists
     if "pdf_parser" not in st.session_state:
@@ -45,87 +56,202 @@ def pdf_management_page():
     with manage_col:
         st.subheader("Upload and Manage PDFs")
 
+        # Display currently loaded PDFs
+        if st.session_state.pdfs:
+            st.info(f"📚 {len(st.session_state.pdfs)} PDFs currently loaded")
+
+            # Create an expander to show loaded PDFs
+            with st.expander("View Loaded PDFs", expanded=True):
+                for pdf_name, pdf_info in st.session_state.pdfs.items():
+                    st.write(f"📄 {pdf_name}")
+                    st.caption(f"Pages: {pdf_info['total_pages']}")
+                    if pdf_info.get("description"):
+                        st.caption(f"Description: {pdf_info['description']}")
+
         # File uploader
+        st.markdown("---")
+        st.markdown("### Upload New PDFs")
         uploaded_files = st.file_uploader(
-            "Upload PDF files", type="pdf", accept_multiple_files=True
+            "Upload PDF files",
+            type="pdf",
+            accept_multiple_files=True,
+            help="Upload new PDF files to process and analyze",
         )
 
+        # Description input for uploaded files
         if uploaded_files:
+            st.markdown("### Add Descriptions")
+            descriptions = {}
             for uploaded_file in uploaded_files:
                 if uploaded_file.name not in st.session_state.pdfs:
-                    with tempfile.NamedTemporaryFile(
-                        delete=False, suffix=".pdf"
-                    ) as tmp_file:
-                        tmp_file.write(uploaded_file.getvalue())
+                    descriptions[uploaded_file.name] = st.text_area(
+                        f"Description for {uploaded_file.name}",
+                        help="Add a brief description of the PDF content",
+                        key=f"desc_{uploaded_file.name}",
+                    )
 
-                        with st.spinner(f"Processing {uploaded_file.name}..."):
-                            markdown_content = st.session_state.pdf_parser.parse_pdf(
-                                tmp_file.name
-                            )
+            # Process button
+            if st.button("Process PDFs", key="process_pdfs"):
+                for uploaded_file in uploaded_files:
+                    if uploaded_file.name not in st.session_state.pdfs:
+                        # Save PDF to disk
+                        with st.status(
+                            f"Processing {uploaded_file.name}...", expanded=True
+                        ) as status:
+                            try:
+                                status.write("Saving PDF...")
+                                pdf_path = st.session_state.file_storage.save_pdf(
+                                    uploaded_file, uploaded_file.name
+                                )
 
-                            st.session_state.pdfs[uploaded_file.name] = {
-                                "content": markdown_content,
-                                "processed": True,
-                            }
+                                # Save description
+                                description = descriptions.get(uploaded_file.name, "")
+                                st.session_state.file_storage.save_pdf_metadata(
+                                    uploaded_file.name, description
+                                )
 
-                        os.unlink(tmp_file.name)
-                    st.success(f"Processed {uploaded_file.name}")
+                                status.write("Extracting content...")
+                                markdown_content, page_images = (
+                                    st.session_state.pdf_parser.parse_pdf(str(pdf_path))
+                                )
 
-        # Display processed PDFs list
-        st.subheader("Processed PDFs")
+                                status.write("Saving extracted content...")
+                                st.session_state.file_storage.save_markdown(
+                                    markdown_content, uploaded_file.name
+                                )
+                                for page_num, image in page_images.items():
+                                    st.session_state.file_storage.save_page_image(
+                                        image, uploaded_file.name, page_num
+                                    )
 
-        # Add PDF selector
+                                # Update session state
+                                st.session_state.pdfs[uploaded_file.name] = {
+                                    "content": markdown_content,
+                                    "page_images": page_images,
+                                    "total_pages": len(page_images),
+                                    "processed": True,
+                                    "description": description,
+                                }
+
+                                status.update(
+                                    label=f"✅ Processed {uploaded_file.name}",
+                                    state="complete",
+                                )
+                            except Exception as e:
+                                status.update(
+                                    label=f"❌ Error processing {uploaded_file.name}",
+                                    state="error",
+                                )
+                                st.error(f"Error: {str(e)}")
+                                st.session_state.file_storage.remove_pdf(
+                                    uploaded_file.name
+                                )
+
+        # PDF Management section
         if st.session_state.pdfs:
-            selected_pdf = st.radio(
-                "Select a PDF to view:",
-                list(st.session_state.pdfs.keys()),
+            st.markdown("---")
+            st.markdown("### Manage PDFs")
+            selected_pdf = st.selectbox(
+                "Select a PDF to manage:",
+                options=list(st.session_state.pdfs.keys()),
                 key="pdf_selector",
             )
 
-            # Remove button for selected PDF
-            if st.button("Remove Selected PDF", key=f"remove_{selected_pdf}"):
-                del st.session_state.pdfs[selected_pdf]
-                st.rerun()
-        else:
-            st.write("No PDFs uploaded yet.")
+            # Show current description with edit option
+            if selected_pdf:
+                current_description = st.session_state.pdfs[selected_pdf].get(
+                    "description", ""
+                )
+                new_description = st.text_area(
+                    "Edit Description",
+                    value=current_description,
+                    key=f"edit_desc_{selected_pdf}",
+                )
+
+                # Save description changes
+                if new_description != current_description:
+                    if st.button("Save Description Changes"):
+                        st.session_state.file_storage.save_pdf_metadata(
+                            selected_pdf, new_description
+                        )
+                        st.session_state.pdfs[selected_pdf][
+                            "description"
+                        ] = new_description
+                        st.success("Description updated successfully!")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🗑️ Remove PDF", key=f"remove_{selected_pdf}"):
+                    if st.session_state.file_storage.remove_pdf(selected_pdf):
+                        del st.session_state.pdfs[selected_pdf]
+                        st.rerun()
+            with col2:
+                if st.button("🔄 Reprocess PDF", key=f"reprocess_{selected_pdf}"):
+                    # Implement reprocessing logic here
+                    st.info("Reprocessing functionality coming soon...")
 
     with view_col:
         st.subheader("PDF Content Viewer")
+        if st.session_state.pdfs and "pdf_selector" in st.session_state:
+            selected_pdf = st.session_state.pdf_selector
+            pdf_info = st.session_state.pdfs[selected_pdf]
 
-        if st.session_state.pdfs:
-            if "pdf_selector" in st.session_state:
-                selected_pdf = st.session_state.pdf_selector
+            # Create tabs for different views
+            tab1, tab2, tab3 = st.tabs(["📄 Content", "🖼️ Pages", "📊 Info"])
 
+            with tab1:
                 # Add view options
                 view_options = st.radio(
                     "View options:",
                     ["Rendered Markdown", "Raw Markdown"],
                     horizontal=True,
+                    key=f"view_options_{selected_pdf}",
                 )
 
-                # Display content based on selected view option
                 if view_options == "Rendered Markdown":
-                    st.markdown(st.session_state.pdfs[selected_pdf]["content"])
+                    st.markdown(pdf_info["content"])
                 else:
-                    st.code(
-                        st.session_state.pdfs[selected_pdf]["content"],
-                        language="markdown",
-                    )
+                    st.code(pdf_info["content"], language="markdown")
 
-                # Add download button for markdown content
-                st.download_button(
-                    label="Download Markdown",
-                    data=st.session_state.pdfs[selected_pdf]["content"],
-                    file_name=f"{selected_pdf}.md",
-                    mime="text/markdown",
+            with tab2:
+                if "page_images" in pdf_info:
+                    page_num = st.slider("Select page", 1, pdf_info["total_pages"], 1)
+                    if page_num in pdf_info["page_images"]:
+                        st.image(
+                            pdf_info["page_images"][page_num],
+                            caption=f"Page {page_num}",
+                            use_column_width=True,
+                        )
+
+            with tab3:
+                st.json(
+                    {
+                        "filename": selected_pdf,
+                        "total_pages": pdf_info["total_pages"],
+                        "processed": pdf_info["processed"],
+                        "description": pdf_info.get(
+                            "description", "No description provided"
+                        ),
+                        "size": os.path.getsize(
+                            st.session_state.file_storage.pdfs_dir / selected_pdf
+                        )
+                        / 1024,  # KB
+                    }
                 )
+
+            # Add download button for markdown content
+            st.download_button(
+                label="📥 Download Markdown",
+                data=pdf_info["content"],
+                file_name=f"{selected_pdf}.md",
+                mime="text/markdown",
+            )
         else:
-            st.info("Upload a PDF to view its content here.")
+            st.info("Upload or select a PDF to view its content here.")
 
 
 def chat_page():
     st.title("Chat Interface")
-
     chat_col, viz_col = st.columns(2)
 
     with chat_col:
@@ -137,20 +263,12 @@ def chat_page():
             if prompt := st.chat_input("What's on your mind?"):
                 st.session_state.messages.append({"role": "user", "content": prompt})
 
-                # Add PDF context to the messages
-                pdf_context = "\n\n".join(
-                    [
-                        f"Content from {pdf_name}:\n{pdf_info['content']}"
-                        for pdf_name, pdf_info in st.session_state.pdfs.items()
-                    ]
-                )
-
                 # Generate response with PDF context
-                response = generate_response(st.session_state.messages, pdf_context)
+                response = generate_response(st.session_state.messages)
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
-                        "explanation": response["explanation"],
+                        "content": response["content"],
                         "viz_content": response["viz_content"],
                         "viz_type": response["viz_type"],
                     }
@@ -163,7 +281,7 @@ def chat_page():
                         st.write(message["content"])
                 else:
                     with st.chat_message("assistant"):
-                        st.write(message["explanation"])
+                        st.write(message["content"])
 
     with viz_col:
         st.subheader("Visualization")
@@ -174,8 +292,6 @@ def chat_page():
                     st.markdown(last_msg["viz_content"])
                 elif last_msg["viz_type"] == "mermaid":
                     stmd.st_mermaid(last_msg["viz_content"])
-                elif last_msg["viz_type"] == "code":
-                    st.code(last_msg["viz_content"])
                 else:
                     st.write(last_msg["viz_content"])
 
@@ -191,47 +307,39 @@ st.markdown(
     background-color: #ffffff;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
-
 .stMarkdown h1 {
     color: #0066cc;
     border-bottom: 2px solid #0066cc;
     padding-bottom: 0.5rem;
     margin-bottom: 1.5rem;
 }
-
 .stMarkdown h2 {
     color: #0066cc;
     margin-top: 1.5rem;
     margin-bottom: 1rem;
 }
-
 .stMarkdown ul, .stMarkdown ol {
     padding-left: 1.5rem;
     margin-bottom: 1rem;
 }
-
 .stMarkdown pre {
     background-color: #f8f9fa;
     padding: 1rem;
     border-radius: 0.3rem;
     margin: 1rem 0;
 }
-
 .stMarkdown table {
     border-collapse: collapse;
     width: 100%;
-        margin: 1rem 0;
+    margin: 1rem 0;
 }
-
 .stMarkdown th, .stMarkdown td {
     border: 1px solid #ddd;
     padding: 0.5rem;
 }
-
 .stMarkdown th {
     background-color: #f8f9fa;
 }
-
 .stMarkdown blockquote {
     border-left: 4px solid #0066cc;
     padding-left: 1rem;
@@ -243,13 +351,20 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Initialize session state
-init_session_state()
 
-# Main app layout
-page = st.sidebar.radio("Navigation", ["PDF Management", "Chat"])
+# Main app
+def main():
+    # Initialize session state
+    init_session_state()
 
-if page == "PDF Management":
-    pdf_management_page()
-else:
-    chat_page()
+    # Main app layout
+    page = st.sidebar.radio("Navigation", ["PDF Management", "Chat"])
+
+    if page == "PDF Management":
+        pdf_management_page()
+    else:
+        chat_page()
+
+
+if __name__ == "__main__":
+    main()
