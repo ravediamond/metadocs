@@ -58,25 +58,23 @@ def list_pdf_with_descriptions() -> Dict[str, dict]:
 
 
 @tool
-def get_page_image(filename: str, page_number: int) -> Dict[str, str]:
+def get_page_image(pdf_filepath: str, page_number: int) -> Dict[str, str]:
     """
     Retrieves a specific page image from a PDF file.
     Args:
-        filename: Name of the PDF file
+        pdf_filepath: File path of the PDF file relative to the base directory
         page_number: Page number to retrieve (1-based index)
     Returns:
         Dict containing image information or error message
     """
     storage = FileStorageTools()
-    if not storage.pdfs_dir.exists():
-        return {"error": "PDF directory not found"}
-    pdf_path = storage.pdfs_dir / filename
+    pdf_path = storage.base_dir / pdf_filepath
     if not pdf_path.exists():
-        return {"error": f"PDF file {filename} not found"}
-    image_dir = storage.images_dir / filename.replace(".pdf", "")
+        return {"error": f"PDF file {pdf_filepath} not found"}
+    image_dir = pdf_path.parent / pdf_path.stem
     image_path = image_dir / f"page_{page_number}.png"
     if not image_path.exists():
-        return {"error": f"Page {page_number} not found for {filename}"}
+        return {"error": f"Page {page_number} not found for {pdf_filepath}"}
     try:
         # Load image and convert to base64
         with Image.open(image_path) as img:
@@ -88,7 +86,7 @@ def get_page_image(filename: str, page_number: int) -> Dict[str, str]:
             img_str = base64.b64encode(buffered.getvalue()).decode()
             return {
                 "image": img_str,
-                "filename": filename,
+                "filename": pdf_filepath,
                 "page_number": page_number,
                 "width": img.width,
                 "height": img.height,
@@ -98,54 +96,49 @@ def get_page_image(filename: str, page_number: int) -> Dict[str, str]:
 
 
 @tool
-def read_markdown(filename: str) -> Dict[str, str]:
+def read_markdown(filepath: str) -> Dict[str, str]:
     """
-    Read markdown content for a PDF file.
+    Read markdown content for a file.
     Args:
-        filename: Name of the PDF file (with or without .pdf extension)
+        filepath: File path relative to the base directory (with or without .md extension)
     Returns:
         Dict containing markdown content or error message
     """
     storage = FileStorageTools()
-    if not filename.endswith(".pdf"):
-        filename += ".pdf"
-    md_path = storage.markdown_dir / f"{filename.replace('.pdf', '')}.md"
-    if not md_path.exists():
-        return {"error": f"Markdown content not found for {filename}"}
+    if not filepath.endswith(".md"):
+        filepath += ".md"
+    file_path = storage.base_dir / filepath
+    if not file_path.exists():
+        return {"error": f"Markdown content not found for {filepath}"}
     try:
-        with open(md_path, "r", encoding="utf-8") as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
-        # Also get metadata if available
-        metadata_path = storage.metadata_dir / f"{filename}.json"
-        metadata = {}
-        if metadata_path.exists():
-            with open(metadata_path, "r", encoding="utf-8") as f:
-                metadata = json.load(f)
-        return {"content": content, "filename": filename, "metadata": metadata}
+        return {"content": content, "filepath": filepath}
     except Exception as e:
         return {"error": f"Error loading markdown content: {str(e)}"}
 
 
 @tool
-def write_markdown(filename: str, content: str) -> Dict[str, str]:
+def write_markdown(filepath: str, content: str) -> Dict[str, str]:
     """
     Writes markdown content to a file.
     Args:
-        filename: Name of the markdown file (with or without .md extension)
+        filepath: File path relative to the base directory (with or without .md extension)
         content: Markdown content to be written
     Returns:
         Dict containing success message or error
     """
     storage = FileStorageTools()
-    if not filename.endswith(".md"):
-        filename += ".md"
+    if not filepath.endswith(".md"):
+        filepath += ".md"
     try:
-        file_path = storage.markdown_dir / filename
+        file_path = storage.base_dir / filepath
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
         return {
             "success": True,
-            "message": f"Successfully wrote markdown content to {filename}",
+            "message": f"Successfully wrote markdown content to {filepath}",
             "path": str(file_path),
         }
     except Exception as e:
@@ -153,25 +146,26 @@ def write_markdown(filename: str, content: str) -> Dict[str, str]:
 
 
 @tool
-def write_json(filename: str, data: dict) -> Dict[str, str]:
+def write_json(filepath: str, data: dict) -> Dict[str, str]:
     """
-    Writes data to a JSON file.
+    Writes data to a JSON file at the specified file path relative to the base directory.
     Args:
-        filename: Name of the JSON file (with or without .json extension)
+        filepath: File path relative to the base directory (with or without .json extension)
         data: Dictionary containing the data
     Returns:
         Dict containing success message or error
     """
     storage = FileStorageTools()
-    if not filename.endswith(".json"):
-        filename += ".json"
+    if not filepath.endswith(".json"):
+        filepath += ".json"
     try:
-        file_path = storage.knowledge_graph_dir / filename
+        file_path = storage.base_dir / filepath
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
         return {
             "success": True,
-            "message": f"Successfully wrote data to {filename}",
+            "message": f"Successfully wrote data to {filepath}",
             "path": str(file_path),
         }
     except Exception as e:
@@ -179,26 +173,26 @@ def write_json(filename: str, data: dict) -> Dict[str, str]:
 
 
 @tool
-def read_json(filename: str) -> Dict[str, any]:
+def read_json(filepath: str) -> Dict[str, any]:
     """
-    Reads data from a JSON file.
+    Reads data from a JSON file at the specified file path relative to the base directory.
     Args:
-        filename: Name of the JSON file (with or without .json extension)
+        filepath: File path relative to the base directory (with or without .json extension)
     Returns:
         Dict containing the data or error message
     """
     storage = FileStorageTools()
-    if not filename.endswith(".json"):
-        filename += ".json"
-    file_path = storage.knowledge_graph_dir / filename
-    if not file_path.exists():
-        return {"error": f"File {filename} not found"}
+    if not filepath.endswith(".json"):
+        filepath += ".json"
     try:
+        file_path = storage.base_dir / filepath
+        if not file_path.exists():
+            return {"error": f"File {filepath} not found"}
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return {
             "data": data,
-            "filename": filename,
+            "filepath": filepath,
             "last_modified": datetime.fromtimestamp(
                 os.path.getmtime(file_path)
             ).isoformat(),

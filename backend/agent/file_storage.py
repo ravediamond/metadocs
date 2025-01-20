@@ -10,23 +10,24 @@ from datetime import datetime
 
 class FileStorage:
     def __init__(self, base_dir: str = "data"):
-        """Initialize file storage with directory structure."""
         self.base_dir = Path(base_dir)
+        self.create_dirs()
+
+    def create_dirs(self):
         self.pdfs_dir = self.base_dir / "pdfs"
         self.images_dir = self.base_dir / "images"
         self.markdown_dir = self.base_dir / "markdown"
+        self.metadata_dir = self.base_dir / "metadata"
         self.entities_dir = self.base_dir / "entities"
         self.knowledge_graph_dir = self.base_dir / "knowledge_graph"
-        self.metadata_dir = self.base_dir / "metadata"
 
-        # Create directories if they don't exist
         for directory in [
             self.pdfs_dir,
             self.images_dir,
             self.markdown_dir,
+            self.metadata_dir,
             self.entities_dir,
             self.knowledge_graph_dir,
-            self.metadata_dir,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
 
