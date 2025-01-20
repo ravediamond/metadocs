@@ -1,9 +1,10 @@
 import streamlit as st
 import streamlit_mermaid as stmd
-import tempfile
 import os
 from assistant import generate_response
 from pdf_parser import PDFParser
+from entity_extractor import EntityExtractor
+from merge_processor import MergeProcessor
 from file_storage import FileStorage
 from langchain_aws.chat_models import ChatBedrock
 
@@ -14,7 +15,6 @@ def init_session_state():
     # Initialize file storage
     if "file_storage" not in st.session_state:
         st.session_state.file_storage = FileStorage()
-
     # Initialize messages if not exists
     if "messages" not in st.session_state:
         st.session_state.messages = [
@@ -25,17 +25,14 @@ def init_session_state():
                 "viz_type": "markdown",
             }
         ]
-
     # Initialize PDFs dict and load stored files
     if "pdfs" not in st.session_state:
         st.session_state.pdfs = {}
-
     # Load stored files if pdfs dict is empty
     if not st.session_state.pdfs:
         stored_files = st.session_state.file_storage.load_stored_files()
         if stored_files:
             st.session_state.pdfs.update(stored_files)
-
     # Initialize PDF parser if not exists
     if "pdf_parser" not in st.session_state:
         model = ChatBedrock(
@@ -45,21 +42,20 @@ def init_session_state():
             model_kwargs={"temperature": 0, "max_tokens": 4096},
         )
         st.session_state.pdf_parser = PDFParser(model)
+    # Initialize extracted entities and relationships if not exists
+    if "extracted_data" not in st.session_state:
+        st.session_state.extracted_data = {}
 
 
 def pdf_management_page():
     st.title("PDF Management")
-
     # Create two columns: left for management, right for viewing
     manage_col, view_col = st.columns([1, 2])
-
     with manage_col:
         st.subheader("Upload and Manage PDFs")
-
         # Display currently loaded PDFs
         if st.session_state.pdfs:
             st.info(f"📚 {len(st.session_state.pdfs)} PDFs currently loaded")
-
             # Create an expander to show loaded PDFs
             with st.expander("View Loaded PDFs", expanded=True):
                 for pdf_name, pdf_info in st.session_state.pdfs.items():
@@ -67,7 +63,6 @@ def pdf_management_page():
                     st.caption(f"Pages: {pdf_info['total_pages']}")
                     if pdf_info.get("description"):
                         st.caption(f"Description: {pdf_info['description']}")
-
         # File uploader
         st.markdown("---")
         st.markdown("### Upload New PDFs")
@@ -77,7 +72,6 @@ def pdf_management_page():
             accept_multiple_files=True,
             help="Upload new PDF files to process and analyze",
         )
-
         # Description input for uploaded files
         if uploaded_files:
             st.markdown("### Add Descriptions")
@@ -89,9 +83,10 @@ def pdf_management_page():
                         help="Add a brief description of the PDF content",
                         key=f"desc_{uploaded_file.name}",
                     )
-
             # Process button
             if st.button("Process PDFs", key="process_pdfs"):
+                all_entities = {}
+                all_relationships = []
                 for uploaded_file in uploaded_files:
                     if uploaded_file.name not in st.session_state.pdfs:
                         # Save PDF to disk
@@ -103,18 +98,15 @@ def pdf_management_page():
                                 pdf_path = st.session_state.file_storage.save_pdf(
                                     uploaded_file, uploaded_file.name
                                 )
-
                                 # Save description
                                 description = descriptions.get(uploaded_file.name, "")
                                 st.session_state.file_storage.save_pdf_metadata(
                                     uploaded_file.name, description
                                 )
-
                                 status.write("Extracting content...")
                                 markdown_content, page_images = (
                                     st.session_state.pdf_parser.parse_pdf(str(pdf_path))
                                 )
-
                                 status.write("Saving extracted content...")
                                 st.session_state.file_storage.save_markdown(
                                     markdown_content, uploaded_file.name
@@ -123,7 +115,23 @@ def pdf_management_page():
                                     st.session_state.file_storage.save_page_image(
                                         image, uploaded_file.name, page_num
                                     )
-
+                                entity_extractor = EntityExtractor(
+                                    st.session_state.pdf_parser.llm
+                                )
+                                entities, relationships = (
+                                    entity_extractor.extract_entities_and_relationships(
+                                        markdown_content
+                                    )
+                                )
+                                st.session_state.extracted_data[uploaded_file.name] = {
+                                    "entities": entities,
+                                    "relationships": relationships,
+                                }
+                                st.session_state.file_storage.save_extracted_data(
+                                    uploaded_file.name, entities, relationships
+                                )
+                                all_entities.update(entities)
+                                all_relationships.extend(relationships)
                                 # Update session state
                                 st.session_state.pdfs[uploaded_file.name] = {
                                     "content": markdown_content,
@@ -132,7 +140,6 @@ def pdf_management_page():
                                     "processed": True,
                                     "description": description,
                                 }
-
                                 status.update(
                                     label=f"✅ Processed {uploaded_file.name}",
                                     state="complete",
@@ -146,7 +153,18 @@ def pdf_management_page():
                                 st.session_state.file_storage.remove_pdf(
                                     uploaded_file.name
                                 )
-
+                # Merge entities and relationships
+                merge_processor = MergeProcessor(st.session_state.pdf_parser.llm)
+                merged_entities = merge_processor.merge_entities_and_relationships(
+                    all_entities, all_relationships
+                )
+                st.session_state.extracted_data["merged"] = {
+                    "entities": merged_entities,
+                    "relationships": all_relationships,
+                }
+                st.session_state.file_storage.save_knowledge_graph(
+                    "knowledge_graph", merged_entities, all_relationships
+                )
         # PDF Management section
         if st.session_state.pdfs:
             st.markdown("---")
@@ -156,7 +174,6 @@ def pdf_management_page():
                 options=list(st.session_state.pdfs.keys()),
                 key="pdf_selector",
             )
-
             # Show current description with edit option
             if selected_pdf:
                 current_description = st.session_state.pdfs[selected_pdf].get(
@@ -167,7 +184,6 @@ def pdf_management_page():
                     value=current_description,
                     key=f"edit_desc_{selected_pdf}",
                 )
-
                 # Save description changes
                 if new_description != current_description:
                     if st.button("Save Description Changes"):
@@ -178,7 +194,6 @@ def pdf_management_page():
                             "description"
                         ] = new_description
                         st.success("Description updated successfully!")
-
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("🗑️ Remove PDF", key=f"remove_{selected_pdf}"):
@@ -189,16 +204,21 @@ def pdf_management_page():
                 if st.button("🔄 Reprocess PDF", key=f"reprocess_{selected_pdf}"):
                     # Implement reprocessing logic here
                     st.info("Reprocessing functionality coming soon...")
-
     with view_col:
         st.subheader("PDF Content Viewer")
         if st.session_state.pdfs and "pdf_selector" in st.session_state:
             selected_pdf = st.session_state.pdf_selector
             pdf_info = st.session_state.pdfs[selected_pdf]
-
             # Create tabs for different views
-            tab1, tab2, tab3 = st.tabs(["📄 Content", "🖼️ Pages", "📊 Info"])
-
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(
+                [
+                    "📄 Content",
+                    "🖼️ Pages",
+                    "📊 Info",
+                    "🔍 Extracted Data",
+                    "🔗 Merged Data",
+                ]
+            )
             with tab1:
                 # Add view options
                 view_options = st.radio(
@@ -207,22 +227,19 @@ def pdf_management_page():
                     horizontal=True,
                     key=f"view_options_{selected_pdf}",
                 )
-
                 if view_options == "Rendered Markdown":
                     st.markdown(pdf_info["content"])
                 else:
                     st.code(pdf_info["content"], language="markdown")
-
             with tab2:
                 if "page_images" in pdf_info:
                     page_num = st.slider("Select page", 1, pdf_info["total_pages"], 1)
-                    if page_num in pdf_info["page_images"]:
-                        st.image(
-                            pdf_info["page_images"][page_num],
-                            caption=f"Page {page_num}",
-                            use_column_width=True,
-                        )
-
+                if page_num in pdf_info["page_images"]:
+                    st.image(
+                        pdf_info["page_images"][page_num],
+                        caption=f"Page {page_num}",
+                        use_column_width=True,
+                    )
             with tab3:
                 st.json(
                     {
@@ -238,14 +255,40 @@ def pdf_management_page():
                         / 1024,  # KB
                     }
                 )
-
-            # Add download button for markdown content
-            st.download_button(
-                label="📥 Download Markdown",
-                data=pdf_info["content"],
-                file_name=f"{selected_pdf}.md",
-                mime="text/markdown",
-            )
+            with tab4:
+                st.subheader("Extracted Entities and Relationships")
+                if selected_pdf in st.session_state.extracted_data:
+                    entities = st.session_state.extracted_data[selected_pdf]["entities"]
+                    relationships = st.session_state.extracted_data[selected_pdf][
+                        "relationships"
+                    ]
+                    st.json({"entities": entities, "relationships": relationships})
+                else:
+                    st.info("No extracted data available for this PDF.")
+            with tab5:
+                st.subheader("Merged Entities and Relationships")
+                if "merged" in st.session_state.extracted_data:
+                    merged_entities = st.session_state.extracted_data["merged"][
+                        "entities"
+                    ]
+                    merged_relationships = st.session_state.extracted_data["merged"][
+                        "relationships"
+                    ]
+                    st.json(
+                        {
+                            "entities": merged_entities,
+                            "relationships": merged_relationships,
+                        }
+                    )
+                else:
+                    st.info("No merged data available.")
+                    # Add download button for markdown content
+                    st.download_button(
+                        label="📥 Download Markdown",
+                        data=pdf_info["content"],
+                        file_name=f"{selected_pdf}.md",
+                        mime="text/markdown",
+                    )
         else:
             st.info("Upload or select a PDF to view its content here.")
 

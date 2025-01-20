@@ -3,12 +3,13 @@ from typing import Literal, Dict, List, Optional
 from langchain_aws.chat_models import ChatBedrock
 from langgraph.prebuilt import create_react_agent
 from tools import tools
-from prompts import AGENT_PROMPT, SYSTEM_TEMPLATE
+from prompts import AGENT_PROMPT
 import json
+from exec_python import execute_python_code
 
 
 class Visualization(BaseModel):
-    type: Literal["mermaid", "markdown", "code", "none"] = Field(...)
+    type: Literal["mermaid", "markdown", "none"] = Field(...)
     content: str = Field(...)
     title: str = Field(...)
 
@@ -17,6 +18,7 @@ class LLMResponse(BaseModel):
     message: str = Field(...)
     visualization: Visualization = Field(...)
     tool_usage: Optional[List[Dict[str, str]]] = Field(default=[])
+    code: str = Field(...)
 
 
 def init_agent():

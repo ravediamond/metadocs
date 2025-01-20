@@ -2,7 +2,7 @@ import os
 import shutil
 from pathlib import Path
 from PIL import Image
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import streamlit as st
 import json
 from datetime import datetime
@@ -15,7 +15,8 @@ class FileStorage:
         self.pdfs_dir = self.base_dir / "pdfs"
         self.images_dir = self.base_dir / "images"
         self.markdown_dir = self.base_dir / "markdown"
-        self.knowledge_dir = self.base_dir / "knowledge"
+        self.entities_dir = self.base_dir / "entities"
+        self.knowledge_graph_dir = self.base_dir / "knowledge_graph"
         self.metadata_dir = self.base_dir / "metadata"
 
         # Create directories if they don't exist
@@ -23,7 +24,8 @@ class FileStorage:
             self.pdfs_dir,
             self.images_dir,
             self.markdown_dir,
-            self.knowledge_dir,
+            self.entities_dir,
+            self.knowledge_graph_dir,
             self.metadata_dir,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
@@ -61,6 +63,39 @@ class FileStorage:
             f.write(content)
         return md_path
 
+    def save_extracted_data(self, pdf_name: str, entities: dict, relationships: list):
+        """Save extracted entities and relationships as JSON files."""
+        entities_path = (
+            self.entities_dir / f"{pdf_name.replace('.pdf', '')}_entities.json"
+        )
+        relationships_path = (
+            self.entities_dir / f"{pdf_name.replace('.pdf', '')}_relationships.json"
+        )
+
+        with open(entities_path, "w", encoding="utf-8") as f:
+            json.dump(entities, f, indent=4, ensure_ascii=False)
+
+        with open(relationships_path, "w", encoding="utf-8") as f:
+            json.dump(relationships, f, indent=4, ensure_ascii=False)
+
+    def save_knowledge_graph(
+        self, pdf_name: str, entities: Dict[str, Dict], relationships: List[Dict]
+    ):
+        """Save extracted entities and relationships as JSON files."""
+        entities_path = (
+            self.knowledge_graph_dir / f"{pdf_name.replace('.pdf', '')}_entities.json"
+        )
+        relationships_path = (
+            self.knowledge_graph_dir
+            / f"{pdf_name.replace('.pdf', '')}_relationships.json"
+        )
+
+        with open(entities_path, "w", encoding="utf-8") as f:
+            json.dump(entities, f, indent=4, ensure_ascii=False)
+
+        with open(relationships_path, "w", encoding="utf-8") as f:
+            json.dump(relationships, f, indent=4, ensure_ascii=False)
+
     def get_page_image(self, pdf_name: str, page_num: int) -> Optional[Image.Image]:
         """Load a specific page image."""
         image_path = (
@@ -85,18 +120,15 @@ class FileStorage:
             pdf_name = pdf_path.name
             md_path = self.markdown_dir / f"{pdf_name.replace('.pdf', '')}.md"
             metadata_path = self.metadata_dir / f"{pdf_name}.json"
-
             if md_path.exists():
                 with open(md_path, "r", encoding="utf-8") as f:
                     markdown_content = f.read()
-
                 # Load metadata if exists
                 description = ""
                 if metadata_path.exists():
                     with open(metadata_path, "r", encoding="utf-8") as f:
                         metadata = json.load(f)
                         description = metadata.get("description", "")
-
                 page_images = {}
                 images_dir = self.images_dir / pdf_name.replace(".pdf", "")
                 if images_dir.exists():
@@ -104,14 +136,33 @@ class FileStorage:
                         page_num = int(img_path.stem.split("_")[1])
                         page_images[page_num] = Image.open(img_path)
 
+                # Load extracted data if exists
+                entities_path = (
+                    self.entities_dir / f"{pdf_name.replace('.pdf', '')}_entities.json"
+                )
+                relationships_path = (
+                    self.entities_dir
+                    / f"{pdf_name.replace('.pdf', '')}_relationships.json"
+                )
+                extracted_data = {}
+                if entities_path.exists() and relationships_path.exists():
+                    with open(entities_path, "r", encoding="utf-8") as f:
+                        entities = json.load(f)
+                    with open(relationships_path, "r", encoding="utf-8") as f:
+                        relationships = json.load(f)
+                    extracted_data = {
+                        "entities": entities,
+                        "relationships": relationships,
+                    }
+
                 stored_files[pdf_name] = {
                     "content": markdown_content,
                     "page_images": page_images,
                     "total_pages": len(page_images),
                     "processed": True,
                     "description": description,
+                    "extracted_data": extracted_data,
                 }
-
         return stored_files
 
     def remove_pdf(self, pdf_name: str) -> bool:
@@ -121,17 +172,25 @@ class FileStorage:
             pdf_path = self.pdfs_dir / pdf_name
             if pdf_path.exists():
                 pdf_path.unlink()
-
             # Remove markdown file
             md_path = self.markdown_dir / f"{pdf_name.replace('.pdf', '')}.md"
             if md_path.exists():
                 md_path.unlink()
-
             # Remove images directory
             images_dir = self.images_dir / pdf_name.replace(".pdf", "")
             if images_dir.exists():
                 shutil.rmtree(images_dir)
-
+            # Remove entities and relationships files
+            entities_path = (
+                self.entities_dir / f"{pdf_name.replace('.pdf', '')}_entities.json"
+            )
+            relationships_path = (
+                self.entities_dir / f"{pdf_name.replace('.pdf', '')}_relationships.json"
+            )
+            if entities_path.exists():
+                entities_path.unlink()
+            if relationships_path.exists():
+                relationships_path.unlink()
             return True
         except Exception as e:
             st.error(f"Error removing files: {str(e)}")
