@@ -37,6 +37,7 @@ watchfiles = "^1.0.3"
 langgraph = "^0.2.60"
 streamlit = "^1.41.1"
 streamlit-mermaid = "^0.3.0"
+tenacity = "^9.0.0"
 
 
 [build-system]
