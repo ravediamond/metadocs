@@ -194,6 +194,7 @@ class EntityExtractor:
         all_entities, all_relationships = self._extract_entities_and_relationships(
             content
         )
+        print(f"Initial entities: {all_entities}")
 
         for _ in range(self.max_iterations - 1):
             new_entities, new_relationships = self._iterative_extraction(

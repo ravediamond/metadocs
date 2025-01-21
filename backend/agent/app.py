@@ -163,7 +163,9 @@ def pdf_management_page():
                     "relationships": all_relationships,
                 }
                 st.session_state.file_storage.save_knowledge_graph(
-                    "knowledge_graph", merged_entities, all_relationships
+                    "knowledge_graph",
+                    merged_entities.get("merged_entities"),
+                    all_relationships,
                 )
         # PDF Management section
         if st.session_state.pdfs:

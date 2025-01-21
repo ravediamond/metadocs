@@ -65,37 +65,110 @@ class FileStorage:
         return md_path
 
     def save_extracted_data(self, pdf_name: str, entities: dict, relationships: list):
-        """Save extracted entities and relationships as JSON files."""
-        entities_path = (
-            self.entities_dir / f"{pdf_name.replace('.pdf', '')}_entities.json"
+        """Save extracted entities and relationships as individual JSON files and create a summary."""
+        # Create subdirectories for individual files
+        entities_dir = self.entities_dir / f"{pdf_name.replace('.pdf', '')}_entities"
+        relationships_dir = (
+            self.entities_dir / f"{pdf_name.replace('.pdf', '')}_relationships"
         )
-        relationships_path = (
-            self.entities_dir / f"{pdf_name.replace('.pdf', '')}_relationships.json"
+        entities_dir.mkdir(parents=True, exist_ok=True)
+        relationships_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save individual entity files
+        for entity_name, entity_data in entities.items():
+            entity_file = entities_dir / f"{entity_name}.json"
+            with open(entity_file, "w", encoding="utf-8") as f:
+                json.dump(entity_data, f, indent=4, ensure_ascii=False)
+
+        # Save individual relationship files
+        for i, relationship in enumerate(relationships):
+            rel_file = relationships_dir / f"relationship_{i}.json"
+            with open(rel_file, "w", encoding="utf-8") as f:
+                json.dump(relationship, f, indent=4, ensure_ascii=False)
+
+        # Create and save summary file
+        summary = {
+            "entities": {
+                name: data.get("definition", "No definition available")
+                for name, data in entities.items()
+            },
+            "relationships": [
+                {
+                    "source": rel["source"],
+                    "target": rel["target"],
+                    "type": rel["type"],
+                    "description": rel.get("description", "No description available"),
+                }
+                for rel in relationships
+            ],
+        }
+
+        summary_path = (
+            self.entities_dir / f"{pdf_name.replace('.pdf', '')}_summary.json"
         )
-
-        with open(entities_path, "w", encoding="utf-8") as f:
-            json.dump(entities, f, indent=4, ensure_ascii=False)
-
-        with open(relationships_path, "w", encoding="utf-8") as f:
-            json.dump(relationships, f, indent=4, ensure_ascii=False)
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=4, ensure_ascii=False)
 
     def save_knowledge_graph(
-        self, pdf_name: str, entities: Dict[str, Dict], relationships: List[Dict]
+        self, pdf_name: str, entities: List[Dict], relationships: List[Dict]
     ):
-        """Save extracted entities and relationships as JSON files."""
-        entities_path = (
-            self.knowledge_graph_dir / f"{pdf_name.replace('.pdf', '')}_entities.json"
+        """Save knowledge graph entities and relationships as individual JSON files and create a summary."""
+        # Create subdirectories
+        graph_entities_dir = (
+            self.knowledge_graph_dir / f"{pdf_name.replace('.pdf', '')}_entities"
         )
-        relationships_path = (
+        graph_relations_dir = (
+            self.knowledge_graph_dir / f"{pdf_name.replace('.pdf', '')}_relations"
+        )
+        graph_entities_dir.mkdir(parents=True, exist_ok=True)
+        graph_relations_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save individual entity files
+        for i, entity in enumerate(entities):
+            entity_file = (
+                graph_entities_dir / f"{entity['name'].lower().replace(' ', '_')}.json"
+            )
+            with open(entity_file, "w", encoding="utf-8") as f:
+                json.dump(entity, f, indent=4, ensure_ascii=False)
+
+        # Save individual relationship files
+        for i, relationship in enumerate(relationships):
+            rel_file = (
+                graph_relations_dir
+                / f"{relationship['source']}_{relationship['target']}.json"
+            )
+            with open(rel_file, "w", encoding="utf-8") as f:
+                json.dump(relationship, f, indent=4, ensure_ascii=False)
+
+        for entity in entities:
+            print("#" * 20)
+            print(entity)
+
+        # Create and save summary file
+        summary = {
+            "entities": {
+                entity.get("name", "no name"): {
+                    "definition": entity.get("definition", "No definition available"),
+                }
+                for entity in entities
+            },
+            "relationships": [
+                {
+                    "source": rel["source"],
+                    "target": rel["target"],
+                    "type": rel["type"],
+                    "description": rel.get("description", "No description available"),
+                }
+                for rel in relationships
+            ],
+        }
+
+        summary_path = (
             self.knowledge_graph_dir
-            / f"{pdf_name.replace('.pdf', '')}_relationships.json"
+            / f"{pdf_name.replace('.pdf', '')}_graph_summary.json"
         )
-
-        with open(entities_path, "w", encoding="utf-8") as f:
-            json.dump(entities, f, indent=4, ensure_ascii=False)
-
-        with open(relationships_path, "w", encoding="utf-8") as f:
-            json.dump(relationships, f, indent=4, ensure_ascii=False)
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=4, ensure_ascii=False)
 
     def get_page_image(self, pdf_name: str, page_num: int) -> Optional[Image.Image]:
         """Load a specific page image."""
