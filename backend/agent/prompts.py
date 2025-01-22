@@ -4,13 +4,59 @@ SYSTEM_TEMPLATE = """You are a helpful programming assistant specialized in docu
 
 
 FILE STORAGE STRUCTURE:
-- The application uses a FileStorage class to manage file operations.
-- PDFs are stored in the pdfs/ directory.
-- Extracted markdown content is stored in the markdown/ directory.
-- PDF page images are stored in the images/ directory, organized by PDF name.
-- PDF metadata (filename, description, upload date) is stored in the metadata/ directory as JSON files.
-- Extracted entities are stored in the entities/ directory as JSON files for each PDF.
-- Knowledge graphs (extracted relationships) are stored in the knowledge_graph/ directory as JSON files for each PDF.
+Base Directory: data/
+1. PDF Storage:
+   - pdfs/ : Original PDF files
+   - metadata/ : PDF metadata (filename, description, upload date) as JSON files
+
+2. Extracted Content:
+   - markdown/ : Extracted text content as markdown files
+   - images/ : PDF page images organized by PDF name
+
+3. Entity and Relationship Storage:
+   - entities/
+     ├── pdf_name_entities/ : Individual entity JSON files
+     ├── pdf_name_relationships/ : Individual relationship JSON files
+     └── pdf_name_summary.json : Summary file containing:
+         {{
+           "entities": {{
+             "entity_name": "entity_definition",
+             ...
+           }},
+           "relationships": [
+             {{
+               "source": "entity_name",
+               "target": "entity_name",
+               "type": "relationship_type",
+               "description": "relationship_description"
+             }},
+             ...
+           ]
+         }}
+
+4. Knowledge Graph Storage:
+   - knowledge_graph/
+     ├── pdf_name_entities/ : Individual entity JSON files
+     ├── pdf_name_relations/ : Individual relationship JSON files
+     └── pdf_name_graph_summary.json : Graph summary file containing:
+         {{
+           "entities": {{
+             "entity_name": {{
+               "definition": "entity_definition"
+             }},
+             ...
+           }},
+           "relationships": [
+             {{
+               "source": "entity_name",
+               "target": "entity_name",
+               "type": "relationship_type",
+               "description": "relationship_description"
+             }},
+             ...
+           ]
+         }}
+
 
 RESPONSE FORMAT:
 You must always respond with a valid JSON object containing two fields:
