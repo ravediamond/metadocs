@@ -124,7 +124,8 @@ class FileStorage:
         graph_relations_dir.mkdir(parents=True, exist_ok=True)
 
         # Save individual entity files
-        for i, entity in enumerate(entities):
+        for entity in entities:
+            print(entity)
             entity_file = (
                 graph_entities_dir / f"{entity['name'].lower().replace(' ', '_')}.json"
             )
@@ -132,7 +133,8 @@ class FileStorage:
                 json.dump(entity, f, indent=4, ensure_ascii=False)
 
         # Save individual relationship files
-        for i, relationship in enumerate(relationships):
+        for relationship in relationships:
+            print(relationship)
             rel_file = (
                 graph_relations_dir
                 / f"{relationship['source']}_{relationship['target']}.json"
@@ -269,3 +271,70 @@ class FileStorage:
         except Exception as e:
             st.error(f"Error removing files: {str(e)}")
             return False
+
+    def load_extracted_data(self, pdf_name: str):
+        """Load extracted entities and relationships for a PDF."""
+        try:
+            # Define paths
+            entities_dir = (
+                self.entities_dir / f"{pdf_name.replace('.pdf', '')}_entities"
+            )
+            relationships_dir = (
+                self.entities_dir / f"{pdf_name.replace('.pdf', '')}_relationships"
+            )
+
+            # Check if directories exist
+            if not entities_dir.exists() or not relationships_dir.exists():
+                return None, None
+
+            # Load entities
+            entities = {}
+            for entity_file in entities_dir.glob("*.json"):
+                with open(entity_file, "r", encoding="utf-8") as f:
+                    entity_data = json.load(f)
+                    entity_name = entity_file.stem
+                    entities[entity_name] = entity_data
+
+            # Load relationships
+            relationships = []
+            for rel_file in relationships_dir.glob("*.json"):
+                with open(rel_file, "r", encoding="utf-8") as f:
+                    relationship = json.load(f)
+                    relationships.append(relationship)
+
+            return entities, relationships
+
+        except Exception as e:
+            print(f"Error loading extracted data for {pdf_name}: {str(e)}")
+            return None, None
+
+    def load_knowledge_graph(self, graph_name: str):
+        """Load merged knowledge graph entities and relationships."""
+        try:
+            # Define paths
+            graph_entities_dir = self.knowledge_graph_dir / f"{graph_name}_entities"
+            graph_relations_dir = self.knowledge_graph_dir / f"{graph_name}_relations"
+
+            # Check if directories exist
+            if not graph_entities_dir.exists() or not graph_relations_dir.exists():
+                return None, None
+
+            # Load entities
+            entities = []
+            for entity_file in graph_entities_dir.glob("*.json"):
+                with open(entity_file, "r", encoding="utf-8") as f:
+                    entity_data = json.load(f)
+                    entities.append(entity_data)
+
+            # Load relationships
+            relationships = []
+            for rel_file in graph_relations_dir.glob("*.json"):
+                with open(rel_file, "r", encoding="utf-8") as f:
+                    relationship = json.load(f)
+                    relationships.append(relationship)
+
+            return entities, relationships
+
+        except Exception as e:
+            print(f"Error loading knowledge graph {graph_name}: {str(e)}")
+            return None, None

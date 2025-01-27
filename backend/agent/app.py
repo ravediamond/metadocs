@@ -15,6 +15,7 @@ def init_session_state():
     # Initialize file storage
     if "file_storage" not in st.session_state:
         st.session_state.file_storage = FileStorage()
+
     # Initialize messages if not exists
     if "messages" not in st.session_state:
         st.session_state.messages = [
@@ -25,14 +26,47 @@ def init_session_state():
                 "viz_type": "markdown",
             }
         ]
+
+    # Initialize extracted data and all documents data first
+    if "extracted_data" not in st.session_state:
+        st.session_state.extracted_data = {}
+    if "all_documents_data" not in st.session_state:
+        st.session_state.all_documents_data = {}
+
     # Initialize PDFs dict and load stored files
     if "pdfs" not in st.session_state:
         st.session_state.pdfs = {}
+
     # Load stored files if pdfs dict is empty
     if not st.session_state.pdfs:
         stored_files = st.session_state.file_storage.load_stored_files()
         if stored_files:
             st.session_state.pdfs.update(stored_files)
+            # Load extracted data for each PDF
+            for pdf_name in stored_files.keys():
+                entities, relationships = (
+                    st.session_state.file_storage.load_extracted_data(pdf_name)
+                )
+                if entities and relationships:
+                    st.session_state.extracted_data[pdf_name] = {
+                        "entities": entities,
+                        "relationships": relationships,
+                    }
+                    st.session_state.all_documents_data[pdf_name] = {
+                        "entities": entities,
+                        "relationships": relationships,
+                    }
+
+            # Load merged knowledge graph if it exists
+            merged_entities, merged_relationships = (
+                st.session_state.file_storage.load_knowledge_graph("knowledge_graph")
+            )
+            if merged_entities and merged_relationships:
+                st.session_state.extracted_data["merged"] = {
+                    "entities": merged_entities,
+                    "relationships": merged_relationships,
+                }
+
     # Initialize PDF parser if not exists
     if "pdf_parser" not in st.session_state:
         model = ChatBedrock(
@@ -45,6 +79,8 @@ def init_session_state():
     # Initialize extracted entities and relationships if not exists
     if "extracted_data" not in st.session_state:
         st.session_state.extracted_data = {}
+    if "all_documents_data" not in st.session_state:
+        st.session_state.all_documents_data = {}
 
 
 def pdf_management_page():
@@ -85,8 +121,6 @@ def pdf_management_page():
                     )
             # Process button
             if st.button("Process PDFs", key="process_pdfs"):
-                all_entities = {}
-                all_relationships = []
                 for uploaded_file in uploaded_files:
                     if uploaded_file.name not in st.session_state.pdfs:
                         # Save PDF to disk
@@ -130,8 +164,12 @@ def pdf_management_page():
                                 st.session_state.file_storage.save_extracted_data(
                                     uploaded_file.name, entities, relationships
                                 )
-                                all_entities.update(entities)
-                                all_relationships.extend(relationships)
+                                st.session_state.all_documents_data[
+                                    uploaded_file.name
+                                ] = {
+                                    "entities": entities,
+                                    "relationships": relationships,
+                                }
                                 # Update session state
                                 st.session_state.pdfs[uploaded_file.name] = {
                                     "content": markdown_content,
@@ -153,20 +191,41 @@ def pdf_management_page():
                                 st.session_state.file_storage.remove_pdf(
                                     uploaded_file.name
                                 )
-                # Merge entities and relationships
-                merge_processor = MergeProcessor(st.session_state.pdf_parser.llm)
-                merged_entities = merge_processor.merge_entities_and_relationships(
-                    all_entities, all_relationships
-                )
-                st.session_state.extracted_data["merged"] = {
-                    "entities": merged_entities,
-                    "relationships": all_relationships,
-                }
-                st.session_state.file_storage.save_knowledge_graph(
-                    "knowledge_graph",
-                    merged_entities.get("merged_entities"),
-                    all_relationships,
-                )
+
+        # After PDF processing section, add merge button
+        if st.session_state.pdfs and len(st.session_state.pdfs) > 0:
+            st.markdown("---")
+            st.markdown("### Merge Knowledge")
+            if st.button("🔄 Merge All Documents"):
+                with st.status("Merging documents...", expanded=True) as status:
+                    try:
+                        merge_processor = MergeProcessor(
+                            st.session_state.pdf_parser.llm
+                        )
+                        merged_entities, merged_relationships = (
+                            merge_processor.merge_entities_and_relationships(
+                                st.session_state.all_documents_data
+                            )
+                        )
+                        print("Merged entities:", merged_entities)
+                        print("Merged relationships:", merged_relationships)
+                        st.session_state.extracted_data["merged"] = {
+                            "entities": merged_entities,
+                            "relationships": merged_relationships,
+                        }
+                        st.session_state.file_storage.save_knowledge_graph(
+                            "knowledge_graph",
+                            merged_entities,
+                            merged_relationships,
+                        )
+                        status.update(
+                            label="✅ Successfully merged documents", state="complete"
+                        )
+                    except Exception as e:
+                        status.update(
+                            label=f"❌ Error merging documents: {str(e)}", state="error"
+                        )
+
         # PDF Management section
         if st.session_state.pdfs:
             st.markdown("---")
@@ -283,7 +342,9 @@ def pdf_management_page():
                         }
                     )
                 else:
-                    st.info("No merged data available.")
+                    st.info(
+                        "No merged data available. Use the 'Merge All Documents' button to merge the knowledge from all documents."
+                    )
                     # Add download button for markdown content
                     st.download_button(
                         label="📥 Download Markdown",
